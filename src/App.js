@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { initializeApp } from "firebase/app";
 import { getAuth, signInAnonymously } from "firebase/auth";
 import {
@@ -7371,7 +7371,11 @@ export default function App() {
             />
           )}
           {activeTab === "timetable" && (
-            <TeacherTimetableView students={students} teachers={teachers} />
+            <TeacherTimetableView
+              students={students}
+              teachers={teachers}
+              user={currentUser}
+            />
           )}
           {activeTab === "subject_timetable" && (
             <SubjectTimetableView
@@ -7457,10 +7461,21 @@ export default function App() {
   );
 }
 
-// [TeacherTimetableView] - 시원시원한 크기 & 중앙 정렬 & 자동 숨김
-const TeacherTimetableView = ({ students, teachers }) => {
+// [TeacherTimetableView] - 최종 완성 (진단 모드 OFF, 안전장치 ON)
+const TeacherTimetableView = ({ students, teachers, user }) => {
   const [selectedDay, setSelectedDay] = useState("월");
-  const DAYS = ["월", "화", "수", "목", "금", "토", "일"];
+
+  const DAYS = useMemo(() => ["월", "화", "수", "목", "금", "토", "일"], []);
+
+  useEffect(() => {
+    const todayIndex = new Date().getDay();
+    const dayMap = ["일", "월", "화", "수", "목", "금", "토"];
+    const todayLabel = dayMap[todayIndex];
+    if (DAYS.includes(todayLabel)) {
+      setSelectedDay(todayLabel);
+    }
+  }, [DAYS]);
+
   const HOURS = Array.from({ length: 10 }, (_, i) => i + 13); // 13시 ~ 22시
 
   const getSubjectColor = (subject) => {
@@ -7474,37 +7489,59 @@ const TeacherTimetableView = ({ students, teachers }) => {
     return map[subject] || "bg-slate-50 text-slate-600 border-slate-200";
   };
 
-  // 수업 시간 확인 헬퍼
-  const getLessonTime = (student) => {
-    if (student.status !== "재원") return null;
-    if (student.schedules && student.schedules[selectedDay])
-      return student.schedules[selectedDay];
-    if (student.className === selectedDay && student.time) return student.time;
-    return null;
-  };
+  const getLessonTime = useCallback(
+    (student) => {
+      if (!student) return null;
+      if (student.status?.trim() !== "재원") return null;
 
-  // [필터링] 해당 요일에 수업이 있는 강사만 추출
+      if (student.schedules && student.schedules[selectedDay])
+        return student.schedules[selectedDay];
+      if (student.className === selectedDay && student.time)
+        return student.time;
+      return null;
+    },
+    [selectedDay]
+  );
+
+  // [핵심] user 데이터가 들어오면 필터링 수행
   const activeTeachers = useMemo(() => {
-    return teachers.filter((t) => {
-      return students.some((s) => s.teacher === t.name && getLessonTime(s));
-    });
-  }, [teachers, students, selectedDay]);
+    if (!user) return []; // 안전장치
+
+    // 1. 강사 로그인: 내 이름과 일치하는 강사 정보 1개만 표시 (공백 제거 비교)
+    if (user.role === "teacher") {
+      // 내 이름의 공백을 모두 제거하고 비교 (이름 불일치 해결)
+      const myNameClean = user.name.replace(/\s+/g, "");
+      return teachers.filter((t) => t.name.replace(/\s+/g, "") === myNameClean);
+    }
+
+    // 2. 관리자 로그인: 전체 강사 표시
+    return teachers;
+  }, [teachers, user]);
 
   const getLessons = (teacherName, hour) => {
     return students.filter((s) => {
-      if (s.teacher !== teacherName) return false;
+      // 이름 비교 시 공백 제거 (안전장치)
+      const tName1 = (s.teacher || "").replace(/\s+/g, "");
+      const tName2 = (teacherName || "").replace(/\s+/g, "");
+      if (tName1 !== tName2) return false;
+
       const timeStr = getLessonTime(s);
       if (!timeStr) return false;
+
       const sHour = parseInt(timeStr.split(":")[0]);
       return sHour === hour;
     });
   };
 
+  // user 데이터가 아직 안 왔으면 로딩 중 처리
+  if (!user) return null;
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 h-full flex flex-col overflow-hidden animate-fade-in">
       <div className="flex flex-col md:flex-row justify-between items-center mb-6 shrink-0 gap-4">
         <h2 className="text-xl font-bold flex items-center text-slate-800">
-          <LayoutGrid className="mr-2 text-indigo-600" /> 강사별 주간 시간표
+          <LayoutGrid className="mr-2 text-indigo-600" />
+          {user.role === "admin" ? "강사별 주간 시간표" : "나의 수업 일정"}
         </h2>
 
         {/* 요일 선택 버튼 */}
@@ -7526,20 +7563,15 @@ const TeacherTimetableView = ({ students, teachers }) => {
       </div>
 
       <div className="flex-1 overflow-auto border rounded-xl bg-slate-50/50 relative">
-        {/* 테이블 컨테이너: 중앙 정렬을 위해 inline-block 사용 및 min-w 설정 */}
         <div className="inline-block min-w-full">
           {/* 헤더 */}
           <div className="flex border-b bg-white sticky top-0 z-20 shadow-sm">
-            {/* 시간축 헤더 */}
             <div className="w-[80px] p-4 text-center text-xs font-bold text-slate-400 border-r bg-slate-50 sticky left-0 z-30 shrink-0">
               TIME
             </div>
 
-            {/* 강사 헤더 (가운데 정렬) */}
             {activeTeachers.length > 0 ? (
               <div className="flex flex-1 justify-center">
-                {" "}
-                {/* 여기가 중앙 정렬 핵심 */}
                 {activeTeachers.map((t) => (
                   <div
                     key={t.id}
@@ -7550,8 +7582,12 @@ const TeacherTimetableView = ({ students, teachers }) => {
                 ))}
               </div>
             ) : (
-              <div className="flex-1 p-4 text-center text-slate-400 font-medium">
-                📅 {selectedDay}요일은 예정된 수업이 없습니다.
+              <div className="flex-1 p-10 text-center text-slate-400 font-medium">
+                <p>표시할 강사 정보가 없습니다.</p>
+                <p className="text-xs mt-2 opacity-70">
+                  (Tip: 강사 관리 메뉴의 이름과 로그인 이름이 같은지
+                  확인해주세요)
+                </p>
               </div>
             )}
           </div>
@@ -7560,13 +7596,9 @@ const TeacherTimetableView = ({ students, teachers }) => {
           <div className="divide-y divide-slate-200">
             {HOURS.map((hour) => (
               <div key={hour} className="flex min-h-[100px]">
-                {" "}
-                {/* 높이 100px로 넉넉하게 */}
-                {/* 시간 표시 */}
                 <div className="w-[80px] p-2 text-center text-xs font-bold text-slate-400 border-r bg-white flex flex-col justify-start pt-3 sticky left-0 z-10 shrink-0">
                   {hour}:00
                 </div>
-                {/* 강사별 셀 (가운데 정렬) */}
                 {activeTeachers.length > 0 && (
                   <div className="flex flex-1 justify-center">
                     {activeTeachers.map((t) => {
@@ -7581,7 +7613,7 @@ const TeacherTimetableView = ({ students, teachers }) => {
                             return (
                               <div
                                 key={idx}
-                                className={`px-3 py-2 rounded-lg border text-xs shadow-sm ${getSubjectColor(
+                                className={`px-3 py-2 rounded-lg border text-xs shadow-sm cursor-pointer hover:scale-105 transition-transform ${getSubjectColor(
                                   l.subject
                                 )}`}
                               >
@@ -7602,7 +7634,6 @@ const TeacherTimetableView = ({ students, teachers }) => {
                     })}
                   </div>
                 )}
-                {/* 수업 없는 날 빈 공간 채우기 */}
                 {activeTeachers.length === 0 && (
                   <div className="flex-1 bg-transparent"></div>
                 )}
