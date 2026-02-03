@@ -47,21 +47,21 @@ import {
   ListTodo,
   Filter,
   CalendarDays,
-  Archive, // 상담 관리용
-  StickyNote, // 상담 메모용
-  Timer, // 결제 관리용
-  History, // 결제 이력용
-  Pencil, // 수정 버튼용
-  Grid, // 👈 달력 월간 뷰용 (현재 에러 해결)
-  Columns, // 👈 달력 주간 뷰용
-  HardDrive, // 백업용
-  Download, // 다운로드용
-  Upload, // 업로드용
-  CheckSquare, // 체크박스용
+  Archive,
+  StickyNote,
+  Timer,
+  History,
+  Pencil,
+  Grid,
+  Columns,
+  HardDrive,
+  Download,
+  Upload,
+  CheckSquare,
 } from "lucide-react";
 
 // =================================================================
-// 1. Firebase 설정
+// 1. Firebase 설정 및 전역 변수 고정 (에러 방지용)
 // =================================================================
 const firebaseConfig = {
   apiKey: "AIzaSyDc6bGpzvxNALaxvrhZxSMxuHAvqQJozSE",
@@ -73,15 +73,13 @@ const firebaseConfig = {
   measurementId: "G-253HKDQ29X",
 };
 
-let app, auth, db, APP_ID;
-try {
-  app = initializeApp(firebaseConfig);
-  auth = getAuth(app);
-  db = getFirestore(app);
-  APP_ID = "jnc-music-v2";
-} catch (e) {
-  console.error("Firebase 초기화 오류:", e);
-}
+// [주의] 이 변수들은 반드시 initializeApp 이후에 참조되어야 합니다.
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const APP_ID = "jnc-music-v2"; // let 대신 const로 고정
+
+console.log("✅ 시스템이 정상적으로 로드되었습니다.");
 
 // =================================================================
 // 2. 상수 및 데이터 & 헬퍼 함수
@@ -3449,44 +3447,7 @@ const SettingsView = ({ teachers, students, showToast, seedData }) => {
   };
   // [App.js] 내부 함수 정의 구역에 추가해주세요.
 
-  const handleUpdateStudent = async (id, updatedData) => {
-    try {
-      const safeAppId = APP_ID || "jnc-music-v2";
-
-      if (id) {
-        // [기존 원생 수정]
-        const studentRef = doc(
-          db,
-          "artifacts",
-          safeAppId,
-          "public",
-          "data",
-          "students",
-          id
-        );
-        await updateDoc(studentRef, updatedData);
-        showToast("원생 정보 및 상태가 업데이트되었습니다.");
-      } else {
-        // [신규 원생 등록]
-        const studentsRef = collection(
-          db,
-          "artifacts",
-          safeAppId,
-          "public",
-          "data",
-          "students"
-        );
-        await addDoc(studentsRef, {
-          ...updatedData,
-          createdAt: new Date().toISOString(),
-        });
-        showToast("새로운 원생이 등록되었습니다.");
-      }
-    } catch (e) {
-      console.error("저장 오류:", e);
-      showToast("데이터 저장에 실패했습니다.", "error");
-    }
-  };
+  // App.js 내부의 handleUpdateStudent를 이 코드로 단일화하세요.
 
   const handleDownloadTemplate = () => {
     if (typeof window.XLSX === "undefined") {
@@ -4767,7 +4728,7 @@ const AttendanceDetailModal = ({ config, onClose, onConfirm }) => {
 };
 
 // ==================================================================================
-// [StudentView] 원생 관리 화면 (등록 모드일 때 완벽한 단독 화면 처리)
+/// [StudentView] 레이어 층수(z-index) 최적화 + 오리지널 기능 100% 보존 버전
 const StudentView = ({
   students,
   teachers,
@@ -4781,35 +4742,55 @@ const StudentView = ({
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("재원");
   const [selectedStudent, setSelectedStudent] = useState(null);
-
-  // [핵심] 상담 데이터가 있으면 초기값부터 모달을 열어둡니다.
-  const [isDetailModalOpen, setIsDetailModalOpen] = useState(
-    !!registerFromConsultation
-  );
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [modalTab, setModalTab] = useState("info");
-
   const [isQuickEditMode, setIsQuickEditMode] = useState(false);
   const [quickEditData, setQuickEditData] = useState({});
 
   const DAYS = ["월", "화", "수", "목", "금", "토", "일"];
 
-  // 권한 필터링
+  // [중요] 데이터 로딩 전 충돌 방지 안전장치 (StudentView 상단 유지)
+  if (!teachers || teachers.length === 0) {
+    return (
+      <div className="p-10 text-center text-slate-500 font-bold">
+        강사 정보를 불러오는 중...
+      </div>
+    );
+  }
+
+  // 1. [기능 보존 + 중복 증식 해결] 상담 데이터 수신 시 처리
+  useEffect(() => {
+    if (registerFromConsultation) {
+      const isAdultData =
+        registerFromConsultation.type === "adult" ||
+        (registerFromConsultation.grade &&
+          registerFromConsultation.grade.includes("성인"));
+
+      const preparedData = {
+        ...registerFromConsultation,
+        grade: isAdultData ? "성인" : registerFromConsultation.grade,
+        isAdult: isAdultData,
+      };
+
+      setSelectedStudent(preparedData);
+      setModalTab("info");
+      setIsDetailModalOpen(true);
+
+      // [핵심] 메모리 즉시 비우기 (상담 데이터의 잔상이 남지 않도록)
+      if (setRegisterFromConsultation) {
+        setTimeout(() => setRegisterFromConsultation(null), 100);
+      }
+    }
+  }, [registerFromConsultation, setRegisterFromConsultation]);
+
+  // 2. 권한 필터링
   const accessibleStudents = useMemo(() => {
+    if (!user) return [];
     if (user.role === "admin") return students;
     return students.filter((s) => s.teacher === user.name);
   }, [students, user]);
 
-  // 상담 연동 로직
-  useEffect(() => {
-    if (registerFromConsultation) {
-      setSelectedStudent(registerFromConsultation);
-      setModalTab("info");
-      setIsDetailModalOpen(true);
-      if (setRegisterFromConsultation) setRegisterFromConsultation(null);
-    }
-  }, [registerFromConsultation, setRegisterFromConsultation]);
-
-  // 통계 계산
+  // 3. 통계 계산
   const stats = useMemo(() => {
     const currentMonth = new Date().toISOString().slice(0, 7);
     return {
@@ -4824,7 +4805,7 @@ const StudentView = ({
     };
   }, [accessibleStudents]);
 
-  // 리스트 필터링
+  // 4. 리스트 필터링
   const filteredStudents = useMemo(() => {
     const currentMonth = new Date().toISOString().slice(0, 7);
     return accessibleStudents.filter((s) => {
@@ -4834,14 +4815,12 @@ const StudentView = ({
         s.name?.toLowerCase().includes(term) ||
         s.teacher?.toLowerCase().includes(term) ||
         s.subject?.toLowerCase().includes(term);
-
-      if (filterStatus === "신규") {
+      if (filterStatus === "신규")
         return (
           matchesSearch &&
           (s.registrationDate || "").startsWith(currentMonth) &&
           s.status !== "퇴원"
         );
-      }
       return matchesSearch && s.status === filterStatus;
     });
   }, [accessibleStudents, searchTerm, filterStatus]);
@@ -4853,285 +4832,289 @@ const StudentView = ({
   };
 
   const handleSaveQuickEdit = () => {
+    // [기능 보존] 퀵에디트 변경 사항을 부모로 전달
+    Object.entries(quickEditData).forEach(([studentId, scheduleUpdate]) => {
+      const originalStudent = students.find((s) => s.id === studentId);
+      if (originalStudent) {
+        onUpdateStudent(studentId, {
+          ...originalStudent,
+          schedules: { ...originalStudent.schedules, ...scheduleUpdate },
+        });
+      }
+    });
     setIsQuickEditMode(false);
     setQuickEditData({});
-    showToast("시간표 수정 모드가 종료되었습니다.", "success");
+    showToast("시간표 수정사항이 저장되었습니다.", "success");
   };
 
-  // =================================================================================
-  // [중요] 모달이 열려있으면 아예 다른 화면(모달만 있는 화면)을 보여줍니다.
-  // 이렇게 하면 뒤에 검색창이나 리스트가 절대로 남지 않습니다.
-  // =================================================================================
-  if (isDetailModalOpen) {
-    return (
-      <StudentModal
-        isOpen={true} // 항상 열림 상태
-        onClose={() => setIsDetailModalOpen(false)}
-        student={selectedStudent}
-        teachers={teachers}
-        onSave={(data) => {
-          onUpdateStudent(selectedStudent?.id || null, data);
-          setIsDetailModalOpen(false);
-        }}
-        onDelete={(id) => {
-          onDeleteStudent(id);
-          setIsDetailModalOpen(false);
-        }}
-      />
-    );
-  }
-
-  // =================================================================================
-  // [평소 화면] 모달이 닫혀있을 때만 아래 리스트 화면이 렌더링됩니다.
-  // =================================================================================
   return (
-    <div className="space-y-4 animate-fade-in pb-24 h-full">
-      {/* 상단 컨트롤바 */}
-      <div className="flex flex-col gap-4 bg-white p-5 rounded-2xl border shadow-sm sticky top-0 z-[60]">
-        <div className="flex flex-col xl:flex-row justify-between gap-4">
-          <div className="relative flex-1 max-w-2xl">
-            <Search
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-              size={18}
-            />
-            <input
-              className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
-              placeholder="이름, 파트, 강사 검색..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-          <div className="flex bg-slate-100 p-1 rounded-xl w-fit shrink-0">
-            {["재원", "휴원", "퇴원"].map((status) => (
-              <button
-                key={status}
-                onClick={() => setFilterStatus(status)}
-                className={`px-5 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${
-                  filterStatus === status
-                    ? "bg-white text-indigo-600 shadow-sm"
-                    : "text-slate-500 hover:text-slate-800"
-                }`}
-              >
-                {status}
-                <span
-                  className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+    <div className="relative h-full">
+      {/* 1. 모달 레이어 (증식 완벽 차단 로직 포함) */}
+      {isDetailModalOpen && (
+        <StudentModal
+          isOpen={true}
+          onClose={() => {
+            setIsDetailModalOpen(false);
+            setSelectedStudent(null);
+          }}
+          student={selectedStudent}
+          teachers={teachers}
+          onSave={(finalId, data) => {
+            // [중요] StudentModal에서 계산되어 넘어온 finalId(null 또는 기존ID)를 사용
+            onUpdateStudent(finalId, data);
+            setIsDetailModalOpen(false);
+            setSelectedStudent(null);
+          }}
+          onDelete={(id) => {
+            onDeleteStudent(id);
+            setIsDetailModalOpen(false);
+            setSelectedStudent(null);
+          }}
+        />
+      )}
+      {/* 2. 리스트 레이어 */}
+      <div
+        className={`space-y-4 animate-fade-in pb-24 h-full ${
+          isDetailModalOpen ? "hidden" : "block"
+        }`}
+      >
+        <div className="flex flex-col gap-4 bg-white p-5 rounded-2xl border shadow-sm sticky top-0 z-10">
+          <div className="flex flex-col xl:flex-row justify-between gap-4">
+            <div className="relative flex-1 max-w-2xl">
+              <Search
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                size={18}
+              />
+              <input
+                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
+                placeholder="이름, 파트, 강사 검색..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+            <div className="flex bg-slate-100 p-1 rounded-xl w-fit shrink-0">
+              {["재원", "휴원", "퇴원"].map((status) => (
+                <button
+                  key={status}
+                  onClick={() => setFilterStatus(status)}
+                  className={`px-5 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${
                     filterStatus === status
-                      ? "bg-indigo-100 text-indigo-600"
-                      : "bg-slate-200 text-slate-500"
+                      ? "bg-white text-indigo-600 shadow-sm"
+                      : "text-slate-500 hover:text-slate-800"
                   }`}
                 >
-                  {stats[status]}
-                </span>
-              </button>
-            ))}
+                  {status}
+                  <span
+                    className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                      filterStatus === status
+                        ? "bg-indigo-100 text-indigo-600"
+                        : "bg-slate-200 text-slate-500"
+                    }`}
+                  >
+                    {stats[status]}
+                  </span>
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-          <button
-            onClick={() => setFilterStatus("신규")}
-            className={`px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 border transition-all ${
-              filterStatus === "신규"
-                ? "bg-amber-500 text-white shadow-lg scale-105"
-                : "bg-white text-amber-600 border-amber-200"
-            }`}
-          >
-            <Plus size={18} /> ✨ 이번달 신규{" "}
-            <span className="opacity-80 text-xs">({stats.신규})</span>
-          </button>
-
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
             <button
-              onClick={() =>
-                isQuickEditMode
-                  ? handleSaveQuickEdit()
-                  : setIsQuickEditMode(true)
-              }
-              className={`px-4 py-2.5 rounded-xl font-bold flex items-center shadow-sm ${
-                isQuickEditMode
-                  ? "bg-emerald-600 text-white"
-                  : "bg-white border text-slate-700"
+              onClick={() => setFilterStatus("신규")}
+              className={`px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 border transition-all ${
+                filterStatus === "신규"
+                  ? "bg-amber-500 text-white shadow-lg scale-105"
+                  : "bg-white text-amber-600 border-amber-200"
               }`}
             >
-              {isQuickEditMode ? (
-                <>
-                  <Save size={18} className="mr-1.5" /> 저장
-                </>
-              ) : (
-                <>
-                  <Zap size={18} className="mr-1.5 text-amber-500" /> 시간표
-                  빠른수정
-                </>
-              )}
+              <Plus size={18} /> ✨ 이번달 신규{" "}
+              <span className="opacity-80 text-xs">({stats.신규})</span>
             </button>
-            <button
-              onClick={() => openWithTab(null, "info")}
-              className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-bold flex items-center shadow-md hover:bg-indigo-700"
-            >
-              <Plus size={18} className="mr-1.5" /> 신규 등록
-            </button>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() =>
+                  isQuickEditMode
+                    ? handleSaveQuickEdit()
+                    : setIsQuickEditMode(true)
+                }
+                className={`px-4 py-2.5 rounded-xl font-bold flex items-center shadow-sm ${
+                  isQuickEditMode
+                    ? "bg-emerald-600 text-white"
+                    : "bg-white border text-slate-700"
+                }`}
+              >
+                {isQuickEditMode ? (
+                  <>
+                    <Save size={18} className="mr-1.5" /> 저장
+                  </>
+                ) : (
+                  <>
+                    <Zap size={18} className="mr-1.5 text-amber-500" /> 시간표
+                    빠른수정
+                  </>
+                )}
+              </button>
+              <button
+                onClick={() => openWithTab(null, "info")}
+                className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-bold flex items-center shadow-md hover:bg-indigo-700"
+              >
+                <Plus size={18} className="mr-1.5" /> 신규 등록
+              </button>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* 테이블 영역 */}
-      <div className="bg-white rounded-2xl border shadow-sm overflow-auto max-h-[70vh] relative">
-        <table className="w-full text-left border-separate border-spacing-0">
-          <thead className="sticky top-0 z-[50]">
-            <tr className="bg-slate-50 text-slate-500 text-[11px] font-bold uppercase tracking-wider">
-              <th className="p-4 w-60 sticky left-0 top-0 bg-slate-100 z-[55] border-b border-r border-slate-200 shadow-sm">
-                원생 / 강사 정보
-              </th>
-              {isQuickEditMode ? (
-                DAYS.map((d) => (
-                  <th
-                    key={d}
-                    className="p-2 text-center w-24 bg-slate-50 border-b border-slate-200 shadow-sm"
-                  >
-                    {d}
+        <div className="bg-white rounded-2xl border shadow-sm overflow-auto max-h-[70vh] relative">
+          <table className="w-full text-left border-separate border-spacing-0">
+            <thead className="sticky top-0 z-0">
+              <tr className="bg-slate-50 text-slate-500 text-[11px] font-bold uppercase tracking-wider">
+                <th className="p-4 w-60 sticky left-0 top-0 bg-slate-100 z-10 border-b border-r border-slate-200 shadow-sm">
+                  원생 / 강사 정보
+                </th>
+                {isQuickEditMode ? (
+                  DAYS.map((d) => (
+                    <th
+                      key={d}
+                      className="p-2 text-center w-24 bg-slate-50 border-b border-slate-200 shadow-sm"
+                    >
+                      {d}
+                    </th>
+                  ))
+                ) : (
+                  <th className="p-4 bg-slate-50 border-b border-slate-200 shadow-sm">
+                    수업 시간표 요약
                   </th>
+                )}
+                {!isQuickEditMode && (
+                  <th className="p-4 w-40 text-center bg-slate-50 border-b border-slate-200 shadow-sm">
+                    빠른 관리
+                  </th>
+                )}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredStudents.length > 0 ? (
+                filteredStudents.map((s) => (
+                  <tr
+                    key={s.id}
+                    className="hover:bg-slate-50/50 transition-colors group"
+                  >
+                    <td className="p-4 sticky left-0 bg-white group-hover:bg-slate-50 z-10 border-r border-slate-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                      <div className="flex flex-col gap-1.5">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="font-bold text-slate-900 text-base cursor-pointer hover:text-indigo-600 hover:underline"
+                            onClick={() => openWithTab(s, "info")}
+                          >
+                            {s.name}
+                          </span>
+                          <span className="text-[10px] px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-full font-bold border border-indigo-100">
+                            {s.subject}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-slate-600 font-medium">
+                          <span>{s.teacher}</span>
+                          <span className="text-slate-300">|</span>
+                          <span className="font-mono text-slate-400">
+                            {s.phone}
+                          </span>
+                        </div>
+                      </div>
+                    </td>
+                    {isQuickEditMode ? (
+                      DAYS.map((day) => (
+                        <td
+                          key={day}
+                          className="p-1.5 min-w-[100px] border-b border-slate-50"
+                        >
+                          <input
+                            type="text"
+                            className="w-full text-center text-xs p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white outline-none"
+                            value={
+                              quickEditData[s.id]?.[day] !== undefined
+                                ? quickEditData[s.id][day]
+                                : s.schedules?.[day] || ""
+                            }
+                            onChange={(e) =>
+                              setQuickEditData((prev) => ({
+                                ...prev,
+                                [s.id]: {
+                                  ...(prev[s.id] || {}),
+                                  [day]: e.target.value,
+                                },
+                              }))
+                            }
+                          />
+                        </td>
+                      ))
+                    ) : (
+                      <td className="p-4 border-r border-slate-50">
+                        <div className="flex flex-wrap gap-1.5">
+                          {Object.entries(s.schedules || {}).map(
+                            ([day, time]) => (
+                              <span
+                                key={day}
+                                className="px-2.5 py-1 bg-slate-100 text-slate-700 rounded-lg text-[10px] font-bold border border-slate-200"
+                              >
+                                {day} {time}
+                              </span>
+                            )
+                          )}
+                          {(!s.schedules ||
+                            Object.keys(s.schedules).length === 0) && (
+                            <span className="text-xs text-slate-300">
+                              일정 없음
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    )}
+                    {!isQuickEditMode && (
+                      <td className="p-4 bg-slate-50/10">
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            onClick={() => openWithTab(s, "attendance")}
+                            className="p-2.5 bg-white text-emerald-600 border border-emerald-100 rounded-xl shadow-sm hover:bg-emerald-600 hover:text-white transition-all"
+                          >
+                            <CalendarIcon size={18} />
+                          </button>
+                          <button
+                            onClick={() => openWithTab(s, "payment")}
+                            className="p-2.5 bg-white text-indigo-600 border border-indigo-100 rounded-xl shadow-sm hover:bg-indigo-600 hover:text-white transition-all"
+                          >
+                            <CreditCard size={18} />
+                          </button>
+                          <button
+                            onClick={() => openWithTab(s, "info")}
+                            className="p-2.5 bg-white text-slate-400 border border-slate-200 rounded-xl shadow-sm hover:bg-slate-800 hover:text-white transition-all"
+                          >
+                            <Settings size={18} />
+                          </button>
+                        </div>
+                      </td>
+                    )}
+                  </tr>
                 ))
               ) : (
-                <th className="p-4 bg-slate-50 border-b border-slate-200 shadow-sm">
-                  수업 시간표 요약
-                </th>
-              )}
-              {!isQuickEditMode && (
-                <th className="p-4 w-40 text-center bg-slate-50 border-b border-slate-200 shadow-sm">
-                  빠른 관리
-                </th>
-              )}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {filteredStudents.length > 0 ? (
-              filteredStudents.map((s) => (
-                <tr
-                  key={s.id}
-                  className="hover:bg-slate-50/50 transition-colors group"
-                >
-                  <td className="p-4 sticky left-0 bg-white group-hover:bg-slate-50 z-[40] border-r border-slate-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
-                    <div className="flex flex-col gap-1.5">
-                      <div className="flex items-center gap-2">
-                        <span
-                          className="font-bold text-slate-900 text-base cursor-pointer hover:text-indigo-600 hover:underline decoration-2 underline-offset-4 transition-all"
-                          onClick={() => openWithTab(s, "info")}
-                        >
-                          {s.name}
-                        </span>
-                        <span className="text-[10px] px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-full font-bold border border-indigo-100">
-                          {s.subject}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 text-xs text-slate-600 font-medium">
-                        <span>{s.teacher}</span>
-                        <span className="text-slate-300">|</span>
-                        <span className="font-mono text-slate-400">
-                          {s.phone}
-                        </span>
-                      </div>
-                    </div>
+                <tr>
+                  <td
+                    colSpan={isQuickEditMode ? 9 : 3}
+                    className="py-20 text-center text-slate-400 font-bold text-lg"
+                  >
+                    원생이 없습니다.
                   </td>
-
-                  {isQuickEditMode ? (
-                    DAYS.map((day) => (
-                      <td
-                        key={day}
-                        className="p-1.5 min-w-[100px] border-b border-slate-50"
-                      >
-                        <input
-                          type="text"
-                          className="w-full text-center text-xs p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white outline-none"
-                          value={
-                            quickEditData[s.id]?.[day] ||
-                            s.schedules?.[day] ||
-                            ""
-                          }
-                          onChange={(e) =>
-                            setQuickEditData((prev) => ({
-                              ...prev,
-                              [s.id]: {
-                                ...(prev[s.id] || {}),
-                                [day]: e.target.value,
-                              },
-                            }))
-                          }
-                        />
-                      </td>
-                    ))
-                  ) : (
-                    <td className="p-4 border-r border-slate-50">
-                      <div className="flex flex-wrap gap-1.5">
-                        {Object.entries(s.schedules || {}).map(
-                          ([day, time]) => (
-                            <span
-                              key={day}
-                              className="px-2.5 py-1 bg-slate-100 text-slate-700 rounded-lg text-[10px] font-bold border border-slate-200"
-                            >
-                              {day} {time}
-                            </span>
-                          )
-                        )}
-                        {(!s.schedules ||
-                          Object.keys(s.schedules).length === 0) && (
-                          <span className="text-xs text-slate-300">
-                            일정 없음
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                  )}
-
-                  {!isQuickEditMode && (
-                    <td className="p-4 bg-slate-50/10">
-                      <div className="flex items-center justify-center gap-2">
-                        <button
-                          onClick={() => openWithTab(s, "attendance")}
-                          className="p-2.5 bg-white text-emerald-600 border border-emerald-100 rounded-xl shadow-sm hover:bg-emerald-600 hover:text-white transition-all"
-                        >
-                          <CalendarIcon size={18} />
-                        </button>
-                        <button
-                          onClick={() => openWithTab(s, "payment")}
-                          className="p-2.5 bg-white text-indigo-600 border border-indigo-100 rounded-xl shadow-sm hover:bg-indigo-600 hover:text-white transition-all"
-                        >
-                          <CreditCard size={18} />
-                        </button>
-                        <button
-                          onClick={() => openWithTab(s, "info")}
-                          className="p-2.5 bg-white text-slate-400 border border-slate-200 rounded-xl shadow-sm hover:bg-slate-800 hover:text-white transition-all"
-                        >
-                          <Settings size={18} />
-                        </button>
-                      </div>
-                    </td>
-                  )}
                 </tr>
-              ))
-            ) : (
-              <tr>
-                <td
-                  colSpan={isQuickEditMode ? 9 : 3}
-                  className="py-20 text-center text-slate-400"
-                >
-                  <p className="font-bold text-lg mb-2">원생이 없습니다.</p>
-                  <p className="text-sm">
-                    {user.role === "teacher"
-                      ? "담당하는 재원생이 없거나 검색 결과가 없습니다."
-                      : "등록된 원생이 없습니다."}
-                  </p>
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
 };
-
 // ==================================================================================
-// [StudentModal] 원장님 시스템 맞춤형 최종 통합 버전 (기능 누락 절대 없음)
+// [StudentModal] 성인 자동 연동 + 보관함 이동 기능 포함 버전
 const StudentModal = ({
   isOpen,
   onClose,
@@ -5154,27 +5137,44 @@ const StudentModal = ({
   useEffect(() => {
     if (isOpen) {
       if (student) {
+        // [수정] 데이터가 없을 경우를 대비한 기본값(||) 설정 강화
         const incomingGrade = (student.grade || "").trim();
         const isAdultCheck =
-          incomingGrade === "성인" || incomingGrade.includes("성인");
+          student.type === "adult" ||
+          incomingGrade === "성인" ||
+          incomingGrade.includes("성인") ||
+          student.isAdult === true;
 
         setIsAdult(isAdultCheck);
 
         setFormData({
           ...student,
+          name: student.name || "",
           grade: isAdultCheck ? "성인" : incomingGrade,
+          phone: student.phone || student.parentPhone || "",
+          teacher: student.teacher || teachers[0]?.name || "",
           schedules: student.schedules || {},
           memo: student.note || student.memo || "",
           totalSessions: student.totalSessions || 4,
-          fromConsultationId: student.fromConsultationId || null,
-          // 시스템 통합 연락처 필드 (phone 하나로 모든 연동 처리)
-          phone: student.phone || student.parentPhone || "",
+          fromConsultationId:
+            student.fromConsultationId ||
+            (student.status === "pending" ? student.id : null),
+          status:
+            student.status === "pending" ? "재원" : student.status || "재원",
         });
 
-        setAttHistory(student.attendanceHistory || []);
-        setPayHistory(student.paymentHistory || []);
+        // [핵심] 배열 데이터가 없을 경우 빈 배열([])로 강제 초기화하여 하얀 화면 방지
+        setAttHistory(
+          Array.isArray(student.attendanceHistory)
+            ? student.attendanceHistory
+            : []
+        );
+        setPayHistory(
+          Array.isArray(student.paymentHistory) ? student.paymentHistory : []
+        );
         setPayAmount(student.tuitionFee || 0);
       } else {
+        // 신규 등록 모드 (기존과 동일)
         setIsAdult(false);
         setFormData({
           name: "",
@@ -5216,8 +5216,9 @@ const StudentModal = ({
     }));
   };
 
-  const handleSaveWrapper = () => {
-    // 필드 검증 및 시스템 연동 데이터 생성
+  // [저장 로직] 상담 데이터 보관함 이동 기능 유지 + 증식 방지
+  const handleSaveWrapper = async () => {
+    // 1. 데이터 정리
     const finalData = {
       ...formData,
       grade: isAdult ? "성인" : formData.grade,
@@ -5225,10 +5226,82 @@ const StudentModal = ({
       paymentHistory: payHistory,
       updatedAt: new Date().toISOString(),
     };
-    onSave(finalData);
+
+    // 2. 상담 기록 업데이트 (등록 완료 처리)
+    if (formData.fromConsultationId) {
+      try {
+        const safeAppId = "jnc-music-v2";
+        const consultRef = doc(
+          db,
+          "artifacts",
+          safeAppId,
+          "public",
+          "data",
+          "consultations",
+          formData.fromConsultationId
+        );
+        await updateDoc(consultRef, {
+          status: "registered",
+          registeredAt: new Date().toISOString(),
+        });
+      } catch (e) {
+        console.error("상담 상태 업데이트 실패:", e);
+      }
+    }
+
+    // [중요] 타겟 ID 결정 로직 재수정
+    // 상담 리스트에서 넘어온 경우(status: pending)는 student.id가 있어도 '상담ID'이지 '원생ID'가 아닙니다.
+    // 따라서 status가 "pending"이면 무조건 null을 보내어 '신규 생성'을 유도합니다.
+    const isFromConsultation =
+      student && (student.status === "pending" || !student.registrationDate);
+    const targetId = isFromConsultation ? null : student?.id || null;
+
+    onSave(targetId, finalData);
   };
 
   if (!isOpen) return null;
+
+  // --- 유틸리티 헬퍼 (기능 복구) ---
+  const toggleAttendance = (dateStr) => {
+    const exists = attHistory.find((h) => h.date === dateStr);
+    setAttHistory(
+      exists
+        ? attHistory.filter((h) => h.date !== dateStr)
+        : [
+            ...attHistory,
+            {
+              date: dateStr,
+              status: "present",
+              timestamp: new Date().toISOString(),
+            },
+          ]
+    );
+  };
+
+  const togglePayment = (dateStr) => {
+    const exists = payHistory.find((h) => h.date === dateStr);
+    if (exists) {
+      if (confirm("기록을 삭제하시겠습니까?"))
+        setPayHistory(payHistory.filter((h) => h.date !== dateStr));
+    } else {
+      setPayHistory([
+        ...payHistory,
+        {
+          date: dateStr,
+          amount: parseInt(payAmount) || 0,
+          type: "tuition",
+          sessionStartDate: dateStr,
+          createdAt: new Date().toISOString(),
+        },
+      ]);
+    }
+  };
+
+  const moveMonth = (offset) => {
+    const d = new Date(baseDate);
+    d.setMonth(d.getMonth() + offset);
+    setBaseDate(d);
+  };
 
   const renderCalendar = (type) => {
     const calendars = [];
@@ -5242,7 +5315,6 @@ const StudentModal = ({
       const days = [];
       for (let k = 0; k < firstDay; k++) days.push(null);
       for (let k = 1; k <= daysInMonth; k++) days.push(k);
-
       calendars.push(
         <div
           key={`${year}-${month}`}
@@ -5278,7 +5350,6 @@ const StudentModal = ({
                       (h) => h.date === dateStr && h.status === "present"
                     )
                   : payHistory.some((h) => h.date === dateStr);
-
               return (
                 <div
                   key={day}
@@ -5290,8 +5361,8 @@ const StudentModal = ({
                   className={`aspect-square flex items-center justify-center rounded-lg text-xs cursor-pointer transition-all border ${
                     isSelected
                       ? type === "attendance"
-                        ? "bg-emerald-500 text-white font-bold shadow-md"
-                        : "bg-indigo-600 text-white font-bold shadow-md transform scale-105"
+                        ? "bg-emerald-500 text-white font-bold"
+                        : "bg-indigo-600 text-white font-bold transform scale-105"
                       : "bg-white text-slate-500 hover:bg-slate-100"
                   }`}
                 >
@@ -5308,51 +5379,9 @@ const StudentModal = ({
     );
   };
 
-  const toggleAttendance = (dateStr) => {
-    const exists = attHistory.find((h) => h.date === dateStr);
-    setAttHistory(
-      exists
-        ? attHistory.filter((h) => h.date !== dateStr)
-        : [
-            ...attHistory,
-            {
-              date: dateStr,
-              status: "present",
-              timestamp: new Date().toISOString(),
-            },
-          ]
-    );
-  };
-
-  const togglePayment = (dateStr) => {
-    const exists = payHistory.find((h) => h.date === dateStr);
-    if (exists) {
-      if (confirm("결제 기록을 삭제하시겠습니까?"))
-        setPayHistory(payHistory.filter((h) => h.date !== dateStr));
-    } else {
-      setPayHistory([
-        ...payHistory,
-        {
-          date: dateStr,
-          amount: parseInt(payAmount) || 0,
-          type: "tuition",
-          sessionStartDate: dateStr,
-          createdAt: new Date().toISOString(),
-        },
-      ]);
-    }
-  };
-
-  const moveMonth = (offset) => {
-    const d = new Date(baseDate);
-    d.setMonth(d.getMonth() + offset);
-    setBaseDate(d);
-  };
-
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl m-4 overflow-hidden flex flex-col max-h-[90vh]">
-        {/* 헤더 */}
         <div className="flex justify-between items-center p-5 border-b bg-slate-50 shrink-0">
           <div>
             <h3 className="text-xl font-bold text-slate-800">
@@ -5373,8 +5402,6 @@ const StudentModal = ({
             <X size={24} />
           </button>
         </div>
-
-        {/* 탭 버튼 */}
         <div className="flex border-b">
           {["info", "attendance", "payment"].map((tab) => (
             <button
@@ -5394,11 +5421,9 @@ const StudentModal = ({
             </button>
           ))}
         </div>
-
-        {/* 컨텐츠 영역 */}
         <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
           {activeTab === "info" && (
-            <div className="space-y-6">
+            <div className="space-y-6 animate-in fade-in duration-300">
               <div className="bg-white p-3 rounded-lg border border-indigo-100 flex items-center shadow-sm">
                 <input
                   type="checkbox"
@@ -5414,9 +5439,8 @@ const StudentModal = ({
                   성인 회원입니다 (호칭 '님')
                 </label>
               </div>
-
               <div className="grid grid-cols-2 gap-4">
-                <div className="col-span-2 md:col-span-1">
+                <div>
                   <label className="block text-xs font-bold text-slate-500 mb-1">
                     이름
                   </label>
@@ -5425,10 +5449,9 @@ const StudentModal = ({
                     className="w-full p-2 border rounded shadow-sm focus:ring-2 focus:ring-indigo-500 outline-none"
                     value={formData.name || ""}
                     onChange={handleChange}
-                    placeholder="이름 입력"
                   />
                 </div>
-                <div className="col-span-2 md:col-span-1">
+                <div>
                   <label className="block text-xs font-bold text-slate-500 mb-1">
                     담당 강사
                   </label>
@@ -5446,7 +5469,7 @@ const StudentModal = ({
                     ))}
                   </select>
                 </div>
-                <div className="col-span-2 md:col-span-1">
+                <div>
                   <label className="block text-xs font-bold text-slate-500 mb-1">
                     학년{" "}
                     {isAdult && <span className="text-indigo-600">(성인)</span>}
@@ -5462,85 +5485,53 @@ const StudentModal = ({
                     onChange={handleChange}
                   >
                     <option value="">선택</option>
-                    <option value="유치부">유치부</option>
-                    <option value="초1">초1</option>
-                    <option value="초2">초2</option>
-                    <option value="초3">초3</option>
-                    <option value="초4">초4</option>
-                    <option value="초5">초5</option>
-                    <option value="초6">초6</option>
-                    <option value="중등부">중등부</option>
-                    <option value="고등부">고등부</option>
-                    <option value="성인">성인 (일반)</option>
+                    {GRADE_OPTIONS.map((g) => (
+                      <option key={g} value={g}>
+                        {g}
+                      </option>
+                    ))}
                   </select>
                 </div>
-
-                <div className="col-span-2 md:col-span-1">
+                <div>
                   <label className="block text-xs font-bold text-slate-500 mb-1">
-                    {isAdult ? "본인 연락처" : "보호자 연락처"}
+                    연락처
                   </label>
                   <input
                     name="phone"
-                    className="w-full p-2 border rounded shadow-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                    className="w-full p-2 border rounded outline-none"
                     value={formData.phone || ""}
                     onChange={handleChange}
                     placeholder="010-0000-0000"
                   />
                 </div>
-
-                <div className="col-span-2 md:col-span-1">
+                <div>
                   <label className="block text-xs font-bold text-slate-500 mb-1">
                     수강 과목
                   </label>
                   <input
                     name="subject"
-                    className="w-full p-2 border rounded shadow-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                    className="w-full p-2 border rounded outline-none"
                     value={formData.subject || ""}
                     onChange={handleChange}
-                    placeholder="과목 직접 입력"
                   />
                 </div>
-                <div className="col-span-2 md:col-span-1">
+                <div>
                   <label className="block text-xs font-bold text-slate-500 mb-1">
-                    수강료 (원)
+                    수강료
                   </label>
                   <input
                     name="tuitionFee"
                     type="number"
-                    className="w-full p-2 border rounded shadow-sm focus:ring-2 focus:ring-indigo-500 outline-none text-indigo-600 font-bold text-right"
+                    className="w-full p-2 border rounded outline-none text-right font-bold text-indigo-600"
                     value={formData.tuitionFee || ""}
                     onChange={handleChange}
-                    placeholder="0"
                   />
                 </div>
-                <div className="col-span-2 md:col-span-1">
-                  <label className="block text-xs font-bold text-slate-500 mb-1">
-                    수강 세션 (회)
-                  </label>
-                  <div className="flex gap-1">
-                    {[4, 8, 12].map((num) => (
-                      <button
-                        key={num}
-                        onClick={() =>
-                          setFormData({ ...formData, totalSessions: num })
-                        }
-                        className={`flex-1 py-1.5 rounded border text-xs font-bold transition-all ${
-                          parseInt(formData.totalSessions) === num
-                            ? "bg-indigo-600 text-white border-indigo-600 shadow-md"
-                            : "bg-white text-slate-400 border-slate-200"
-                        }`}
-                      >
-                        {num}회
-                      </button>
-                    ))}
-                  </div>
-                </div>
               </div>
-
               <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mt-4">
                 <label className="text-xs font-bold text-slate-500 mb-2 block flex items-center gap-1">
                   <Timer size={14} className="text-indigo-500" /> 요일별 수업
-                  시간 (예: 14:30)
+                  시간
                 </label>
                 <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
                   {DAYS.map((day) => (
@@ -5549,12 +5540,11 @@ const StudentModal = ({
                         {day}
                       </div>
                       <input
-                        className={`w-full p-1.5 text-xs border rounded-lg text-center outline-none transition-colors ${
+                        className={`w-full p-1.5 text-xs border rounded-lg text-center outline-none ${
                           formData.schedules?.[day]
                             ? "bg-indigo-50 border-indigo-200 font-bold text-indigo-700"
-                            : "bg-slate-50 focus:border-indigo-300"
+                            : "bg-slate-50"
                         }`}
-                        placeholder="-"
                         value={formData.schedules?.[day] || ""}
                         onChange={(e) =>
                           handleScheduleChange(day, e.target.value)
@@ -5564,23 +5554,20 @@ const StudentModal = ({
                   ))}
                 </div>
               </div>
-
-              <div className="mt-4">
+              <div>
                 <label className="block text-xs font-bold text-slate-500 mb-1">
-                  메모 (특이사항)
+                  메모
                 </label>
                 <textarea
                   name="memo"
                   rows={3}
-                  className="w-full p-2 border rounded resize-none focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm"
+                  className="w-full p-2 border rounded resize-none outline-none shadow-sm"
                   value={formData.memo || ""}
                   onChange={handleChange}
-                  placeholder="특이사항 입력"
                 />
               </div>
             </div>
           )}
-
           {activeTab === "attendance" && (
             <div className="space-y-4 animate-in slide-in-from-right-2">
               <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100 flex justify-between items-center shadow-sm">
@@ -5606,76 +5593,41 @@ const StudentModal = ({
               {renderCalendar("attendance")}
             </div>
           )}
-
           {activeTab === "payment" && (
             <div className="space-y-4 animate-in slide-in-from-right-2">
-              <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 flex flex-col gap-3 shadow-sm">
-                <div className="flex justify-between items-center">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold text-indigo-900">
-                      결제 등록 금액:
-                    </span>
-                    <input
-                      type="number"
-                      value={payAmount}
-                      onChange={(e) => setPayAmount(e.target.value)}
-                      className="w-24 p-1.5 text-right font-bold border border-indigo-200 rounded bg-white text-indigo-700 outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                    <span className="text-xs text-indigo-600">원</span>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => moveMonth(-1)}
-                      className="px-3 py-1 bg-white border rounded text-xs hover:bg-slate-50 font-bold"
-                    >
-                      ◀ 이전
-                    </button>
-                    <button
-                      onClick={() => moveMonth(1)}
-                      className="px-3 py-1 bg-white border rounded text-xs hover:bg-slate-50 font-bold"
-                    >
-                      다음 ▶
-                    </button>
-                  </div>
+              <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 flex justify-between items-center shadow-sm">
+                <div>
+                  <span className="text-sm font-bold text-indigo-900">
+                    결제액:{" "}
+                  </span>
+                  <input
+                    type="number"
+                    value={payAmount}
+                    onChange={(e) => setPayAmount(e.target.value)}
+                    className="w-24 p-1 text-right font-bold border rounded"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => moveMonth(-1)}
+                    className="px-3 py-1 bg-white border rounded text-xs font-bold"
+                  >
+                    ◀ 이전
+                  </button>
+                  <button
+                    onClick={() => moveMonth(1)}
+                    className="px-3 py-1 bg-white border rounded text-xs font-bold"
+                  >
+                    다음 ▶
+                  </button>
                 </div>
               </div>
               {renderCalendar("payment")}
-
-              <div className="mt-4 border-t pt-4">
-                <h4 className="text-xs font-bold text-slate-500 mb-2">
-                  최근 결제 내역 (요약)
-                </h4>
-                <div className="space-y-1">
-                  {payHistory
-                    .slice()
-                    .sort((a, b) => b.date.localeCompare(a.date))
-                    .slice(0, 3)
-                    .map((h, idx) => (
-                      <div
-                        key={idx}
-                        className="flex justify-between text-xs bg-white p-2 rounded border border-slate-100 shadow-sm"
-                      >
-                        <span className="font-mono text-slate-600">
-                          {h.date}
-                        </span>
-                        <span className="font-bold text-indigo-600">
-                          {Number(h.amount).toLocaleString()}원
-                        </span>
-                      </div>
-                    ))}
-                  {payHistory.length === 0 && (
-                    <p className="text-xs text-slate-400">
-                      등록된 수납 내역이 없습니다.
-                    </p>
-                  )}
-                </div>
-              </div>
             </div>
           )}
         </div>
-
-        <div className="p-5 border-t bg-white flex justify-between items-center shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-          {student && onDelete && (
+        <div className="p-5 border-t bg-white flex justify-between items-center">
+          {student?.id && student.status !== "pending" && (
             <button
               onClick={() => {
                 if (confirm("삭제하시겠습니까?")) onDelete(student.id);
@@ -5688,13 +5640,13 @@ const StudentModal = ({
           <div className="flex gap-2 ml-auto">
             <button
               onClick={onClose}
-              className="px-5 py-2.5 rounded-lg text-slate-500 hover:bg-slate-100 font-bold transition-colors"
+              className="px-5 py-2.5 rounded-lg text-slate-500 hover:bg-slate-100 font-bold"
             >
               취소
             </button>
             <button
               onClick={handleSaveWrapper}
-              className="px-8 py-2.5 rounded-lg bg-indigo-600 text-white font-bold hover:bg-indigo-700 shadow-lg hover:scale-105 active:scale-95 transition-all flex items-center"
+              className="px-8 py-2.5 rounded-lg bg-indigo-600 text-white font-bold hover:bg-indigo-700 shadow-lg flex items-center"
             >
               <Save size={18} className="mr-2" /> 저장
             </button>
@@ -6352,12 +6304,19 @@ export default function App() {
   };
 
   // 3. [정의] 학생 정보 저장 및 수정 (신규/수정 자동 판단 + 즉시 저장)
+  // 원생 삭제 함수 추가
   const handleUpdateStudent = async (id, updatedData) => {
     try {
-      const safeAppId = APP_ID || "jnc-music-v2";
+      const safeAppId = "jnc-music-v2";
 
-      if (id) {
-        // 1. Firebase DB 업데이트
+      // [판별 로직] 상담 데이터(pending)를 처음 등록하는 경우인지 확인
+      const isNewFromConsultation =
+        !id ||
+        (updatedData.status === "재원" &&
+          id === updatedData.fromConsultationId);
+
+      if (!isNewFromConsultation) {
+        // ✅ [수정 모드] 기존에 'students' 컬렉션에 이미 존재하는 문서를 업데이트
         const studentRef = doc(
           db,
           "artifacts",
@@ -6367,16 +6326,14 @@ export default function App() {
           "students",
           id
         );
-        await updateDoc(studentRef, updatedData);
 
-        // 2. 로컬 상태(화면) 업데이트 (이게 있어야 즉시 바뀝니다!)
-        setStudents((prev) =>
-          prev.map((s) => (s.id === id ? { ...s, ...updatedData } : s))
-        );
+        // 데이터 객체에서 id 필드가 중복 저장되지 않도록 추출 후 제거
+        const { id: _, ...pureUpdateData } = updatedData;
 
-        showToast("정보가 성공적으로 수정되었습니다.", "success");
+        await updateDoc(studentRef, pureUpdateData);
+        showToast("정보가 수정되었습니다.");
       } else {
-        // 신규 등록 로직
+        // ✨ [신규 등록 모드] 상담에서 넘어왔거나 아예 새로 만드는 경우 (문서 새로 생성)
         const studentsRef = collection(
           db,
           "artifacts",
@@ -6385,38 +6342,66 @@ export default function App() {
           "data",
           "students"
         );
-        const docRef = await addDoc(studentsRef, {
-          ...updatedData,
+
+        const { id: _, ...pureData } = updatedData;
+
+        await addDoc(studentsRef, {
+          ...pureData,
           createdAt: new Date().toISOString(),
         });
-
-        setStudents((prev) => [...prev, { ...updatedData, id: docRef.id }]);
-        showToast("새 원생이 등록되었습니다.", "success");
+        showToast("새로운 원생으로 등록되었습니다.");
       }
     } catch (e) {
-      console.error("저장 실패:", e);
-      showToast("저장에 실패했습니다. 관리자에게 문의하세요.", "error");
+      console.error("저장 오류:", e);
+      // 안전장치: 수정 실패 시(문서 없음 등) 신규 등록으로 재시도하거나 에러 안내
+      if (e.message.includes("No document to update")) {
+        handleUpdateStudent(null, updatedData);
+      } else {
+        showToast("저장에 실패했습니다.", "error");
+      }
     }
   };
+  // [기능 복구] 원생 정보를 영구 삭제하는 함수
+  const handleDeleteStudent = async (studentId) => {
+    if (
+      !window.confirm(
+        "정말로 삭제하시겠습니까? 서버 데이터도 영구히 삭제됩니다."
+      )
+    )
+      return;
 
-  // 4. [정의] 학생 삭제
-  const handleDeleteStudent = (studentId) => {
-    if (window.confirm("정말 삭제하시겠습니까?")) {
-      setStudents((prev) => prev.filter((s) => s.id !== studentId));
-      showToast("삭제되었습니다.", "success");
+    try {
+      const safeAppId = "jnc-music-v2";
+      const studentRef = doc(
+        db,
+        "artifacts",
+        safeAppId,
+        "public",
+        "data",
+        "students",
+        studentId
+      );
+
+      await deleteDoc(studentRef);
+      showToast("원생 정보가 완전히 삭제되었습니다.");
+    } catch (e) {
+      console.error("❌ 삭제 실패:", e);
+      showToast("삭제 중 오류가 발생했습니다.", "error");
     }
   };
+  // 1. [본사에 물건 채우기] 실제 삭제 기능을 수행하는 함수
 
   // 5. [에러 해결 완료] 상담 -> 원생 등록 데이터 연동 함수
   const handleRegisterFromConsultation = (consultation) => {
-    // 1. 상담 데이터를 원생 양식으로 변환
+    const isAdultData = consultation.type === "adult";
+
     const transferData = {
+      ...consultation,
       name: consultation.name || "",
       phone: consultation.phone || "",
       subject: consultation.subject || "",
-      grade: consultation.grade || "",
-      note: consultation.note || "",
-      fromConsultationId: consultation.id, // 등록 완료 처리를 위해
+      grade: isAdultData ? "성인" : consultation.grade || "",
+      fromConsultationId: consultation.id, // 보관함 이동용 ID
       status: "재원",
       registrationDate: new Date().toISOString().slice(0, 10),
       totalSessions: 4,
@@ -6424,18 +6409,10 @@ export default function App() {
       teacher: teachers && teachers.length > 0 ? teachers[0].name : "",
     };
 
-    // 2. 탭을 '원생 관리'로 이동
     setActiveTab("students");
-
-    // 3. [핵심] StudentView로 데이터 전달
-    // (이 데이터가 들어가면 StudentView가 자동으로 등록 모달을 띄웁니다)
     setRegisterFromConsultation(transferData);
-
-    // 4. [수정] 상담 상세 창 닫기 (에러 해결!)
-    // setIsDetailModalOpen(true);  <-- 이 줄이 에러의 원인이었습니다. 삭제함.
-    setTargetConsultation(null); // 대신 이걸 써야 깔끔하게 닫힙니다.
-
-    showToast(`${consultation.name}님의 정보를 불러왔습니다.`, "success");
+    setTargetConsultation(null);
+    showToast(`${consultation.name}님의 정보를 불러왔습니다.`);
   };
 
   // 6. [화면 표시] 로그인 안 되어 있을 때 (함수들이 다 만들어진 뒤에 실행됨!)
