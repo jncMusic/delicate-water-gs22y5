@@ -7461,21 +7461,16 @@ export default function App() {
   );
 }
 
-// [TeacherTimetableView] - 최종 완성 (진단 모드 OFF, 안전장치 ON)
+// [TeacherTimetableView] - 오늘 요일 자동 감지 + 안전장치 유지 버전
 const TeacherTimetableView = ({ students, teachers, user }) => {
-  const [selectedDay, setSelectedDay] = useState("월");
+  // 1. [핵심 수정] 켜자마자 오늘 요일을 계산해서 기본값으로 넣습니다. (깜빡임 방지)
+  const [selectedDay, setSelectedDay] = useState(() => {
+    const todayNum = new Date().getDay(); // 0(일) ~ 6(토)
+    const dayMap = ["일", "월", "화", "수", "목", "금", "토"];
+    return dayMap[todayNum] || "월";
+  });
 
   const DAYS = useMemo(() => ["월", "화", "수", "목", "금", "토", "일"], []);
-
-  useEffect(() => {
-    const todayIndex = new Date().getDay();
-    const dayMap = ["일", "월", "화", "수", "목", "금", "토"];
-    const todayLabel = dayMap[todayIndex];
-    if (DAYS.includes(todayLabel)) {
-      setSelectedDay(todayLabel);
-    }
-  }, [DAYS]);
-
   const HOURS = Array.from({ length: 10 }, (_, i) => i + 13); // 13시 ~ 22시
 
   const getSubjectColor = (subject) => {
@@ -7536,6 +7531,11 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
   // user 데이터가 아직 안 왔으면 로딩 중 처리
   if (!user) return null;
 
+  // 오늘 요일 계산 (UI 표시용)
+  const currentDayLabel = ["일", "월", "화", "수", "목", "금", "토"][
+    new Date().getDay()
+  ];
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 h-full flex flex-col overflow-hidden animate-fade-in">
       <div className="flex flex-col md:flex-row justify-between items-center mb-6 shrink-0 gap-4">
@@ -7550,13 +7550,20 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
             <button
               key={day}
               onClick={() => setSelectedDay(day)}
-              className={`px-4 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${
+              className={`px-4 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap relative ${
                 selectedDay === day
-                  ? "bg-white text-indigo-600 shadow-sm"
+                  ? "bg-white text-indigo-600 shadow-sm ring-1 ring-indigo-100"
                   : "text-slate-500 hover:text-slate-700"
               }`}
             >
               {day}
+              {/* 오늘 요일인 경우 옆에 작은 점(Indicator) 표시 */}
+              {day === currentDayLabel && (
+                <span
+                  className="ml-1 w-1.5 h-1.5 bg-red-400 rounded-full inline-block align-top"
+                  title="오늘"
+                ></span>
+              )}
             </button>
           ))}
         </div>
