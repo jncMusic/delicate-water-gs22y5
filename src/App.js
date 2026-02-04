@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { initializeApp } from "firebase/app";
 import { getAuth, signInAnonymously } from "firebase/auth";
 import {
@@ -5448,7 +5448,8 @@ const AttendanceDetailModal = ({ config, onClose, onConfirm }) => {
 };
 
 // ==================================================================================
-// [1] StudentView: 원생 목록 (심플 버전: 배지 삭제, 전체필터 삭제, 퀵에디트 저장 포함)
+// ==================================================================================
+// [1] StudentView: 원생 목록 (보안 강화: 강사는 본인 학생만 + 수납 기능 차단 + Z-Index 최적화 유지)
 // ==================================================================================
 const StudentView = ({
   students,
@@ -5461,7 +5462,7 @@ const StudentView = ({
   setRegisterFromConsultation,
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
-  // [수정] 기본값을 '재원'으로 설정 ('전체' 버튼이 사라졌으므로 가장 중요한 재원부터 표시)
+  // 기본값을 '재원'으로 설정
   const [filterStatus, setFilterStatus] = useState("재원");
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
@@ -5472,7 +5473,7 @@ const StudentView = ({
 
   const DAYS = ["월", "화", "수", "목", "금", "토", "일"];
 
-  // 1. 권한 필터링
+  // 1. 권한 필터링 (강사는 본인 학생만 볼 수 있음 -> 전체 원생수 노출 원천 차단)
   const accessibleStudents = useMemo(() => {
     if (user.role === "admin") return students;
     return students.filter((s) => s.teacher === user.name);
@@ -5488,7 +5489,7 @@ const StudentView = ({
     }
   }, [registerFromConsultation, setRegisterFromConsultation]);
 
-  // 3. 통계 계산
+  // 3. 통계 계산 (강사는 본인 학생 수만 카운트됨)
   const stats = useMemo(() => {
     const currentMonth = new Date().toISOString().slice(0, 7);
     return {
@@ -5528,7 +5529,6 @@ const StudentView = ({
           status !== "퇴원"
         );
       }
-      // [수정] '전체' 케이스가 없어졌으므로 선택된 status와 일치하는 것만 보여줌
       return matchesSearch && status === filterStatus;
     });
   }, [accessibleStudents, searchTerm, filterStatus]);
@@ -5539,7 +5539,7 @@ const StudentView = ({
     setIsDetailModalOpen(true);
   };
 
-  // 퀵에디트 저장 핸들러 (DB 업데이트 포함)
+  // 퀵에디트 저장
   const handleSaveQuickEdit = async () => {
     try {
       const changedStudentIds = Object.keys(quickEditData);
@@ -5558,7 +5558,6 @@ const StudentView = ({
         const changes = quickEditData[studentId];
         const newSchedules = { ...(student.schedules || {}), ...changes };
 
-        // 빈 값 삭제
         Object.keys(newSchedules).forEach((day) => {
           if (!newSchedules[day] || newSchedules[day].trim() === "") {
             delete newSchedules[day];
@@ -5580,11 +5579,10 @@ const StudentView = ({
   };
 
   return (
-    <div className="space-y-4 animate-fade-in pb-24">
+    <div className="space-y-4 animate-fade-in pb-24 relative z-0">
       {/* 상단 컨트롤바 */}
-      <div className="flex flex-col gap-4 bg-white p-5 rounded-2xl border shadow-sm sticky top-0 z-[60]">
+      <div className="flex flex-col gap-4 bg-white p-5 rounded-2xl border shadow-sm sticky top-0 z-30">
         <div className="flex flex-col xl:flex-row justify-between gap-4">
-          {/* 검색창 */}
           <div className="relative flex-1 max-w-2xl">
             <Search
               className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
@@ -5598,7 +5596,6 @@ const StudentView = ({
             />
           </div>
 
-          {/* [수정] 상태 필터 버튼 ('전체' 버튼 삭제, 재원/휴원/퇴원만 유지) */}
           <div className="flex bg-slate-100 p-1 rounded-xl w-fit shrink-0">
             {["재원", "휴원", "퇴원"].map((status) => (
               <button
@@ -5625,7 +5622,6 @@ const StudentView = ({
           </div>
         </div>
 
-        {/* 하단 툴바 */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
           <button
             onClick={() => setFilterStatus("신규")}
@@ -5663,6 +5659,8 @@ const StudentView = ({
                 </>
               )}
             </button>
+
+            {/* 신규 등록 버튼 (퀵에디트 모드가 아닐 때만 보임) */}
             {!isQuickEditMode && (
               <button
                 onClick={() => openWithTab(null, "info")}
@@ -5678,9 +5676,9 @@ const StudentView = ({
       {/* 테이블 영역 */}
       <div className="bg-white rounded-2xl border shadow-sm overflow-auto max-h-[70vh] relative">
         <table className="w-full text-left border-separate border-spacing-0">
-          <thead className="sticky top-0 z-[50]">
+          <thead className="sticky top-0 z-20">
             <tr className="bg-slate-50 text-slate-500 text-[11px] font-bold uppercase tracking-wider">
-              <th className="p-4 w-60 sticky left-0 top-0 bg-slate-100 z-[55] border-b border-r border-slate-200 shadow-sm">
+              <th className="p-4 w-60 sticky left-0 top-0 bg-slate-100 z-20 border-b border-r border-slate-200 shadow-sm">
                 원생 / 강사 정보
               </th>
               {isQuickEditMode ? (
@@ -5711,10 +5709,9 @@ const StudentView = ({
                   key={s.id}
                   className="hover:bg-slate-50/50 transition-colors group"
                 >
-                  <td className="p-4 sticky left-0 bg-white group-hover:bg-slate-50 z-[40] border-r border-slate-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                  <td className="p-4 sticky left-0 bg-white group-hover:bg-slate-50 z-10 border-r border-slate-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
                     <div className="flex flex-col gap-1.5">
                       <div className="flex items-center gap-2">
-                        {/* [수정] 상태 배지 삭제됨. 이름만 깔끔하게 표시 */}
                         <span
                           className="font-bold text-slate-900 text-base cursor-pointer hover:text-indigo-600 hover:underline decoration-2 underline-offset-4 transition-all"
                           onClick={() => openWithTab(s, "info")}
@@ -5727,7 +5724,6 @@ const StudentView = ({
                       </div>
                       <div className="flex items-center gap-2 text-xs text-slate-600 font-medium">
                         <span>{s.teacher}</span>
-                        {/* 전화번호가 있을 때만 구분선과 번호 표시 */}
                         {s.phone && (
                           <>
                             <span className="text-slate-300">|</span>
@@ -5800,13 +5796,18 @@ const StudentView = ({
                         >
                           <CalendarIcon size={18} />
                         </button>
-                        <button
-                          onClick={() => openWithTab(s, "payment")}
-                          className="p-2.5 bg-white text-indigo-600 border border-indigo-100 rounded-xl shadow-sm hover:bg-indigo-600 hover:text-white transition-all"
-                          title="수납관리"
-                        >
-                          <CreditCard size={18} />
-                        </button>
+
+                        {/* 🔥 [보안] 수납관리 버튼: 오직 관리자(admin)만 볼 수 있음 */}
+                        {user.role === "admin" && (
+                          <button
+                            onClick={() => openWithTab(s, "payment")}
+                            className="p-2.5 bg-white text-indigo-600 border border-indigo-100 rounded-xl shadow-sm hover:bg-indigo-600 hover:text-white transition-all"
+                            title="수납관리"
+                          >
+                            <CreditCard size={18} />
+                          </button>
+                        )}
+
                         <button
                           onClick={() => openWithTab(s, "info")}
                           className="p-2.5 bg-white text-slate-400 border border-slate-200 rounded-xl shadow-sm hover:bg-slate-800 hover:text-white transition-all"
@@ -5844,6 +5845,8 @@ const StudentView = ({
         student={selectedStudent}
         teachers={teachers}
         initialTab={modalTab}
+        // 🔥 [중요] 모달에도 user 정보 전달 (권한 체크용)
+        user={user}
         onSave={(data) => {
           onUpdateStudent(selectedStudent?.id || null, data);
           setIsDetailModalOpen(false);
@@ -5858,7 +5861,7 @@ const StudentView = ({
 };
 
 // ==================================================================================
-// [2] StudentManagementModal: 통합 관리 (기능 유지, 코드 보존)
+// [2] StudentManagementModal: 통합 관리 (보안 강화: 강사는 수납 탭/수강료 정보 숨김)
 // ==================================================================================
 const StudentManagementModal = ({
   isOpen,
@@ -5868,6 +5871,7 @@ const StudentManagementModal = ({
   onSave,
   onDelete,
   initialTab = "info",
+  user, // 🔥 user prop 수신
 }) => {
   const [activeTab, setActiveTab] = useState("info");
   const [formData, setFormData] = useState({});
@@ -5877,6 +5881,12 @@ const StudentManagementModal = ({
   const [payAmount, setPayAmount] = useState(0);
 
   const DAYS = ["월", "화", "수", "목", "금", "토", "일"];
+
+  // 🔥 [보안] 탭 목록 설정 (관리자만 payment 탭 보임)
+  const TABS =
+    user?.role === "admin"
+      ? ["info", "attendance", "payment"]
+      : ["info", "attendance"];
 
   useEffect(() => {
     if (isOpen) {
@@ -5921,9 +5931,15 @@ const StudentManagementModal = ({
         setPayAmount(0);
       }
       setBaseDate(new Date());
-      setActiveTab(initialTab);
+
+      // 만약 초기 탭이 payment인데 강사라면 info로 강제 이동
+      if (initialTab === "payment" && user?.role !== "admin") {
+        setActiveTab("info");
+      } else {
+        setActiveTab(initialTab);
+      }
     }
-  }, [isOpen, student, teachers, initialTab]);
+  }, [isOpen, student, teachers, initialTab, user]);
 
   if (!isOpen) return null;
 
@@ -6079,7 +6095,7 @@ const StudentManagementModal = ({
                 : "✨ 신규 원생 등록"}
             </h3>
             <p className="text-xs text-slate-500 mt-1">
-              기본 정보와 출결, 수납 내역을 통합 관리합니다.
+              기본 정보와 출결을 통합 관리합니다.
             </p>
           </div>
           <button
@@ -6092,7 +6108,7 @@ const StudentManagementModal = ({
 
         {/* 탭 */}
         <div className="flex border-b text-sm font-bold bg-white shrink-0 p-1 gap-1">
-          {["info", "attendance", "payment"].map((tab) => (
+          {TABS.map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -6199,7 +6215,6 @@ const StudentManagementModal = ({
                       ))}
                     </select>
                   </div>
-                  {/* 상태 선택 셀렉트 박스 */}
                   <div className="space-y-1">
                     <label className="text-xs font-bold text-slate-500 ml-1">
                       상태 (재원/휴원/퇴원)
@@ -6219,20 +6234,30 @@ const StudentManagementModal = ({
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-500 ml-1">
-                      정규 수강료 (원)
-                    </label>
-                    <input
-                      type="number"
-                      className="w-full p-3 border rounded-xl bg-slate-50 outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-indigo-600 text-right"
-                      placeholder="0"
-                      value={formData.tuitionFee || ""}
-                      onChange={(e) =>
-                        setFormData({ ...formData, tuitionFee: e.target.value })
-                      }
-                    />
-                  </div>
+                  {/* 🔥 [보안] 수강료 정보: 관리자(admin)만 볼 수 있음 */}
+                  {user?.role === "admin" ? (
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-500 ml-1">
+                        정규 수강료 (원)
+                      </label>
+                      <input
+                        type="number"
+                        className="w-full p-3 border rounded-xl bg-slate-50 outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-indigo-600 text-right"
+                        placeholder="0"
+                        value={formData.tuitionFee || ""}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            tuitionFee: e.target.value,
+                          })
+                        }
+                      />
+                    </div>
+                  ) : (
+                    // 강사는 빈 공간으로 처리하여 레이아웃 유지
+                    <div></div>
+                  )}
+
                   <div className="space-y-1">
                     <label className="text-xs font-bold text-slate-500 ml-1">
                       등록일
@@ -6327,7 +6352,8 @@ const StudentManagementModal = ({
             </div>
           )}
 
-          {activeTab === "payment" && (
+          {/* 🔥 [보안] 수납 탭 내용은 관리자(admin)일 때만 렌더링됨 */}
+          {activeTab === "payment" && user?.role === "admin" && (
             <div className="space-y-4 animate-in slide-in-from-right-2 duration-300">
               <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 flex flex-col gap-3 shadow-sm">
                 <div className="flex justify-between items-center">
@@ -7530,34 +7556,11 @@ export default function App() {
   );
 }
 
-// [TeacherTimetableView] 강사별 주간 시간표 + 날짜 연동 기능 (완성형)
-const TeacherTimetableView = ({ students, teachers, user }) => {
-  // 1. [날짜 연동] 현재 날짜 상태 추가 (YYYY-MM-DD 형식)
-  const [currentDate, setCurrentDate] = useState(
-    new Date().toISOString().slice(0, 10)
-  );
-
-  // 2. 요일 상태 (초기값은 오늘 요일)
-  const [selectedDay, setSelectedDay] = useState(() => {
-    const todayNum = new Date().getDay(); // 0(일) ~ 6(토)
-    const dayMap = ["일", "월", "화", "수", "목", "금", "토"];
-    return dayMap[todayNum] || "월";
-  });
-
-  const DAYS = useMemo(() => ["월", "화", "수", "목", "금", "토", "일"], []);
+// [TeacherTimetableView] - 시원시원한 크기 & 중앙 정렬 & 자동 숨김
+const TeacherTimetableView = ({ students, teachers }) => {
+  const [selectedDay, setSelectedDay] = useState("월");
+  const DAYS = ["월", "화", "수", "목", "금", "토", "일"];
   const HOURS = Array.from({ length: 10 }, (_, i) => i + 13); // 13시 ~ 22시
-
-  // 3. [날짜 변경 핸들러] 날짜를 선택하면 요일도 자동으로 변경됩니다.
-  const handleDateChange = (e) => {
-    const newDate = e.target.value;
-    setCurrentDate(newDate);
-
-    if (newDate) {
-      const dayMap = ["일", "월", "화", "수", "목", "금", "토"];
-      const newDay = dayMap[new Date(newDate).getDay()];
-      setSelectedDay(newDay);
-    }
-  };
 
   const getSubjectColor = (subject) => {
     const map = {
@@ -7570,114 +7573,72 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
     return map[subject] || "bg-slate-50 text-slate-600 border-slate-200";
   };
 
-  const getLessonTime = useCallback(
-    (student) => {
-      if (!student) return null;
-      if (student.status?.trim() !== "재원") return null;
+  // 수업 시간 확인 헬퍼
+  const getLessonTime = (student) => {
+    if (student.status !== "재원") return null;
+    if (student.schedules && student.schedules[selectedDay])
+      return student.schedules[selectedDay];
+    if (student.className === selectedDay && student.time) return student.time;
+    return null;
+  };
 
-      if (student.schedules && student.schedules[selectedDay])
-        return student.schedules[selectedDay];
-      if (student.className === selectedDay && student.time)
-        return student.time;
-      return null;
-    },
-    [selectedDay]
-  );
-
-  // [핵심] user 데이터가 들어오면 필터링 수행
+  // [필터링] 해당 요일에 수업이 있는 강사만 추출
   const activeTeachers = useMemo(() => {
-    if (!user) return []; // 안전장치
-
-    // 1. 강사 로그인: 내 이름과 일치하는 강사 정보 1개만 표시 (공백 제거 비교)
-    if (user.role === "teacher") {
-      const myNameClean = user.name.replace(/\s+/g, "");
-      return teachers.filter((t) => t.name.replace(/\s+/g, "") === myNameClean);
-    }
-
-    // 2. 관리자 로그인: 전체 강사 표시
-    return teachers;
-  }, [teachers, user]);
+    return teachers.filter((t) => {
+      return students.some((s) => s.teacher === t.name && getLessonTime(s));
+    });
+  }, [teachers, students, selectedDay]);
 
   const getLessons = (teacherName, hour) => {
     return students.filter((s) => {
-      const tName1 = (s.teacher || "").replace(/\s+/g, "");
-      const tName2 = (teacherName || "").replace(/\s+/g, "");
-      if (tName1 !== tName2) return false;
-
+      if (s.teacher !== teacherName) return false;
       const timeStr = getLessonTime(s);
       if (!timeStr) return false;
-
       const sHour = parseInt(timeStr.split(":")[0]);
       return sHour === hour;
     });
   };
 
-  if (!user) return null;
-
-  // 오늘 요일 계산 (UI 표시용)
-  const currentDayLabel = ["일", "월", "화", "수", "목", "금", "토"][
-    new Date().getDay()
-  ];
-
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 h-full flex flex-col overflow-hidden animate-fade-in">
       <div className="flex flex-col md:flex-row justify-between items-center mb-6 shrink-0 gap-4">
         <h2 className="text-xl font-bold flex items-center text-slate-800">
-          <LayoutGrid className="mr-2 text-indigo-600" />
-          {user.role === "admin" ? "강사별 주간 시간표" : "나의 수업 일정"}
+          <LayoutGrid className="mr-2 text-indigo-600" /> 강사별 주간 시간표
         </h2>
 
-        {/* [추가된 기능] 날짜 선택 달력 & 요일 버튼 */}
-        <div className="flex items-center gap-3 bg-slate-50 p-1.5 rounded-xl">
-          {/* 달력 아이콘 + 날짜 선택기 */}
-          <div className="relative flex items-center bg-white px-3 py-2 rounded-lg border shadow-sm group hover:border-indigo-300 transition-colors">
-            <CalendarIcon size={16} className="text-indigo-500 mr-2" />
-            <input
-              type="date"
-              value={currentDate}
-              onChange={handleDateChange}
-              className="font-bold text-slate-700 bg-transparent outline-none text-sm cursor-pointer"
-            />
-          </div>
-
-          <div className="h-6 w-px bg-slate-300 mx-1"></div>
-
-          {/* 요일 버튼들 */}
-          <div className="flex overflow-x-auto max-w-full no-scrollbar gap-1">
-            {DAYS.map((day) => (
-              <button
-                key={day}
-                onClick={() => setSelectedDay(day)}
-                className={`px-3 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap relative ${
-                  selectedDay === day
-                    ? "bg-indigo-600 text-white shadow-md shadow-indigo-200"
-                    : "text-slate-500 hover:bg-white hover:text-indigo-600"
-                }`}
-              >
-                {day}
-                {/* 오늘 요일 표시 점 */}
-                {day === currentDayLabel && (
-                  <span
-                    className="absolute top-1 right-1 w-1.5 h-1.5 bg-rose-500 rounded-full border border-white"
-                    title="오늘"
-                  ></span>
-                )}
-              </button>
-            ))}
-          </div>
+        {/* 요일 선택 버튼 */}
+        <div className="flex bg-slate-100 p-1 rounded-lg overflow-x-auto max-w-full no-scrollbar">
+          {DAYS.map((day) => (
+            <button
+              key={day}
+              onClick={() => setSelectedDay(day)}
+              className={`px-4 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${
+                selectedDay === day
+                  ? "bg-white text-indigo-600 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              {day}
+            </button>
+          ))}
         </div>
       </div>
 
       <div className="flex-1 overflow-auto border rounded-xl bg-slate-50/50 relative">
+        {/* 테이블 컨테이너: 중앙 정렬을 위해 inline-block 사용 및 min-w 설정 */}
         <div className="inline-block min-w-full">
           {/* 헤더 */}
           <div className="flex border-b bg-white sticky top-0 z-20 shadow-sm">
+            {/* 시간축 헤더 */}
             <div className="w-[80px] p-4 text-center text-xs font-bold text-slate-400 border-r bg-slate-50 sticky left-0 z-30 shrink-0">
               TIME
             </div>
 
+            {/* 강사 헤더 (가운데 정렬) */}
             {activeTeachers.length > 0 ? (
               <div className="flex flex-1 justify-center">
+                {" "}
+                {/* 여기가 중앙 정렬 핵심 */}
                 {activeTeachers.map((t) => (
                   <div
                     key={t.id}
@@ -7688,12 +7649,8 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
                 ))}
               </div>
             ) : (
-              <div className="flex-1 p-10 text-center text-slate-400 font-medium">
-                <p>표시할 강사 정보가 없습니다.</p>
-                <p className="text-xs mt-2 opacity-70">
-                  (Tip: 강사 관리 메뉴의 이름과 로그인 이름이 같은지
-                  확인해주세요)
-                </p>
+              <div className="flex-1 p-4 text-center text-slate-400 font-medium">
+                📅 {selectedDay}요일은 예정된 수업이 없습니다.
               </div>
             )}
           </div>
@@ -7702,9 +7659,13 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
           <div className="divide-y divide-slate-200">
             {HOURS.map((hour) => (
               <div key={hour} className="flex min-h-[100px]">
+                {" "}
+                {/* 높이 100px로 넉넉하게 */}
+                {/* 시간 표시 */}
                 <div className="w-[80px] p-2 text-center text-xs font-bold text-slate-400 border-r bg-white flex flex-col justify-start pt-3 sticky left-0 z-10 shrink-0">
                   {hour}:00
                 </div>
+                {/* 강사별 셀 (가운데 정렬) */}
                 {activeTeachers.length > 0 && (
                   <div className="flex flex-1 justify-center">
                     {activeTeachers.map((t) => {
@@ -7719,7 +7680,7 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
                             return (
                               <div
                                 key={idx}
-                                className={`px-3 py-2 rounded-lg border text-xs shadow-sm cursor-pointer hover:scale-105 transition-transform ${getSubjectColor(
+                                className={`px-3 py-2 rounded-lg border text-xs shadow-sm ${getSubjectColor(
                                   l.subject
                                 )}`}
                               >
@@ -7740,6 +7701,7 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
                     })}
                   </div>
                 )}
+                {/* 수업 없는 날 빈 공간 채우기 */}
                 {activeTeachers.length === 0 && (
                   <div className="flex-1 bg-transparent"></div>
                 )}
