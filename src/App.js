@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  useRef,
+} from "react";
 import { initializeApp } from "firebase/app";
 import { getAuth, signInAnonymously } from "firebase/auth";
 import {
@@ -12,6 +18,8 @@ import {
   deleteDoc,
   getDocs,
   setDoc,
+  query, // 🔥 쿼리 관련 기능 추가 (안전 대비)
+  where, // 🔥 쿼리 관련 기능 추가 (안전 대비)
 } from "firebase/firestore";
 import {
   LayoutDashboard,
@@ -47,18 +55,21 @@ import {
   ListTodo,
   Filter,
   CalendarDays,
-  Archive, // 상담 관리용
-  StickyNote, // 상담 메모용
-  Timer, // 결제 관리용
-  History, // 결제 이력용
-  Pencil, // 수정 버튼용
-  Grid, // 👈 달력 월간 뷰용 (현재 에러 해결)
-  Columns, // 👈 달력 주간 뷰용
-  HardDrive, // 백업용
-  Download, // 다운로드용
-  Upload, // 업로드용
-  CheckSquare, // 체크박스용
+  Archive,
+  StickyNote,
+  Timer,
+  History,
+  Pencil,
+  Grid,
+  Columns,
+  HardDrive,
+  Download,
+  Upload,
+  CheckSquare,
+  Printer, // 🔥 인쇄 아이콘 추가
+  Music, // 🔥 파트 아이콘 추가
 } from "lucide-react";
+import html2canvas from "html2canvas"; // 🔥 이미지 저장 라이브러리 추가
 
 // =================================================================
 // 1. Firebase 설정
@@ -7556,154 +7567,388 @@ export default function App() {
   );
 }
 
-// [TeacherTimetableView] - 시원시원한 크기 & 중앙 정렬 & 자동 숨김
-const TeacherTimetableView = ({ students, teachers }) => {
+// [TeacherTimetableView] - (파트필터 + 인쇄 + 보안 + 모바일최적화 + 중앙정렬/자동숨김 유지)
+const TeacherTimetableView = ({ students, teachers, user }) => {
+  // 1. 상태 관리
   const [selectedDay, setSelectedDay] = useState("월");
-  const DAYS = ["월", "화", "수", "목", "금", "토", "일"];
-  const HOURS = Array.from({ length: 10 }, (_, i) => i + 13); // 13시 ~ 22시
+  const [viewMode, setViewMode] = useState("daily");
+  const [selectedPart, setSelectedPart] = useState("전체"); // 파트 필터
 
-  const getSubjectColor = (subject) => {
-    const map = {
-      피아노: "bg-indigo-50 text-indigo-700 border-indigo-200",
-      바이올린: "bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200",
-      플루트: "bg-emerald-50 text-emerald-700 border-emerald-200",
-      첼로: "bg-amber-50 text-amber-700 border-amber-200",
-      성악: "bg-rose-50 text-rose-700 border-rose-200",
-    };
-    return map[subject] || "bg-slate-50 text-slate-600 border-slate-200";
+  const printRef = useRef(null);
+
+  const DAYS = ["월", "화", "수", "목", "금", "토", "일"];
+  // 운영 시간: 09:00 ~ 22:00
+  const HOURS = Array.from({ length: 14 }, (_, i) => i + 9);
+
+  // 파트 정의
+  const PARTS = [
+    { id: "전체", label: "전체" },
+    { id: "피아노", label: "🎹 피아노" },
+    { id: "관현악", label: "🎻 관현악" },
+    { id: "실용", label: "🎸 실용" },
+    { id: "성악", label: "🎤 성악" },
+  ];
+
+  // 과목 -> 파트 매핑
+  const getPartBySubject = (subject) => {
+    if (!subject) return "기타";
+    if (subject.includes("피아노")) return "피아노";
+    if (
+      ["플루트", "클라리넷", "바이올린", "첼로"].some((s) =>
+        subject.includes(s)
+      )
+    )
+      return "관현악";
+    if (["드럼", "기타", "베이스", "작곡"].some((s) => subject.includes(s)))
+      return "실용";
+    if (["성악", "보컬"].some((s) => subject.includes(s))) return "성악";
+    return "기타";
   };
 
-  // 수업 시간 확인 헬퍼
-  const getLessonTime = (student) => {
+  const isTeacherMode = user?.role === "teacher";
+  const myName = user?.name;
+
+  // 오늘 요일 자동 세팅
+  useEffect(() => {
+    const todayIndex = new Date().getDay();
+    const mapping = {
+      1: "월",
+      2: "화",
+      3: "수",
+      4: "목",
+      5: "금",
+      6: "토",
+      0: "일",
+    };
+    setSelectedDay(mapping[todayIndex] || "월");
+  }, []);
+
+  // 이미지 저장
+  const handleDownloadImage = async () => {
+    if (!printRef.current) return;
+    try {
+      const canvas = await html2canvas(printRef.current, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+      });
+      const link = document.createElement("a");
+      link.href = canvas.toDataURL("image/png");
+      link.download = `시간표_${selectedPart}_${selectedDay}.png`;
+      link.click();
+    } catch (err) {
+      console.error(err);
+      alert("저장 실패");
+    }
+  };
+
+  const handlePrint = () => window.print();
+
+  const getSubjectColor = (subject) => {
+    const part = getPartBySubject(subject);
+    const map = {
+      피아노: "bg-indigo-50 text-indigo-700 border-indigo-200",
+      관현악: "bg-emerald-50 text-emerald-700 border-emerald-200",
+      실용: "bg-amber-50 text-amber-700 border-amber-200",
+      성악: "bg-rose-50 text-rose-700 border-rose-200",
+    };
+    return map[part] || "bg-slate-50 text-slate-600 border-slate-200";
+  };
+
+  const getLessonTime = (student, targetDay) => {
     if (student.status !== "재원") return null;
-    if (student.schedules && student.schedules[selectedDay])
-      return student.schedules[selectedDay];
-    if (student.className === selectedDay && student.time) return student.time;
+    if (student.schedules && student.schedules[targetDay])
+      return student.schedules[targetDay];
+    if (student.className === targetDay && student.time) return student.time;
     return null;
   };
 
-  // [필터링] 해당 요일에 수업이 있는 강사만 추출
-  const activeTeachers = useMemo(() => {
-    return teachers.filter((t) => {
-      return students.some((s) => s.teacher === t.name && getLessonTime(s));
-    });
-  }, [teachers, students, selectedDay]);
-
-  const getLessons = (teacherName, hour) => {
+  // 수업 데이터 필터링 (파트 필터 적용)
+  const getLessons = (teacherName, day, hour) => {
     return students.filter((s) => {
+      // 1. 기본 필터 (강사 매칭 & 보안)
+      if (isTeacherMode && teacherName !== myName) return false;
       if (s.teacher !== teacherName) return false;
-      const timeStr = getLessonTime(s);
+
+      // 2. 시간 확인
+      const timeStr = getLessonTime(s, day);
       if (!timeStr) return false;
       const sHour = parseInt(timeStr.split(":")[0]);
-      return sHour === hour;
+      if (sHour !== hour) return false;
+
+      // 3. 파트 필터 적용
+      if (selectedPart !== "전체") {
+        const studentPart = getPartBySubject(s.subject || "");
+        if (studentPart !== selectedPart) return false;
+      }
+
+      return true;
     });
   };
 
-  return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 h-full flex flex-col overflow-hidden animate-fade-in">
-      <div className="flex flex-col md:flex-row justify-between items-center mb-6 shrink-0 gap-4">
-        <h2 className="text-xl font-bold flex items-center text-slate-800">
-          <LayoutGrid className="mr-2 text-indigo-600" /> 강사별 주간 시간표
-        </h2>
+  // 화면 표시 강사 목록 (자동 숨김 + 파트 필터 + 중앙 정렬용 데이터)
+  const activeTeachers = useMemo(() => {
+    let targetTeachers = teachers;
 
-        {/* 요일 선택 버튼 */}
-        <div className="flex bg-slate-100 p-1 rounded-lg overflow-x-auto max-w-full no-scrollbar">
-          {DAYS.map((day) => (
+    // 강사 모드면 본인만
+    if (isTeacherMode) {
+      targetTeachers = teachers.filter((t) => t.name === myName);
+    }
+
+    // 관리자 모드: 해당 요일에 수업이 있고 && 선택된 파트 수업이 있는 강사만 표시 (자동 숨김)
+    return targetTeachers.filter((t) => {
+      const hasLesson = students.some((s) => {
+        const isMyStudent = s.teacher === t.name;
+        const hasTime = getLessonTime(s, selectedDay);
+
+        let isPartMatch = true;
+        if (selectedPart !== "전체") {
+          isPartMatch = getPartBySubject(s.subject || "") === selectedPart;
+        }
+
+        return isMyStudent && hasTime && isPartMatch;
+      });
+      return hasLesson;
+    });
+  }, [teachers, students, selectedDay, isTeacherMode, myName, selectedPart]);
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4 md:p-6 h-full flex flex-col overflow-hidden animate-fade-in relative z-0">
+      {/* 상단 컨트롤바 (인쇄 시 숨김) */}
+      <div className="flex flex-col gap-3 mb-4 shrink-0 print:hidden">
+        {/* 1열: 타이틀 + 기능 버튼 */}
+        <div className="flex justify-between items-center">
+          <h2 className="text-lg md:text-xl font-bold flex items-center text-slate-800">
+            <LayoutGrid className="mr-2 text-indigo-600" />
+            {isTeacherMode ? `${myName} T 시간표` : "종합 시간표"}
+          </h2>
+          <div className="flex gap-2">
             <button
-              key={day}
-              onClick={() => setSelectedDay(day)}
-              className={`px-4 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${
-                selectedDay === day
-                  ? "bg-white text-indigo-600 shadow-sm"
-                  : "text-slate-500 hover:text-slate-700"
-              }`}
+              onClick={handleDownloadImage}
+              className="p-2 rounded-lg border hover:bg-slate-50 text-slate-500 shadow-sm"
+              title="이미지 저장"
             >
-              {day}
+              <Download size={18} />
             </button>
-          ))}
+            <button
+              onClick={handlePrint}
+              className="p-2 rounded-lg border hover:bg-slate-50 text-slate-500 shadow-sm"
+              title="출력하기"
+            >
+              <Printer size={18} />
+            </button>
+          </div>
+        </div>
+
+        {/* 2열: 파트 필터 & 보기 모드 & 요일 선택 */}
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 bg-slate-50/50 p-2 rounded-xl border border-slate-100">
+          {/* 파트 선택 버튼들 */}
+          <div className="flex gap-1 overflow-x-auto max-w-full no-scrollbar pb-1 md:pb-0">
+            {PARTS.map((part) => (
+              <button
+                key={part.id}
+                onClick={() => setSelectedPart(part.id)}
+                className={`px-3 py-1.5 rounded-lg text-xs md:text-sm font-bold whitespace-nowrap transition-all border ${
+                  selectedPart === part.id
+                    ? "bg-indigo-600 text-white border-indigo-600 shadow-md"
+                    : "bg-white text-slate-500 border-slate-200 hover:bg-slate-100"
+                }`}
+              >
+                {part.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex gap-2 w-full md:w-auto justify-end">
+            {/* 강사 전용: 보기 모드 */}
+            {isTeacherMode && (
+              <div className="flex bg-white border border-slate-200 p-1 rounded-lg">
+                <button
+                  onClick={() => setViewMode("daily")}
+                  className={`px-3 py-1.5 rounded-md text-xs font-bold ${
+                    viewMode === "daily"
+                      ? "bg-slate-100 text-indigo-600"
+                      : "text-slate-400"
+                  }`}
+                >
+                  오늘
+                </button>
+                <button
+                  onClick={() => setViewMode("weekly")}
+                  className={`px-3 py-1.5 rounded-md text-xs font-bold ${
+                    viewMode === "weekly"
+                      ? "bg-slate-100 text-indigo-600"
+                      : "text-slate-400"
+                  }`}
+                >
+                  주간
+                </button>
+              </div>
+            )}
+
+            {/* 요일 선택 (관리자 or 강사 일간모드) */}
+            {(!isTeacherMode || (isTeacherMode && viewMode === "daily")) && (
+              <div className="flex bg-white border border-slate-200 p-1 rounded-lg overflow-x-auto max-w-[180px] md:max-w-none no-scrollbar">
+                {DAYS.map((day) => (
+                  <button
+                    key={day}
+                    onClick={() => setSelectedDay(day)}
+                    className={`px-3 py-1.5 rounded-md text-xs font-bold whitespace-nowrap ${
+                      selectedDay === day
+                        ? "bg-indigo-50 text-indigo-600"
+                        : "text-slate-400 hover:text-slate-600"
+                    }`}
+                  >
+                    {day}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto border rounded-xl bg-slate-50/50 relative">
-        {/* 테이블 컨테이너: 중앙 정렬을 위해 inline-block 사용 및 min-w 설정 */}
-        <div className="inline-block min-w-full">
+      {/* 시간표 영역 (인쇄 대상) */}
+      <div
+        className="flex-1 overflow-auto border rounded-xl bg-slate-50/50 relative print:overflow-visible print:bg-white print:border-none"
+        ref={printRef}
+      >
+        <div className="inline-block min-w-full pb-20 print:pb-0">
           {/* 헤더 */}
-          <div className="flex border-b bg-white sticky top-0 z-20 shadow-sm">
-            {/* 시간축 헤더 */}
-            <div className="w-[80px] p-4 text-center text-xs font-bold text-slate-400 border-r bg-slate-50 sticky left-0 z-30 shrink-0">
+          <div className="flex border-b bg-white sticky top-0 z-10 shadow-sm print:static print:shadow-none print:border-slate-300">
+            <div className="w-[50px] md:w-[80px] p-2 md:p-4 text-center text-[10px] md:text-xs font-bold text-slate-400 border-r bg-slate-50 sticky left-0 z-20 shrink-0 flex items-center justify-center print:bg-white print:border-slate-300">
               TIME
             </div>
 
-            {/* 강사 헤더 (가운데 정렬) */}
-            {activeTeachers.length > 0 ? (
-              <div className="flex flex-1 justify-center">
-                {" "}
-                {/* 여기가 중앙 정렬 핵심 */}
-                {activeTeachers.map((t) => (
+            {isTeacherMode && viewMode === "weekly" ? (
+              // 강사 주간 보기
+              <div className="flex flex-1 min-w-max">
+                {DAYS.map((day) => (
                   <div
-                    key={t.id}
-                    className="w-[160px] p-4 text-center text-base font-bold border-r text-slate-800 bg-white shrink-0"
+                    key={day}
+                    className={`flex-1 min-w-[100px] md:min-w-[140px] p-2 md:p-4 text-center text-sm md:text-base font-bold border-r bg-white print:border-slate-300 ${
+                      selectedDay === day
+                        ? "text-indigo-600 bg-indigo-50/30 print:bg-transparent"
+                        : "text-slate-800"
+                    }`}
                   >
-                    {t.name} 선생님
+                    {day}
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="flex-1 p-4 text-center text-slate-400 font-medium">
-                📅 {selectedDay}요일은 예정된 수업이 없습니다.
+              // 관리자/강사 일간 보기 (🔥 중앙 정렬 justify-center 적용됨)
+              <div className="flex flex-1 justify-center min-w-max">
+                {activeTeachers.length > 0 ? (
+                  activeTeachers.map((t) => (
+                    <div
+                      key={t.id}
+                      className="w-[120px] md:w-[160px] p-2 md:p-4 text-center text-sm md:text-base font-bold border-r text-slate-800 bg-white shrink-0 print:border-slate-300"
+                    >
+                      {isTeacherMode ? `${selectedDay}요일` : `${t.name} T`}
+                    </div>
+                  ))
+                ) : (
+                  <div className="flex-1 p-4 text-center text-slate-400 font-medium whitespace-nowrap text-sm">
+                    {selectedPart === "전체"
+                      ? `📅 ${selectedDay}요일 수업 없음`
+                      : `🔍 [${selectedPart}] 파트 수업 없음`}
+                  </div>
+                )}
               </div>
             )}
           </div>
 
           {/* 바디 */}
-          <div className="divide-y divide-slate-200">
+          <div className="divide-y divide-slate-200 print:divide-slate-300">
             {HOURS.map((hour) => (
-              <div key={hour} className="flex min-h-[100px]">
-                {" "}
-                {/* 높이 100px로 넉넉하게 */}
-                {/* 시간 표시 */}
-                <div className="w-[80px] p-2 text-center text-xs font-bold text-slate-400 border-r bg-white flex flex-col justify-start pt-3 sticky left-0 z-10 shrink-0">
+              <div
+                key={hour}
+                className="flex min-h-[80px] md:min-h-[100px] print:min-h-[80px]"
+              >
+                {/* 시간축 */}
+                <div className="w-[50px] md:w-[80px] p-1 md:p-2 text-center text-[10px] md:text-xs font-bold text-slate-400 border-r bg-white flex flex-col justify-start pt-2 sticky left-0 z-10 shrink-0 print:static print:border-slate-300">
                   {hour}:00
                 </div>
-                {/* 강사별 셀 (가운데 정렬) */}
-                {activeTeachers.length > 0 && (
-                  <div className="flex flex-1 justify-center">
-                    {activeTeachers.map((t) => {
-                      const lessons = getLessons(t.name, hour);
+
+                {isTeacherMode && viewMode === "weekly" ? (
+                  // 강사 주간 보기 바디
+                  <div className="flex flex-1 min-w-max">
+                    {DAYS.map((day) => {
+                      const lessons = getLessons(myName, day, hour);
                       return (
                         <div
-                          key={t.id}
-                          className="w-[160px] border-r p-2 bg-white hover:bg-slate-50 transition-colors shrink-0 flex flex-col gap-1"
+                          key={day}
+                          className={`flex-1 min-w-[100px] md:min-w-[140px] border-r p-1 hover:bg-slate-50 transition-colors flex flex-col gap-1 print:border-slate-300 ${
+                            selectedDay === day
+                              ? "bg-indigo-50/10 print:bg-transparent"
+                              : "bg-white"
+                          }`}
                         >
-                          {lessons.map((l, idx) => {
-                            const timeTxt = getLessonTime(l);
-                            return (
-                              <div
-                                key={idx}
-                                className={`px-3 py-2 rounded-lg border text-xs shadow-sm ${getSubjectColor(
-                                  l.subject
-                                )}`}
-                              >
-                                <div className="font-bold flex justify-between items-center mb-1">
-                                  <span className="text-sm truncate">
-                                    {l.name}
-                                  </span>
-                                </div>
-                                <div className="flex justify-between items-center opacity-80 text-[10px]">
-                                  <span>{timeTxt}</span>
-                                  <span>{l.grade}</span>
-                                </div>
+                          {lessons.map((l, idx) => (
+                            <div
+                              key={idx}
+                              className={`px-2 py-1 md:px-3 md:py-2 rounded-lg border text-[10px] md:text-xs shadow-sm print:border-slate-400 print:shadow-none ${getSubjectColor(
+                                l.subject
+                              )}`}
+                            >
+                              <div className="font-bold flex justify-between items-center mb-0.5">
+                                <span className="truncate">{l.name}</span>
                               </div>
-                            );
-                          })}
+                              <div className="flex justify-between items-center opacity-80 text-[9px] md:text-[10px]">
+                                <span>{getLessonTime(l, day)}</span>
+                                <span className="hidden md:inline">
+                                  {l.grade}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       );
                     })}
                   </div>
-                )}
-                {/* 수업 없는 날 빈 공간 채우기 */}
-                {activeTeachers.length === 0 && (
-                  <div className="flex-1 bg-transparent"></div>
+                ) : (
+                  // 관리자/강사 일간 보기 바디 (🔥 중앙 정렬 justify-center 적용됨)
+                  <div className="flex flex-1 justify-center min-w-max">
+                    {activeTeachers.map((t) => {
+                      const targetName = isTeacherMode ? myName : t.name;
+                      const lessons = getLessons(targetName, selectedDay, hour);
+                      return (
+                        <div
+                          key={t.id}
+                          className={`${
+                            isTeacherMode ? "w-full" : "w-[120px] md:w-[160px]"
+                          } border-r p-1 bg-white hover:bg-slate-50 transition-colors shrink-0 flex flex-col gap-1 print:border-slate-300`}
+                        >
+                          {lessons.map((l, idx) => (
+                            <div
+                              key={idx}
+                              className={`px-2 py-1 md:px-3 md:py-2 rounded-lg border text-[10px] md:text-xs shadow-sm print:border-slate-400 print:shadow-none ${getSubjectColor(
+                                l.subject
+                              )}`}
+                            >
+                              <div className="font-bold flex justify-between items-center mb-0.5">
+                                <span className="truncate">{l.name}</span>
+                                <span className="md:hidden text-[9px] opacity-70">
+                                  {l.grade}
+                                </span>
+                              </div>
+                              <div className="flex justify-between items-center opacity-80 text-[9px] md:text-[10px]">
+                                <span>{getLessonTime(l, selectedDay)}</span>
+                                <span className="hidden md:inline">
+                                  {l.grade}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
+                    {/* 빈 공간 처리 */}
+                    {activeTeachers.length === 0 && (
+                      <div className="flex-1 bg-transparent"></div>
+                    )}
+                  </div>
                 )}
               </div>
             ))}
