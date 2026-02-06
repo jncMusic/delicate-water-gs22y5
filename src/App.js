@@ -7433,9 +7433,17 @@ export default function App() {
         isInitialLogin={!currentUser}
       />
 
+      {/* 3-0. 모바일 사이드바 backdrop */}
+      {isSidebarOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/40 md:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
       {/* 3. 좌측 사이드바 (3단 구조: 헤더 - 스크롤 메뉴 - 하단 고정) */}
       <div
-        className={`fixed md:static inset-y-0 left-0 z-30 w-64 bg-white border-r transform transition-transform duration-300 ${
+        className={`fixed md:static inset-y-0 left-0 z-50 w-64 bg-white border-r transform transition-transform duration-300 ${
           isSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         } shadow-lg md:shadow-none flex flex-col h-full`}
       >
@@ -7644,8 +7652,11 @@ export default function App() {
 
         <header className="md:hidden bg-white border-b p-4 flex justify-between items-center shrink-0">
           <h1 className="font-bold text-lg">JnC Music</h1>
-          <button onClick={() => setIsSidebarOpen(!isSidebarOpen)}>
-            <Menu />
+          <button
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            className="p-1 rounded-lg hover:bg-slate-100 transition-colors"
+          >
+            {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
           </button>
         </header>
 
