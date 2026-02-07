@@ -1875,6 +1875,7 @@ const ConsultationView = ({
   onClearTargetConsultation,
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [currentConsult, setCurrentConsult] = useState({
     id: null,
     name: "",
@@ -1948,15 +1949,18 @@ const ConsultationView = ({
     setCurrentConsult({ ...currentConsult, followUpActions: nextActions });
   };
 
-  // 4. [기능 보존] 저장 로직 (Firebase 연동)
+  // 4. [기능 보존] 저장 로직 (Firebase 연동) + 중복 클릭 방지
   const handleSaveConsultation = async () => {
+    if (isSaving) return; // 중복 클릭 방지
     if (!currentConsult.name || !currentConsult.phone) {
       showToast("이름과 연락처를 입력해주세요.", "warning");
       return;
     }
+    setIsSaving(true);
     try {
       const safeAppId = APP_ID || "jnc-music-v2";
       if (currentConsult.id) {
+        const { id, ...dataToUpdate } = currentConsult;
         await updateDoc(
           doc(
             db,
@@ -1967,7 +1971,7 @@ const ConsultationView = ({
             "consultations",
             currentConsult.id
           ),
-          { ...currentConsult }
+          dataToUpdate
         );
         showToast("수정 저장되었습니다.", "success");
       } else {
@@ -1989,6 +1993,8 @@ const ConsultationView = ({
     } catch (e) {
       console.error(e);
       showToast("저장 중 오류가 발생했습니다.", "error");
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -2258,9 +2264,10 @@ const ConsultationView = ({
 
               <button
                 onClick={handleSaveConsultation}
-                className="w-full py-3.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg transition-all active:scale-95"
+                disabled={isSaving}
+                className={`w-full py-3.5 rounded-xl font-bold shadow-lg transition-all ${isSaving ? "bg-slate-400 text-slate-200 cursor-not-allowed" : "bg-indigo-600 text-white hover:bg-indigo-700 active:scale-95"}`}
               >
-                {currentConsult.id ? "수정 내용 저장" : "상담 내역 등록"}
+                {isSaving ? "저장 중..." : currentConsult.id ? "수정 내용 저장" : "상담 내역 등록"}
               </button>
             </div>
           </div>
@@ -6103,6 +6110,7 @@ const StudentManagementModal = ({
   const [payHistory, setPayHistory] = useState([]);
   const [baseDate, setBaseDate] = useState(new Date());
   const [payAmount, setPayAmount] = useState(0);
+  const [isSaving, setIsSaving] = useState(false);
 
   const DAYS = ["월", "화", "수", "목", "금", "토", "일"];
 
@@ -6218,7 +6226,9 @@ const StudentManagementModal = ({
   };
 
   const handleFinalSave = () => {
+    if (isSaving) return; // 중복 클릭 방지
     if (!formData.name) return alert("이름을 입력해주세요.");
+    setIsSaving(true);
     const updatedData = {
       ...formData,
       attendanceHistory: attHistory,
@@ -6674,10 +6684,11 @@ const StudentManagementModal = ({
           </button>
           <button
             onClick={handleFinalSave}
-            className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 hover:scale-105 active:scale-95 transition-all flex items-center"
+            disabled={isSaving}
+            className={`px-8 py-3 rounded-xl font-bold shadow-lg shadow-indigo-200 transition-all flex items-center ${isSaving ? "bg-slate-400 text-slate-200 cursor-not-allowed" : "bg-indigo-600 text-white hover:bg-indigo-700 hover:scale-105 active:scale-95"}`}
           >
             <Save size={18} className="mr-2" />
-            {activeTab === "info" ? "정보 저장" : "변경사항 저장"}
+            {isSaving ? "저장 중..." : activeTab === "info" ? "정보 저장" : "변경사항 저장"}
           </button>
         </div>
       </div>
@@ -7108,24 +7119,25 @@ export default function App() {
       document.body.appendChild(script);
     }
 
+    const unsubscribes = [];
     signInAnonymously(auth).then(() => {
       console.log("Firebase 접속 성공");
       const safeAppId = APP_ID || "jnc-music-v2"; // 안전장치
 
       // 1. 학생
-      onSnapshot(
+      unsubscribes.push(onSnapshot(
         collection(db, "artifacts", safeAppId, "public", "data", "students"),
         (s) => setStudents(s.docs.map((d) => ({ ...d.data(), id: d.id })))
-      );
+      ));
 
       // 2. 강사
-      onSnapshot(
+      unsubscribes.push(onSnapshot(
         collection(db, "artifacts", safeAppId, "public", "data", "teachers"),
         (s) => setTeachers(s.docs.map((d) => ({ ...d.data(), id: d.id })))
-      );
+      ));
 
       // 3. 상담
-      onSnapshot(
+      unsubscribes.push(onSnapshot(
         collection(
           db,
           "artifacts",
@@ -7135,16 +7147,16 @@ export default function App() {
           "consultations"
         ),
         (s) => setConsultations(s.docs.map((d) => ({ ...d.data(), id: d.id })))
-      );
+      ));
 
       // 4-0. 관리자 비밀번호
-      onSnapshot(
+      unsubscribes.push(onSnapshot(
         doc(db, "artifacts", safeAppId, "public", "data", "settings", "admin"),
         (d) => { if (d.exists() && d.data().password) setAdminPassword(d.data().password); }
-      );
+      ));
 
       // 4. [문제 해결] 보고서 데이터 (ID가 덮어씌워지지 않도록 순서 변경)
-      onSnapshot(
+      unsubscribes.push(onSnapshot(
         collection(db, "artifacts", safeAppId, "public", "data", "reports"),
         (s) => {
           const loadedReports = s.docs.map((d) => ({
@@ -7153,8 +7165,10 @@ export default function App() {
           }));
           setReports(loadedReports);
         }
-      );
+      ));
     });
+    // cleanup: StrictMode에서 리스너 중복 등록 방지
+    return () => unsubscribes.forEach((unsub) => unsub());
   }, []);
 
   const showToast = (text, type = "success") => {
@@ -7378,10 +7392,9 @@ export default function App() {
             const studentRef = doc(
               db, "artifacts", safeAppId, "public", "data", "students", existingStudent.id
             );
-            const { fromConsultationId, ...dataToUpdate } = updatedData;
-            await updateDoc(studentRef, dataToUpdate);
+            await updateDoc(studentRef, updatedData);
             setStudents((prev) =>
-              prev.map((s) => (s.id === existingStudent.id ? { ...s, ...dataToUpdate } : s))
+              prev.map((s) => (s.id === existingStudent.id ? { ...s, ...updatedData } : s))
             );
             showToast("기존 원생 정보가 수정되었습니다.", "success");
             return;
@@ -7397,20 +7410,18 @@ export default function App() {
           "data",
           "students"
         );
-        // fromConsultationId는 상담 연동 후 제거 (편집 시 혼동 방지)
-        const { fromConsultationId, ...studentData } = updatedData;
         const docRef = await addDoc(studentsRef, {
-          ...studentData,
+          ...updatedData,
           createdAt: new Date().toISOString(),
         });
 
-        setStudents((prev) => [...prev, { ...studentData, id: docRef.id }]);
+        setStudents((prev) => [...prev, { ...updatedData, id: docRef.id }]);
 
         // 상담에서 넘어온 경우 상담 상태를 "registered"로 변경
-        if (fromConsultationId) {
+        if (updatedData.fromConsultationId) {
           try {
             const consultRef = doc(
-              db, "artifacts", safeAppId, "public", "data", "consultations", fromConsultationId
+              db, "artifacts", safeAppId, "public", "data", "consultations", updatedData.fromConsultationId
             );
             await updateDoc(consultRef, { status: "registered" });
           } catch (err) {
