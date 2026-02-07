@@ -6313,7 +6313,7 @@ const StudentManagementModal = ({
         <div className="p-5 border-b flex justify-between items-center bg-slate-50/80 rounded-t-3xl shrink-0 backdrop-blur-sm">
           <div>
             <h3 className="font-bold text-xl text-slate-800 flex items-center gap-2">
-              {formData.fromConsultationId
+              {formData.fromConsultationId && !student?.id
                 ? "💬 상담 정보로 등록"
                 : student?.id
                 ? "👤 원생 정보 수정"
@@ -7368,6 +7368,26 @@ export default function App() {
 
         showToast("정보가 성공적으로 수정되었습니다.", "success");
       } else {
+        // 상담에서 넘어온 경우: 이미 등록된 원생이 있는지 중복 체크
+        if (updatedData.fromConsultationId) {
+          const existingStudent = students.find(
+            (s) => s.fromConsultationId === updatedData.fromConsultationId
+          );
+          if (existingStudent) {
+            // 이미 등록된 원생 → 신규 생성 대신 기존 데이터 업데이트
+            const studentRef = doc(
+              db, "artifacts", safeAppId, "public", "data", "students", existingStudent.id
+            );
+            const { fromConsultationId, ...dataToUpdate } = updatedData;
+            await updateDoc(studentRef, dataToUpdate);
+            setStudents((prev) =>
+              prev.map((s) => (s.id === existingStudent.id ? { ...s, ...dataToUpdate } : s))
+            );
+            showToast("기존 원생 정보가 수정되었습니다.", "success");
+            return;
+          }
+        }
+
         // 신규 등록 로직
         const studentsRef = collection(
           db,
@@ -7377,18 +7397,20 @@ export default function App() {
           "data",
           "students"
         );
+        // fromConsultationId는 상담 연동 후 제거 (편집 시 혼동 방지)
+        const { fromConsultationId, ...studentData } = updatedData;
         const docRef = await addDoc(studentsRef, {
-          ...updatedData,
+          ...studentData,
           createdAt: new Date().toISOString(),
         });
 
-        setStudents((prev) => [...prev, { ...updatedData, id: docRef.id }]);
+        setStudents((prev) => [...prev, { ...studentData, id: docRef.id }]);
 
         // 상담에서 넘어온 경우 상담 상태를 "registered"로 변경
-        if (updatedData.fromConsultationId) {
+        if (fromConsultationId) {
           try {
             const consultRef = doc(
-              db, "artifacts", safeAppId, "public", "data", "consultations", updatedData.fromConsultationId
+              db, "artifacts", safeAppId, "public", "data", "consultations", fromConsultationId
             );
             await updateDoc(consultRef, { status: "registered" });
           } catch (err) {
@@ -7433,10 +7455,8 @@ export default function App() {
     setActiveTab("students");
 
     // 3. [핵심] StudentView가 낚아챌 바구니에 데이터 주입
+    // → StudentView의 useEffect가 감지하여 모달을 자동으로 열어줌
     setRegisterFromConsultation(transferData);
-
-    // 4. 즉시 팝업 오픈
-    setIsDetailModalOpen(true);
 
     showToast(`${consultation.name}님의 정보를 불러왔습니다.`, "success");
   };
