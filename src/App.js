@@ -128,26 +128,6 @@ const INITIAL_TEACHERS_LIST = [
   "강열혁",
 ];
 
-const TEACHER_PASSWORDS = {
-  남선오: "0351",
-  한수정: "4314",
-  이윤석: "9876",
-  민숙현: "0412",
-  김소형: "5858",
-  김주원: "5259",
-  권시문: "6312",
-  김여빈: "5408",
-  김맑음: "2313",
-  최지영: "5912",
-  조국화: "7904",
-  이상현: "2723",
-  문세영: "7608",
-  공성윤: "2001",
-  진승하: "3090",
-  강열혁: "1123",
-  태유민: "8825",
-};
-
 const HOLIDAYS = {
   "2025-01-01": "신정",
   "2025-01-29": "설날",
@@ -275,6 +255,7 @@ const LoginModal = ({
   onLogin,
   showToast,
   isInitialLogin,
+  adminPassword: adminPw = "1123",
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [isAdminLoginMode, setIsAdminLoginMode] = useState(false);
@@ -298,7 +279,7 @@ const LoginModal = ({
   const filteredTeachers = teachers.filter((t) => t.name.includes(searchTerm));
 
   const handleAdminLogin = () => {
-    if (password === "1123") {
+    if (password === adminPw) {
       onLogin({ name: "원장님", role: "admin" });
       setPassword("");
       setIsAdminLoginMode(false);
@@ -308,12 +289,10 @@ const LoginModal = ({
   };
 
   const handleTeacherLoginSubmit = () => {
-    const dbPassword = selectedTeacherForLogin.password;
-    const hardcodedPassword = TEACHER_PASSWORDS[selectedTeacherForLogin.name];
-    const correctPassword = dbPassword || hardcodedPassword;
+    const correctPassword = selectedTeacherForLogin.password;
 
     if (!correctPassword) {
-      showToast("비밀번호가 설정되지 않은 강사입니다.", "error");
+      showToast("비밀번호가 설정되지 않은 강사입니다. 환경설정에서 비밀번호를 지정해주세요.", "error");
       return;
     }
     if (teacherPassword === correctPassword) {
@@ -489,131 +468,6 @@ const LoginModal = ({
             </div>
           </div>
         </div>
-      </div>
-    </div>
-  );
-};
-
-// [EditTeacherModal]
-const EditTeacherModal = ({ teacher, students, onClose, onSave }) => {
-  const [name, setName] = useState(teacher.name);
-  const [password, setPassword] = useState(teacher.password || "");
-  const [selectedDays, setSelectedDays] = useState(teacher.days || []);
-
-  const assignedStudents = useMemo(() => {
-    return students.filter(
-      (s) => s.teacher === teacher.name && s.status === "재원"
-    );
-  }, [students, teacher.name]);
-
-  const toggleDay = (dayId) => {
-    if (selectedDays.includes(dayId))
-      setSelectedDays(selectedDays.filter((d) => d !== dayId));
-    else setSelectedDays([...selectedDays, dayId]);
-  };
-
-  const handleSave = () => {
-    onSave(teacher.id, {
-      name,
-      password,
-      days: selectedDays,
-      oldName: teacher.name,
-    });
-    onClose();
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 flex flex-col max-h-[90vh]">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-xl font-bold text-slate-800">강사 정보 수정</h2>
-          <button onClick={onClose}>
-            <X size={24} className="text-slate-400" />
-          </button>
-        </div>
-        <div className="space-y-5 overflow-y-auto flex-1 p-1">
-          <div>
-            <label className="block text-xs font-bold text-slate-500 mb-1">
-              강사 이름
-            </label>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full p-2 border rounded-lg focus:outline-indigo-500 font-bold text-slate-800"
-            />
-            {name !== teacher.name && (
-              <p className="text-xs text-rose-500 mt-1">
-                ⚠️ 이름을 변경하면 담당 학생들의 선생님 정보도 자동으로
-                변경됩니다.
-              </p>
-            )}
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-slate-500 mb-1 flex items-center">
-              <Lock size={12} className="mr-1" /> 로그인 비밀번호
-            </label>
-            <input
-              type="text"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="변경할 비밀번호 입력"
-              className="w-full p-2 border rounded-lg focus:outline-indigo-500 text-sm"
-            />
-            <p className="text-[10px] text-slate-400 mt-1">
-              비워두면 기존 비밀번호가 유지됩니다.
-            </p>
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-slate-500 mb-2">
-              수업 요일
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {DAYS_OF_WEEK.map((day) => (
-                <button
-                  key={day.id}
-                  onClick={() => toggleDay(day.id)}
-                  className={`w-8 h-8 rounded-full text-xs font-bold transition-all ${
-                    selectedDays.includes(day.id)
-                      ? "bg-indigo-600 text-white shadow"
-                      : "bg-white border text-slate-400 hover:border-indigo-300"
-                  }`}
-                >
-                  {day.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-slate-500 mb-2">
-              배정된 학생 ({assignedStudents.length}명)
-            </label>
-            <div className="bg-slate-50 rounded-lg p-2 max-h-32 overflow-y-auto border border-slate-200">
-              {assignedStudents.length > 0 ? (
-                <div className="flex flex-wrap gap-1">
-                  {assignedStudents.map((s) => (
-                    <span
-                      key={s.id}
-                      className="text-xs bg-white border px-2 py-1 rounded text-slate-600"
-                    >
-                      {s.name} (
-                      {s.classDays ? s.classDays.join(",") : s.className})
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-xs text-slate-400 text-center py-2">
-                  배정된 학생이 없습니다.
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
-        <button
-          onClick={handleSave}
-          className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 mt-6 shadow-md"
-        >
-          저장하기
-        </button>
       </div>
     </div>
   );
@@ -2021,6 +1875,7 @@ const ConsultationView = ({
   onClearTargetConsultation,
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [currentConsult, setCurrentConsult] = useState({
     id: null,
     name: "",
@@ -2094,15 +1949,18 @@ const ConsultationView = ({
     setCurrentConsult({ ...currentConsult, followUpActions: nextActions });
   };
 
-  // 4. [기능 보존] 저장 로직 (Firebase 연동)
+  // 4. [기능 보존] 저장 로직 (Firebase 연동) + 중복 클릭 방지
   const handleSaveConsultation = async () => {
+    if (isSaving) return; // 중복 클릭 방지
     if (!currentConsult.name || !currentConsult.phone) {
       showToast("이름과 연락처를 입력해주세요.", "warning");
       return;
     }
+    setIsSaving(true);
     try {
       const safeAppId = APP_ID || "jnc-music-v2";
       if (currentConsult.id) {
+        const { id, ...dataToUpdate } = currentConsult;
         await updateDoc(
           doc(
             db,
@@ -2113,7 +1971,7 @@ const ConsultationView = ({
             "consultations",
             currentConsult.id
           ),
-          { ...currentConsult }
+          dataToUpdate
         );
         showToast("수정 저장되었습니다.", "success");
       } else {
@@ -2135,6 +1993,8 @@ const ConsultationView = ({
     } catch (e) {
       console.error(e);
       showToast("저장 중 오류가 발생했습니다.", "error");
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -2404,9 +2264,10 @@ const ConsultationView = ({
 
               <button
                 onClick={handleSaveConsultation}
-                className="w-full py-3.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg transition-all active:scale-95"
+                disabled={isSaving}
+                className={`w-full py-3.5 rounded-xl font-bold shadow-lg transition-all ${isSaving ? "bg-slate-400 text-slate-200 cursor-not-allowed" : "bg-indigo-600 text-white hover:bg-indigo-700 active:scale-95"}`}
               >
-                {currentConsult.id ? "수정 내용 저장" : "상담 내역 등록"}
+                {isSaving ? "저장 중..." : currentConsult.id ? "수정 내용 저장" : "상담 내역 등록"}
               </button>
             </div>
           </div>
@@ -3361,40 +3222,119 @@ const ClassLogView = ({ students, teachers, user }) => {
   );
 };
 
-// [SettingsView]
-const SettingsView = ({ teachers, students, showToast, seedData }) => {
+// [SettingsView] - (강사 관리 완전체: 비밀번호/파트/요일 통합 관리)
+const SettingsView = ({ teachers, students, showToast, seedData, adminPassword }) => {
+  // --- [상태 관리] ---
+  // 0. 관리자 비밀번호 변경용 상태
+  const [newAdminPw, setNewAdminPw] = useState("");
+  const [confirmAdminPw, setConfirmAdminPw] = useState("");
+
+  // 1. 신규 강사 등록용 상태
   const [newTeacherName, setNewTeacherName] = useState("");
+  const [newTeacherPassword, setNewTeacherPassword] = useState("");
+  const [newTeacherPart, setNewTeacherPart] = useState("피아노");
+  const [isDirectInput, setIsDirectInput] = useState(false);
   const [newTeacherDays, setNewTeacherDays] = useState([]);
+
+  // 2. 시스템/UI 상태
   const [uploading, setUploading] = useState(false);
-  const [editingTeacher, setEditingTeacher] = useState(null);
+  const [editingTeacher, setEditingTeacher] = useState(null); // 수정할 강사 객체
+
+  // --- [상수 데이터] ---
+  const DAYS_OF_WEEK = [
+    { id: "월", label: "월" },
+    { id: "화", label: "화" },
+    { id: "수", label: "수" },
+    { id: "목", label: "목" },
+    { id: "금", label: "금" },
+    { id: "토", label: "토" },
+    { id: "일", label: "일" },
+  ];
+
+  const TEACHER_PARTS = [
+    { id: "피아노", label: "🎹 피아노" },
+    { id: "재즈피아노", label: "🎹 재즈피아노" },
+    { id: "드럼", label: "🥁 드럼" },
+    { id: "기타", label: "🎸 기타" },
+    { id: "베이스", label: "🎸 베이스" },
+    { id: "보컬", label: "🎤 보컬" },
+    { id: "플루트", label: "🎻 플루트" },
+    { id: "클라리넷", label: "🎻 클라리넷" },
+    { id: "오보에", label: "🎻 오보에" },
+    { id: "바이올린", label: "🎻 바이올린" },
+    { id: "첼로", label: "🎻 첼로" },
+    { id: "작곡", label: "🎼 작곡" },
+    { id: "미디", label: "💻 미디" },
+  ];
+
+  // --- [핸들러 함수] ---
+
+  // 0. 관리자 비밀번호 변경
+  const handleChangeAdminPassword = async () => {
+    if (!newAdminPw.trim()) return showToast("새 비밀번호를 입력해주세요.", "error");
+    if (newAdminPw !== confirmAdminPw) return showToast("비밀번호가 일치하지 않습니다.", "error");
+    try {
+      await setDoc(
+        doc(db, "artifacts", APP_ID, "public", "data", "settings", "admin"),
+        { password: newAdminPw.trim() },
+        { merge: true }
+      );
+      setNewAdminPw("");
+      setConfirmAdminPw("");
+      showToast("관리자 비밀번호가 변경되었습니다.", "success");
+    } catch (e) {
+      showToast("변경 실패: " + e.message, "error");
+    }
+  };
+
+  // 요일 토글 (신규 등록용)
   const toggleDay = (dayId) => {
     if (newTeacherDays.includes(dayId))
       setNewTeacherDays(newTeacherDays.filter((d) => d !== dayId));
     else setNewTeacherDays([...newTeacherDays, dayId]);
   };
+
+  // 1. 강사 추가 (Create)
   const handleAddTeacher = async () => {
     if (!newTeacherName.trim())
       return showToast("강사 이름을 입력해주세요.", "error");
+    if (!newTeacherPassword.trim())
+      return showToast("비밀번호를 입력해주세요.", "error");
+    if (!newTeacherPart.trim())
+      return showToast("담당 과목을 입력해주세요.", "error");
     if (newTeacherDays.length === 0)
       return showToast("수업 요일을 선택해주세요.", "error");
+
     try {
       await addDoc(
         collection(db, "artifacts", APP_ID, "public", "data", "teachers"),
         {
           name: newTeacherName.trim(),
+          password: newTeacherPassword.trim(), // 비밀번호 저장
+          part: newTeacherPart.trim(), // 파트 저장
           days: newTeacherDays,
           createdAt: new Date().toISOString(),
         }
       );
+
+      // 초기화
       setNewTeacherName("");
+      setNewTeacherPassword("");
+      setNewTeacherPart("피아노");
+      setIsDirectInput(false);
       setNewTeacherDays([]);
       showToast("강사님이 추가되었습니다.", "success");
     } catch (e) {
+      console.error(e);
       showToast("추가 실패", "error");
     }
   };
+
+  // 2. 강사 정보 수정 (Update) - 비밀번호 포함
   const handleUpdateTeacher = async (id, data) => {
-    const { name, password, days, oldName } = data;
+    // data 안에 name, password, part, days가 모두 들어있음
+    const { name, password, part, days, oldName } = data;
+
     try {
       const teacherRef = doc(
         db,
@@ -3405,7 +3345,16 @@ const SettingsView = ({ teachers, students, showToast, seedData }) => {
         "teachers",
         id
       );
-      await updateDoc(teacherRef, { name, password, days });
+
+      // Firebase 업데이트 (비밀번호, 파트, 요일 등 모두 갱신)
+      await updateDoc(teacherRef, {
+        name,
+        password, // 🔥 중요: 수정된 비밀번호 반영
+        part,
+        days,
+      });
+
+      // 강사 이름이 바뀌었다면, 원생 데이터의 담당 강사명도 변경
       if (name !== oldName) {
         const batch = writeBatch(db);
         const affectedStudents = students.filter((s) => s.teacher === oldName);
@@ -3423,20 +3372,23 @@ const SettingsView = ({ teachers, students, showToast, seedData }) => {
         });
         await batch.commit();
         showToast(
-          `강사 정보 수정 및 학생 ${affectedStudents.length}명 이관 완료`,
+          `정보 수정 및 학생 ${affectedStudents.length}명 이관 완료`,
           "success"
         );
       } else {
-        showToast("수정되었습니다.", "success");
+        showToast("강사 정보가 수정되었습니다.", "success");
       }
     } catch (e) {
       console.error(e);
       showToast("수정 실패", "error");
     }
   };
+
+  // 3. 강사 삭제 (Delete)
   const handleDeleteTeacher = async (id, e) => {
     e.stopPropagation();
     if (typeof id === "number") {
+      // 샘플 데이터인 경우
       if (
         window.confirm(
           "현재는 샘플 데이터입니다. 실제 데이터로 변환하시겠습니까?"
@@ -3446,7 +3398,7 @@ const SettingsView = ({ teachers, students, showToast, seedData }) => {
       }
       return;
     }
-    if (window.confirm("정말 삭제하시겠습니까?")) {
+    if (window.confirm("정말 이 강사님을 삭제하시겠습니까? (복구 불가)")) {
       try {
         await deleteDoc(
           doc(db, "artifacts", APP_ID, "public", "data", "teachers", id)
@@ -3458,47 +3410,8 @@ const SettingsView = ({ teachers, students, showToast, seedData }) => {
       }
     }
   };
-  // [App.js] 내부 함수 정의 구역에 추가해주세요.
 
-  const handleUpdateStudent = async (id, updatedData) => {
-    try {
-      const safeAppId = APP_ID || "jnc-music-v2";
-
-      if (id) {
-        // [기존 원생 수정]
-        const studentRef = doc(
-          db,
-          "artifacts",
-          safeAppId,
-          "public",
-          "data",
-          "students",
-          id
-        );
-        await updateDoc(studentRef, updatedData);
-        showToast("원생 정보 및 상태가 업데이트되었습니다.");
-      } else {
-        // [신규 원생 등록]
-        const studentsRef = collection(
-          db,
-          "artifacts",
-          safeAppId,
-          "public",
-          "data",
-          "students"
-        );
-        await addDoc(studentsRef, {
-          ...updatedData,
-          createdAt: new Date().toISOString(),
-        });
-        showToast("새로운 원생이 등록되었습니다.");
-      }
-    } catch (e) {
-      console.error("저장 오류:", e);
-      showToast("데이터 저장에 실패했습니다.", "error");
-    }
-  };
-
+  // --- [기존 유틸리티 기능: 엑셀/백업] ---
   const handleDownloadTemplate = () => {
     if (typeof window.XLSX === "undefined") {
       showToast("엑셀 기능을 로딩 중입니다.", "error");
@@ -3538,6 +3451,7 @@ const SettingsView = ({ teachers, students, showToast, seedData }) => {
       showToast("오류 발생", "error");
     }
   };
+
   const handleExcelUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -3556,11 +3470,13 @@ const SettingsView = ({ teachers, students, showToast, seedData }) => {
         const jsonData = window.XLSX.utils.sheet_to_json(worksheet, {
           header: 1,
         });
+
         if (jsonData.length < 2) {
           showToast("데이터가 없습니다.", "warning");
           setUploading(false);
           return;
         }
+
         const rows = jsonData.slice(1);
         let successCount = 0;
         const studentsRef = collection(
@@ -3571,9 +3487,11 @@ const SettingsView = ({ teachers, students, showToast, seedData }) => {
           "data",
           "students"
         );
+
         for (const row of rows) {
           const name = row[0];
           if (!name) continue;
+
           const daysStr = String(row[4] || "");
           const classDays = daysStr
             .split(",")
@@ -3582,6 +3500,7 @@ const SettingsView = ({ teachers, students, showToast, seedData }) => {
           const className = classDays[0] || "";
           const schedules = {};
           classDays.forEach((d) => (schedules[d] = String(row[7] || "")));
+
           const studentData = {
             name: String(row[0] || ""),
             grade: String(row[1] || ""),
@@ -3618,6 +3537,7 @@ const SettingsView = ({ teachers, students, showToast, seedData }) => {
     };
     reader.readAsArrayBuffer(file);
   };
+
   const handleBackupData = async () => {
     try {
       showToast("백업 중...", "info");
@@ -3648,6 +3568,7 @@ const SettingsView = ({ teachers, students, showToast, seedData }) => {
       showToast("백업 오류", "error");
     }
   };
+
   const handleRestoreData = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -3693,99 +3614,204 @@ const SettingsView = ({ teachers, students, showToast, seedData }) => {
     reader.readAsText(file);
   };
 
+  // --- [화면 렌더링] ---
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 h-full overflow-auto">
+    <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 h-full overflow-auto animate-fade-in">
+      {/* 강사 수정 모달 (여기에 비밀번호 수정 기능 포함) */}
       {editingTeacher && (
         <EditTeacherModal
           teacher={editingTeacher}
           students={students}
+          teacherParts={TEACHER_PARTS}
           onClose={() => setEditingTeacher(null)}
           onSave={handleUpdateTeacher}
         />
       )}
-      <div className="mb-8 p-6 bg-indigo-50 rounded-xl border border-indigo-100">
-        <h3 className="font-bold text-indigo-900 mb-4 flex items-center">
-          <HardDrive className="mr-2" size={20} /> 데이터 백업 및 복구
-        </h3>
-        <div className="flex gap-3">
-          <button
-            onClick={handleBackupData}
-            className="inline-flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 transition-colors shadow-sm"
-          >
-            <Download size={18} className="mr-2" /> 전체 데이터 백업(저장)
-          </button>
-          <label className="inline-flex items-center px-4 py-2 bg-white border border-indigo-300 text-indigo-700 rounded-lg cursor-pointer hover:bg-indigo-50 transition-colors font-bold shadow-sm">
-            <RefreshCcw size={18} className="mr-2" /> 데이터 복구(불러오기)
-            <input
-              type="file"
-              accept=".json"
-              onChange={handleRestoreData}
-              className="hidden"
-            />
-          </label>
-        </div>
-      </div>
-      <div className="mb-8 p-6 bg-emerald-50 rounded-xl border border-emerald-100">
-        <h3 className="font-bold text-emerald-900 mb-4 flex items-center">
-          <File className="mr-2" size={20} /> 원생 일괄 업로드 (Excel)
-        </h3>
-        <div className="flex flex-wrap gap-3">
-          <button
-            onClick={handleDownloadTemplate}
-            className="inline-flex items-center px-4 py-2 bg-white border border-emerald-300 text-emerald-700 rounded-lg cursor-pointer hover:bg-emerald-50 transition-colors font-medium shadow-sm"
-          >
-            <Download size={18} className="mr-2" /> 예제 양식 다운로드
-          </button>
-          <label
-            className={`inline-flex items-center px-4 py-2 bg-emerald-600 text-white rounded-lg cursor-pointer hover:bg-emerald-700 transition-colors shadow-sm ${
-              uploading ? "opacity-50 cursor-not-allowed" : ""
-            }`}
-          >
-            {uploading ? (
-              "업로드 중..."
-            ) : (
-              <>
-                <Upload size={18} className="mr-2" /> 엑셀 파일 선택 (.xlsx)
-              </>
-            )}
-            <input
-              id="excel-upload-input"
-              type="file"
-              accept=".xlsx, .xls"
-              onChange={handleExcelUpload}
-              className="hidden"
-              disabled={uploading}
-            />
-          </label>
-        </div>
-      </div>
-      <div className="border-t border-slate-200 my-6"></div>
-      <div className="mb-8">
-        <h3 className="font-bold text-slate-800 flex items-center mb-4">
-          <Settings className="mr-2 text-indigo-600" size={20} /> 강사 관리
-        </h3>
-        <div className="bg-slate-50 p-6 rounded-xl border border-slate-200">
-          <div className="mb-4">
-            <label className="block text-xs font-bold text-slate-500 mb-2">
-              강사 이름
+
+      {/* 1. 상단 유틸리티 (백업/엑셀) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        <div className="p-6 bg-indigo-50 rounded-xl border border-indigo-100">
+          <h3 className="font-bold text-indigo-900 mb-4 flex items-center">
+            <HardDrive className="mr-2" size={20} /> 데이터 백업 및 복구
+          </h3>
+          <div className="flex gap-3">
+            <button
+              onClick={handleBackupData}
+              className="flex-1 inline-flex justify-center items-center px-4 py-2 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 shadow-sm transition-colors text-sm"
+            >
+              <Download size={16} className="mr-2" /> 백업(저장)
+            </button>
+            <label className="flex-1 inline-flex justify-center items-center px-4 py-2 bg-white border border-indigo-300 text-indigo-700 rounded-lg cursor-pointer hover:bg-indigo-50 font-bold shadow-sm transition-colors text-sm">
+              <RefreshCcw size={16} className="mr-2" /> 복구(로드)
+              <input
+                type="file"
+                accept=".json"
+                onChange={handleRestoreData}
+                className="hidden"
+              />
             </label>
-            <div className="flex gap-2">
+          </div>
+        </div>
+
+        <div className="p-6 bg-emerald-50 rounded-xl border border-emerald-100">
+          <h3 className="font-bold text-emerald-900 mb-4 flex items-center">
+            <File className="mr-2" size={20} /> 원생 일괄 업로드
+          </h3>
+          <div className="flex gap-3">
+            <button
+              onClick={handleDownloadTemplate}
+              className="flex-1 inline-flex justify-center items-center px-4 py-2 bg-white border border-emerald-300 text-emerald-700 rounded-lg hover:bg-emerald-50 font-bold shadow-sm transition-colors text-sm"
+            >
+              <Download size={16} className="mr-2" /> 양식 다운
+            </button>
+            <label
+              className={`flex-1 inline-flex justify-center items-center px-4 py-2 bg-emerald-600 text-white rounded-lg cursor-pointer hover:bg-emerald-700 font-bold shadow-sm transition-colors text-sm ${
+                uploading ? "opacity-50" : ""
+              }`}
+            >
+              {uploading ? (
+                "업로드 중..."
+              ) : (
+                <>
+                  <Upload size={16} className="mr-2" /> 엑셀 선택
+                </>
+              )}
+              <input
+                id="excel-upload-input"
+                type="file"
+                accept=".xlsx, .xls"
+                onChange={handleExcelUpload}
+                className="hidden"
+                disabled={uploading}
+              />
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div className="border-t border-slate-200 my-6"></div>
+
+      {/* 1-1. 관리자 비밀번호 변경 */}
+      <div className="mb-6 bg-slate-50 p-4 rounded-xl border border-slate-200">
+        <h4 className="font-bold text-slate-700 text-sm mb-3">🔐 관리자 비밀번호 변경</h4>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <input
+            type="password"
+            value={newAdminPw}
+            onChange={(e) => setNewAdminPw(e.target.value)}
+            placeholder="새 비밀번호"
+            className="flex-1 border rounded-lg px-3 py-2 text-sm"
+          />
+          <input
+            type="password"
+            value={confirmAdminPw}
+            onChange={(e) => setConfirmAdminPw(e.target.value)}
+            placeholder="비밀번호 확인"
+            className="flex-1 border rounded-lg px-3 py-2 text-sm"
+          />
+          <button
+            onClick={handleChangeAdminPassword}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors"
+          >
+            변경
+          </button>
+        </div>
+      </div>
+
+      <div className="border-t border-slate-200 my-6"></div>
+
+      {/* 2. 강사 관리 섹션 */}
+      <div className="mb-8">
+        <h3 className="font-bold text-slate-800 flex items-center mb-4 text-lg">
+          <Settings className="mr-2 text-indigo-600" size={22} /> 강사 관리
+        </h3>
+
+        {/* 강사 추가 폼 */}
+        <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 shadow-sm">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 mb-4">
+            <div className="md:col-span-3">
+              <label className="block text-xs font-bold text-slate-500 mb-1.5 ml-1">
+                강사 이름
+              </label>
               <input
                 value={newTeacherName}
                 onChange={(e) => setNewTeacherName(e.target.value)}
-                placeholder="이름 입력"
-                className="flex-1 p-2 border rounded-lg focus:outline-indigo-600"
+                placeholder="이름"
+                className="w-full p-2.5 border rounded-xl focus:outline-indigo-600 bg-white"
               />
+            </div>
+
+            <div className="md:col-span-3">
+              <label className="block text-xs font-bold text-slate-500 mb-1.5 ml-1">
+                비밀번호
+              </label>
+              <input
+                value={newTeacherPassword}
+                onChange={(e) => setNewTeacherPassword(e.target.value)}
+                placeholder="초기 비밀번호"
+                type="text"
+                className="w-full p-2.5 border rounded-xl focus:outline-indigo-600 bg-white"
+              />
+            </div>
+
+            <div className="md:col-span-4">
+              <label className="block text-xs font-bold text-slate-500 mb-1.5 ml-1">
+                담당 과목
+                {isDirectInput && (
+                  <span
+                    onClick={() => {
+                      setIsDirectInput(false);
+                      setNewTeacherPart("피아노");
+                    }}
+                    className="ml-2 text-[10px] text-indigo-500 hover:underline cursor-pointer"
+                  >
+                    (목록 선택)
+                  </span>
+                )}
+              </label>
+
+              {isDirectInput ? (
+                <input
+                  value={newTeacherPart}
+                  onChange={(e) => setNewTeacherPart(e.target.value)}
+                  className="w-full p-2.5 border rounded-xl focus:outline-indigo-600 bg-white text-indigo-700 font-bold"
+                  placeholder="직접 입력"
+                />
+              ) : (
+                <select
+                  value={newTeacherPart}
+                  onChange={(e) => {
+                    if (e.target.value === "DIRECT_INPUT") {
+                      setIsDirectInput(true);
+                      setNewTeacherPart("");
+                    } else {
+                      setNewTeacherPart(e.target.value);
+                    }
+                  }}
+                  className="w-full p-2.5 border rounded-xl focus:outline-indigo-600 bg-white font-bold text-slate-700"
+                >
+                  {TEACHER_PARTS.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.label}
+                    </option>
+                  ))}
+                  <option value="DIRECT_INPUT">✨ 직접 입력</option>
+                </select>
+              )}
+            </div>
+
+            <div className="md:col-span-2 flex items-end">
               <button
                 onClick={handleAddTeacher}
-                className="bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-indigo-700"
+                className="w-full bg-indigo-600 text-white p-2.5 rounded-xl font-bold hover:bg-indigo-700 transition-colors shadow-md"
               >
                 추가
               </button>
             </div>
           </div>
-          <div className="mb-4">
-            <label className="block text-xs font-bold text-slate-500 mb-2">
+
+          <div className="mb-2">
+            <label className="block text-xs font-bold text-slate-500 mb-2 ml-1">
               수업 요일 선택
             </label>
             <div className="flex flex-wrap gap-2">
@@ -3793,10 +3819,10 @@ const SettingsView = ({ teachers, students, showToast, seedData }) => {
                 <button
                   key={day.id}
                   onClick={() => toggleDay(day.id)}
-                  className={`w-8 h-8 rounded-full text-xs font-bold transition-all ${
+                  className={`w-9 h-9 rounded-full text-xs font-bold transition-all border ${
                     newTeacherDays.includes(day.id)
-                      ? "bg-indigo-600 text-white shadow"
-                      : "bg-white border text-slate-400 hover:border-indigo-300"
+                      ? "bg-indigo-600 text-white border-indigo-600 shadow-md"
+                      : "bg-white border-slate-200 text-slate-400 hover:border-indigo-300"
                   }`}
                 >
                   {day.label}
@@ -3804,56 +3830,250 @@ const SettingsView = ({ teachers, students, showToast, seedData }) => {
               ))}
             </div>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mt-6">
-            {teachers.map((t) => (
-              <div
-                key={t.id}
-                onClick={() => setEditingTeacher(t)}
-                className="bg-white p-3 border rounded-lg flex flex-col justify-between shadow-sm cursor-pointer hover:border-indigo-500 hover:bg-indigo-50 transition-all relative group"
-              >
-                <div className="flex justify-between items-start mb-2">
-                  <span className="font-medium text-slate-700">{t.name}</span>
-                  <button
-                    onClick={(e) => handleDeleteTeacher(t.id, e)}
-                    className="text-slate-300 hover:text-red-500 p-1 relative z-10"
-                  >
-                    <X size={16} />
-                  </button>
+        </div>
+
+        {/* 3. 강사 리스트 표시 */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
+          {teachers.map((t) => (
+            <div
+              key={t.id}
+              onClick={() => setEditingTeacher(t)}
+              className="bg-white p-4 border rounded-xl flex flex-col justify-between shadow-sm cursor-pointer hover:border-indigo-500 hover:shadow-md transition-all group relative overflow-hidden"
+            >
+              {/* 파트 뱃지 */}
+              <div className="absolute top-0 right-0 px-3 py-1 rounded-bl-xl text-[10px] font-bold bg-slate-100 text-slate-600 border-l border-b border-slate-200">
+                {t.part || "미지정"}
+              </div>
+
+              <div className="flex flex-col gap-2 mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-lg text-slate-800">
+                    {t.name} T
+                  </span>
                 </div>
-                <div className="flex flex-wrap gap-1">
-                  {t.days && t.days.length > 0 ? (
-                    t.days.map((d) => (
-                      <span
-                        key={d}
-                        className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded"
-                      >
-                        {DAYS_OF_WEEK.find((day) => day.id === d)?.label}
+                {/* 비밀번호 표시 박스 */}
+                <div className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1.5 flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-slate-500">
+                    🔑 비밀번호
+                  </span>
+                  <span className="text-sm font-mono font-bold text-indigo-600">
+                    {t.password || (
+                      <span className="text-slate-300 font-normal italic">
+                        없음
                       </span>
-                    ))
-                  ) : (
-                    <span className="text-[10px] text-slate-300">
-                      요일 미지정
-                    </span>
-                  )}
-                </div>
-                <div className="absolute top-2 right-8 opacity-0 group-hover:opacity-100 text-indigo-400">
-                  <Pencil size={14} />
+                    )}
+                  </span>
                 </div>
               </div>
-            ))}
-          </div>
+
+              <div className="flex flex-wrap gap-1">
+                {t.days && t.days.length > 0 ? (
+                  t.days.map((d) => (
+                    <span
+                      key={d}
+                      className="text-[10px] bg-white border border-slate-200 text-slate-500 px-1.5 py-0.5 rounded shadow-sm"
+                    >
+                      {DAYS_OF_WEEK.find((day) => day.id === d)?.label}
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-[10px] text-slate-300">요일 미정</span>
+                )}
+              </div>
+
+              <div className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  onClick={(e) => handleDeleteTeacher(t.id, e)}
+                  className="text-rose-400 hover:text-rose-600 p-1 hover:bg-rose-50 rounded"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
+
+      {/* 데이터 없음 안내 */}
       {teachers.length === 0 && (
-        <div className="text-center mt-10">
+        <div className="text-center mt-10 p-10 border-2 border-dashed border-slate-200 rounded-xl">
+          <p className="text-slate-400 mb-4">등록된 강사가 없습니다.</p>
           <button
             onClick={seedData}
-            className="text-slate-400 hover:text-indigo-600 text-sm underline"
+            className="text-indigo-500 hover:text-indigo-700 font-bold underline text-sm"
           >
-            초기 데이터 생성 (강사 리스트 복구)
+            초기 샘플 데이터 복구하기
           </button>
         </div>
       )}
+    </div>
+  );
+};
+// [EditTeacherModal] - 강사 정보 수정 (비밀번호 + 파트 + 요일)
+const EditTeacherModal = ({
+  teacher,
+  students,
+  teacherParts,
+  onClose,
+  onSave,
+}) => {
+  const [name, setName] = useState(teacher.name);
+  const [password, setPassword] = useState(teacher.password || ""); // 기존 비밀번호 불러오기
+
+  const isPredefined = teacherParts.some((p) => p.id === teacher.part);
+  const [part, setPart] = useState(teacher.part || "피아노");
+  const [isDirectInput, setIsDirectInput] = useState(
+    !isPredefined && !!teacher.part
+  );
+  const [days, setDays] = useState(teacher.days || []);
+
+  const DAYS_OF_WEEK = [
+    { id: "월", label: "월" },
+    { id: "화", label: "화" },
+    { id: "수", label: "수" },
+    { id: "목", label: "목" },
+    { id: "금", label: "금" },
+    { id: "토", label: "토" },
+    { id: "일", label: "일" },
+  ];
+
+  const toggleDay = (dayId) => {
+    if (days.includes(dayId)) setDays(days.filter((d) => d !== dayId));
+    else setDays([...days, dayId]);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-[120] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+        <h3 className="text-lg font-bold mb-6 text-slate-800 flex items-center">
+          <Settings className="mr-2 text-indigo-600" size={20} /> 강사 정보 수정
+        </h3>
+
+        <div className="space-y-4">
+          {/* 이름 */}
+          <div>
+            <label className="block text-xs font-bold text-slate-500 mb-1">
+              이름
+            </label>
+            <input
+              className="w-full p-3 border rounded-xl bg-slate-50 focus:outline-indigo-600"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+
+          {/* 비밀번호 수정 */}
+          <div>
+            <label className="block text-xs font-bold text-slate-500 mb-1">
+              비밀번호 관리
+            </label>
+            <div className="relative">
+              <input
+                className="w-full p-3 border rounded-xl bg-slate-50 focus:outline-indigo-600 font-mono text-indigo-700 font-bold"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="비밀번호 입력"
+              />
+              <span className="absolute right-3 top-3.5 text-xs text-slate-400">
+                변경 가능
+              </span>
+            </div>
+          </div>
+
+          {/* 파트 수정 */}
+          <div>
+            <label className="block text-xs font-bold text-slate-500 mb-1">
+              담당 과목
+              {isDirectInput && (
+                <span
+                  onClick={() => {
+                    setIsDirectInput(false);
+                    setPart("피아노");
+                  }}
+                  className="ml-2 text-[10px] text-indigo-500 hover:underline cursor-pointer"
+                >
+                  (목록 선택)
+                </span>
+              )}
+            </label>
+            {isDirectInput ? (
+              <input
+                value={part}
+                onChange={(e) => setPart(e.target.value)}
+                className="w-full p-3 border rounded-xl bg-slate-50 focus:outline-indigo-600 font-bold text-indigo-700"
+                placeholder="직접 입력"
+              />
+            ) : (
+              <select
+                className="w-full p-3 border rounded-xl bg-slate-50 focus:outline-indigo-600 font-bold"
+                value={part}
+                onChange={(e) => {
+                  if (e.target.value === "DIRECT_INPUT") {
+                    setIsDirectInput(true);
+                    setPart("");
+                  } else {
+                    setPart(e.target.value);
+                  }
+                }}
+              >
+                {teacherParts.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
+                ))}
+                <option value="DIRECT_INPUT">✨ 직접 입력</option>
+              </select>
+            )}
+          </div>
+
+          {/* 요일 수정 */}
+          <div>
+            <label className="block text-xs font-bold text-slate-500 mb-2">
+              출근 요일
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {DAYS_OF_WEEK.map((day) => (
+                <button
+                  key={day.id}
+                  onClick={() => toggleDay(day.id)}
+                  className={`w-8 h-8 rounded-full text-xs font-bold transition-all border ${
+                    days.includes(day.id)
+                      ? "bg-indigo-600 text-white border-indigo-600"
+                      : "bg-white text-slate-400 border-slate-200"
+                  }`}
+                >
+                  {day.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 mt-8">
+          <button
+            onClick={onClose}
+            className="px-4 py-2.5 text-slate-500 hover:bg-slate-100 rounded-lg font-bold"
+          >
+            취소
+          </button>
+          <button
+            onClick={() => {
+              // 수정된 모든 정보(비밀번호 포함) 저장
+              onSave(teacher.id, {
+                name,
+                password,
+                part,
+                days,
+                oldName: teacher.name,
+              });
+              onClose();
+            }}
+            className="px-6 py-2.5 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 shadow-md"
+          >
+            저장하기
+          </button>
+        </div>
+      </div>
     </div>
   );
 };
@@ -5890,6 +6110,7 @@ const StudentManagementModal = ({
   const [payHistory, setPayHistory] = useState([]);
   const [baseDate, setBaseDate] = useState(new Date());
   const [payAmount, setPayAmount] = useState(0);
+  const [isSaving, setIsSaving] = useState(false);
 
   const DAYS = ["월", "화", "수", "목", "금", "토", "일"];
 
@@ -5901,13 +6122,14 @@ const StudentManagementModal = ({
 
   useEffect(() => {
     if (isOpen) {
-      if (student && student.fromConsultationId) {
+      if (student && student.fromConsultationId && !student.id) {
+        // 상담에서 최초 등록 (아직 DB에 저장 안 된 상태)
         setFormData({
           name: student.name || "",
           phone: student.phone || "",
           subject: student.subject || "",
           grade: student.grade || "",
-          teacher: teachers[0]?.name || "",
+          teacher: student.teacher || "",
           status: "재원",
           registrationDate: new Date().toISOString().slice(0, 10),
           memo: student.note || "",
@@ -6003,15 +6225,22 @@ const StudentManagementModal = ({
     }
   };
 
-  const handleFinalSave = () => {
+  const handleFinalSave = async () => {
+    if (isSaving) return;
     if (!formData.name) return alert("이름을 입력해주세요.");
+
+    setIsSaving(true);
+
     const updatedData = {
       ...formData,
       attendanceHistory: attHistory,
       paymentHistory: payHistory,
       updatedAt: new Date().toISOString(),
     };
-    onSave(updatedData);
+
+    await onSave(updatedData);
+
+    setTimeout(() => setIsSaving(false), 500);
   };
 
   const renderCalendar = (type) => {
@@ -6099,7 +6328,7 @@ const StudentManagementModal = ({
         <div className="p-5 border-b flex justify-between items-center bg-slate-50/80 rounded-t-3xl shrink-0 backdrop-blur-sm">
           <div>
             <h3 className="font-bold text-xl text-slate-800 flex items-center gap-2">
-              {formData.fromConsultationId
+              {formData.fromConsultationId && !student?.id
                 ? "💬 상담 정보로 등록"
                 : student?.id
                 ? "👤 원생 정보 수정"
@@ -6460,10 +6689,15 @@ const StudentManagementModal = ({
           </button>
           <button
             onClick={handleFinalSave}
-            className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 hover:scale-105 active:scale-95 transition-all flex items-center"
+            disabled={isSaving}
+            className={`px-8 py-3 rounded-xl font-bold shadow-lg flex items-center transition-all ${
+              isSaving
+                ? "bg-slate-400 text-slate-200 cursor-not-allowed"
+                : "bg-indigo-600 text-white hover:bg-indigo-700 hover:scale-105 shadow-indigo-200"
+            }`}
           >
             <Save size={18} className="mr-2" />
-            {activeTab === "info" ? "정보 저장" : "변경사항 저장"}
+            {isSaving ? "저장 중..." : (activeTab === "info" ? "정보 저장" : "변경사항 저장")}
           </button>
         </div>
       </div>
@@ -6862,6 +7096,7 @@ export default function App() {
   const [teachers, setTeachers] = useState([]);
   const [consultations, setConsultations] = useState([]);
   const [reports, setReports] = useState([]);
+  const [adminPassword, setAdminPassword] = useState("1123"); // 기본값, Firestore에서 덮어씌움
 
   // UI 상태
   const [registerFromConsultation, setRegisterFromConsultation] =
@@ -6893,24 +7128,25 @@ export default function App() {
       document.body.appendChild(script);
     }
 
+    const unsubscribes = [];
     signInAnonymously(auth).then(() => {
       console.log("Firebase 접속 성공");
       const safeAppId = APP_ID || "jnc-music-v2"; // 안전장치
 
       // 1. 학생
-      onSnapshot(
+      unsubscribes.push(onSnapshot(
         collection(db, "artifacts", safeAppId, "public", "data", "students"),
         (s) => setStudents(s.docs.map((d) => ({ ...d.data(), id: d.id })))
-      );
+      ));
 
       // 2. 강사
-      onSnapshot(
+      unsubscribes.push(onSnapshot(
         collection(db, "artifacts", safeAppId, "public", "data", "teachers"),
         (s) => setTeachers(s.docs.map((d) => ({ ...d.data(), id: d.id })))
-      );
+      ));
 
       // 3. 상담
-      onSnapshot(
+      unsubscribes.push(onSnapshot(
         collection(
           db,
           "artifacts",
@@ -6920,10 +7156,16 @@ export default function App() {
           "consultations"
         ),
         (s) => setConsultations(s.docs.map((d) => ({ ...d.data(), id: d.id })))
-      );
+      ));
+
+      // 4-0. 관리자 비밀번호
+      unsubscribes.push(onSnapshot(
+        doc(db, "artifacts", safeAppId, "public", "data", "settings", "admin"),
+        (d) => { if (d.exists() && d.data().password) setAdminPassword(d.data().password); }
+      ));
 
       // 4. [문제 해결] 보고서 데이터 (ID가 덮어씌워지지 않도록 순서 변경)
-      onSnapshot(
+      unsubscribes.push(onSnapshot(
         collection(db, "artifacts", safeAppId, "public", "data", "reports"),
         (s) => {
           const loadedReports = s.docs.map((d) => ({
@@ -6932,8 +7174,10 @@ export default function App() {
           }));
           setReports(loadedReports);
         }
-      );
+      ));
     });
+    // cleanup: StrictMode에서 리스너 중복 등록 방지
+    return () => unsubscribes.forEach((unsub) => unsub());
   }, []);
 
   const showToast = (text, type = "success") => {
@@ -6948,6 +7192,12 @@ export default function App() {
         doc(collection(db, "artifacts", APP_ID, "public", "data", "teachers")),
         { name, days: [1, 2, 3, 4, 5], createdAt: new Date().toISOString() }
       )
+    );
+    // 관리자 비밀번호 기본값 설정
+    batch.set(
+      doc(db, "artifacts", APP_ID, "public", "data", "settings", "admin"),
+      { password: "1123" },
+      { merge: true }
     );
     await batch.commit();
     showToast("기본 데이터 생성 완료");
@@ -7133,14 +7383,26 @@ export default function App() {
           id
         );
         await updateDoc(studentRef, updatedData);
-
-        // 2. 로컬 상태(화면) 업데이트 (이게 있어야 즉시 바뀝니다!)
-        setStudents((prev) =>
-          prev.map((s) => (s.id === id ? { ...s, ...updatedData } : s))
-        );
-
+        // onSnapshot이 자동으로 상태를 동기화합니다
         showToast("정보가 성공적으로 수정되었습니다.", "success");
       } else {
+        // 상담에서 넘어온 경우: 이미 등록된 원생이 있는지 중복 체크
+        if (updatedData.fromConsultationId) {
+          const existingStudent = students.find(
+            (s) => s.fromConsultationId === updatedData.fromConsultationId
+          );
+          if (existingStudent) {
+            // 이미 등록된 원생 → 신규 생성 대신 기존 데이터 업데이트
+            const studentRef = doc(
+              db, "artifacts", safeAppId, "public", "data", "students", existingStudent.id
+            );
+            await updateDoc(studentRef, updatedData);
+            // onSnapshot이 자동으로 상태를 동기화합니다
+            showToast("기존 원생 정보가 수정되었습니다.", "success");
+            return;
+          }
+        }
+
         // 신규 등록 로직
         const studentsRef = collection(
           db,
@@ -7150,12 +7412,24 @@ export default function App() {
           "data",
           "students"
         );
-        const docRef = await addDoc(studentsRef, {
+        await addDoc(studentsRef, {
           ...updatedData,
           createdAt: new Date().toISOString(),
         });
+        // onSnapshot이 자동으로 상태를 동기화합니다
 
-        setStudents((prev) => [...prev, { ...updatedData, id: docRef.id }]);
+        // 상담에서 넘어온 경우 상담 상태를 "registered"로 변경
+        if (updatedData.fromConsultationId) {
+          try {
+            const consultRef = doc(
+              db, "artifacts", safeAppId, "public", "data", "consultations", updatedData.fromConsultationId
+            );
+            await updateDoc(consultRef, { status: "registered" });
+          } catch (err) {
+            console.error("상담 상태 업데이트 실패:", err);
+          }
+        }
+
         showToast("새 원생이 등록되었습니다.", "success");
       }
     } catch (e) {
@@ -7165,10 +7439,20 @@ export default function App() {
   };
 
   // 4. [정의] 학생 삭제
-  const handleDeleteStudent = (studentId) => {
-    if (window.confirm("정말 삭제하시겠습니까?")) {
-      setStudents((prev) => prev.filter((s) => s.id !== studentId));
-      showToast("삭제되었습니다.", "success");
+  const handleDeleteStudent = async (studentId) => {
+    if (window.confirm("정말 삭제하시겠습니까? (복구 불가)")) {
+      try {
+        const safeAppId = APP_ID || "jnc-music-v2";
+
+        await deleteDoc(
+          doc(db, "artifacts", safeAppId, "public", "data", "students", studentId)
+        );
+        // onSnapshot이 자동으로 상태를 동기화합니다
+        showToast("삭제되었습니다.", "success");
+      } catch (e) {
+        console.error(e);
+        showToast("삭제 실패: " + e.message, "error");
+      }
     }
   };
 
@@ -7179,24 +7463,22 @@ export default function App() {
       name: consultation.name || "",
       phone: consultation.phone || "",
       subject: consultation.subject || "",
-      grade: consultation.grade || "",
+      grade: consultation.type === "adult" ? "성인" : (consultation.grade || ""),
       note: consultation.note || "",
       fromConsultationId: consultation.id, // 등록 완료 처리를 위해
       status: "재원",
       registrationDate: new Date().toISOString().slice(0, 10),
       totalSessions: 4,
       schedules: {},
-      teacher: teachers && teachers.length > 0 ? teachers[0].name : "",
+      teacher: "",
     };
 
     // 2. 탭 이동
     setActiveTab("students");
 
     // 3. [핵심] StudentView가 낚아챌 바구니에 데이터 주입
+    // → StudentView의 useEffect가 감지하여 모달을 자동으로 열어줌
     setRegisterFromConsultation(transferData);
-
-    // 4. 즉시 팝업 오픈
-    setIsDetailModalOpen(true);
 
     showToast(`${consultation.name}님의 정보를 불러왔습니다.`, "success");
   };
@@ -7221,6 +7503,7 @@ export default function App() {
           onLogin={handleLoginProcess}
           showToast={showToast}
           isInitialLogin={true}
+          adminPassword={adminPassword}
         />
       </div>
     );
@@ -7248,11 +7531,20 @@ export default function App() {
         onLogin={handleLoginProcess}
         showToast={showToast}
         isInitialLogin={!currentUser}
+        adminPassword={adminPassword}
       />
+
+      {/* 3-0. 모바일 사이드바 backdrop (수정됨: 블러 효과 추가) */}
+      {isSidebarOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm md:hidden transition-opacity"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
 
       {/* 3. 좌측 사이드바 (3단 구조: 헤더 - 스크롤 메뉴 - 하단 고정) */}
       <div
-        className={`fixed md:static inset-y-0 left-0 z-30 w-64 bg-white border-r transform transition-transform duration-300 ${
+        className={`fixed md:static inset-y-0 left-0 z-50 w-64 bg-white border-r transform transition-transform duration-300 ${
           isSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         } shadow-lg md:shadow-none flex flex-col h-full`}
       >
@@ -7461,8 +7753,11 @@ export default function App() {
 
         <header className="md:hidden bg-white border-b p-4 flex justify-between items-center shrink-0">
           <h1 className="font-bold text-lg">JnC Music</h1>
-          <button onClick={() => setIsSidebarOpen(!isSidebarOpen)}>
-            <Menu />
+          <button
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            className="p-1 rounded-lg hover:bg-slate-100 transition-colors"
+          >
+            {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
           </button>
         </header>
 
@@ -7559,6 +7854,7 @@ export default function App() {
               students={students}
               showToast={showToast}
               seedData={seedData}
+              adminPassword={adminPassword}
             />
           )}
         </main>
