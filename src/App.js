@@ -7534,10 +7534,10 @@ export default function App() {
         adminPassword={adminPassword}
       />
 
-      {/* 3-0. 모바일 사이드바 backdrop */}
+      {/* 3-0. 모바일 사이드바 backdrop (수정됨: 블러 효과 추가) */}
       {isSidebarOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/40 md:hidden"
+          className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm md:hidden transition-opacity"
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
