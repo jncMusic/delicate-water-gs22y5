@@ -6111,7 +6111,7 @@ const StudentManagementModal = ({
   const [baseDate, setBaseDate] = useState(new Date());
   const [payAmount, setPayAmount] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
-  const [isSaving, setIsSaving] = useState(false); 
+
   const DAYS = ["월", "화", "수", "목", "금", "토", "일"];
 
   // 🔥 [보안] 탭 목록 설정 (관리자만 payment 탭 보임)
@@ -6225,25 +6225,23 @@ const StudentManagementModal = ({
     }
   };
 
-  const handleFinalSave = async () => { // async 키워드 추가
-  if (isSaving) return; // (1) 저장 중이면 중복 실행 방지
-  
-  if (!formData.name) return alert("이름을 입력해주세요.");
+  const handleFinalSave = async () => {
+    if (isSaving) return;
+    if (!formData.name) return alert("이름을 입력해주세요.");
 
-  setIsSaving(true); // (2) 버튼 잠금 시작
+    setIsSaving(true);
 
-  const updatedData = {
-    ...formData,
-    attendanceHistory: attHistory,
-    paymentHistory: payHistory,
-    updatedAt: new Date().toISOString(),
+    const updatedData = {
+      ...formData,
+      attendanceHistory: attHistory,
+      paymentHistory: payHistory,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await onSave(updatedData);
+
+    setTimeout(() => setIsSaving(false), 500);
   };
-
-  await onSave(updatedData); // (3) 저장 완료될 때까지 대기
-  
-  // (4) 안전하게 잠금 해제 (모달이 닫히더라도 안전장치)
-  setTimeout(() => setIsSaving(false), 500); 
-};
 
   const renderCalendar = (type) => {
     const calendars = [];
@@ -6690,17 +6688,17 @@ const StudentManagementModal = ({
             취소
           </button>
           <button
-  onClick={handleFinalSave}
-  disabled={isSaving} // (1) 저장 중 클릭 불가 처리
-  className={`px-8 py-3 rounded-xl font-bold shadow-lg flex items-center transition-all ${
-    isSaving 
-      ? "bg-slate-400 text-slate-200 cursor-not-allowed" // (2) 저장 중일 때 회색 스타일
-      : "bg-indigo-600 text-white hover:bg-indigo-700 hover:scale-105 shadow-indigo-200" // 평소 스타일
-  }`}
->
-  <Save size={18} className="mr-2" />
-  {isSaving ? "저장 중..." : (activeTab === "info" ? "정보 저장" : "변경사항 저장")}
-</button>
+            onClick={handleFinalSave}
+            disabled={isSaving}
+            className={`px-8 py-3 rounded-xl font-bold shadow-lg flex items-center transition-all ${
+              isSaving
+                ? "bg-slate-400 text-slate-200 cursor-not-allowed"
+                : "bg-indigo-600 text-white hover:bg-indigo-700 hover:scale-105 shadow-indigo-200"
+            }`}
+          >
+            <Save size={18} className="mr-2" />
+            {isSaving ? "저장 중..." : (activeTab === "info" ? "정보 저장" : "변경사항 저장")}
+          </button>
         </div>
       </div>
     </div>
@@ -7449,24 +7447,23 @@ export default function App() {
   };
 
   // 4. [정의] 학생 삭제
-  const handleDeleteStudent = async (studentId) => { // async 추가
-  if (window.confirm("정말 삭제하시겠습니까? (복구 불가)")) {
-    try {
-      const safeAppId = APP_ID || "jnc-music-v2";
-      
-      // 🔥 [추가] 실제 DB에서 삭제하는 코드
-      await deleteDoc(
-        doc(db, "artifacts", safeAppId, "public", "data", "students", studentId)
-      );
+  const handleDeleteStudent = async (studentId) => {
+    if (window.confirm("정말 삭제하시겠습니까? (복구 불가)")) {
+      try {
+        const safeAppId = APP_ID || "jnc-music-v2";
 
-      setStudents((prev) => prev.filter((s) => s.id !== studentId));
-      showToast("삭제되었습니다.", "success");
-    } catch (e) {
-      console.error(e);
-      showToast("삭제 실패: " + e.message, "error");
+        await deleteDoc(
+          doc(db, "artifacts", safeAppId, "public", "data", "students", studentId)
+        );
+
+        setStudents((prev) => prev.filter((s) => s.id !== studentId));
+        showToast("삭제되었습니다.", "success");
+      } catch (e) {
+        console.error(e);
+        showToast("삭제 실패: " + e.message, "error");
+      }
     }
-  }
-};
+  };
 
   // 5. [에러 해결 완료] 상담 -> 원생 등록 데이터 연동 함수
   const handleRegisterFromConsultation = (consultation) => {
