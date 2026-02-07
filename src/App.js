@@ -7383,12 +7383,7 @@ export default function App() {
           id
         );
         await updateDoc(studentRef, updatedData);
-
-        // 2. 로컬 상태(화면) 업데이트 (이게 있어야 즉시 바뀝니다!)
-        setStudents((prev) =>
-          prev.map((s) => (s.id === id ? { ...s, ...updatedData } : s))
-        );
-
+        // onSnapshot이 자동으로 상태를 동기화합니다
         showToast("정보가 성공적으로 수정되었습니다.", "success");
       } else {
         // 상담에서 넘어온 경우: 이미 등록된 원생이 있는지 중복 체크
@@ -7402,9 +7397,7 @@ export default function App() {
               db, "artifacts", safeAppId, "public", "data", "students", existingStudent.id
             );
             await updateDoc(studentRef, updatedData);
-            setStudents((prev) =>
-              prev.map((s) => (s.id === existingStudent.id ? { ...s, ...updatedData } : s))
-            );
+            // onSnapshot이 자동으로 상태를 동기화합니다
             showToast("기존 원생 정보가 수정되었습니다.", "success");
             return;
           }
@@ -7419,12 +7412,11 @@ export default function App() {
           "data",
           "students"
         );
-        const docRef = await addDoc(studentsRef, {
+        await addDoc(studentsRef, {
           ...updatedData,
           createdAt: new Date().toISOString(),
         });
-
-        setStudents((prev) => [...prev, { ...updatedData, id: docRef.id }]);
+        // onSnapshot이 자동으로 상태를 동기화합니다
 
         // 상담에서 넘어온 경우 상담 상태를 "registered"로 변경
         if (updatedData.fromConsultationId) {
@@ -7455,8 +7447,7 @@ export default function App() {
         await deleteDoc(
           doc(db, "artifacts", safeAppId, "public", "data", "students", studentId)
         );
-
-        setStudents((prev) => prev.filter((s) => s.id !== studentId));
+        // onSnapshot이 자동으로 상태를 동기화합니다
         showToast("삭제되었습니다.", "success");
       } catch (e) {
         console.error(e);
