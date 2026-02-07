@@ -6114,13 +6114,14 @@ const StudentManagementModal = ({
 
   useEffect(() => {
     if (isOpen) {
-      if (student && student.fromConsultationId) {
+      if (student && student.fromConsultationId && !student.id) {
+        // 상담에서 최초 등록 (아직 DB에 저장 안 된 상태)
         setFormData({
           name: student.name || "",
           phone: student.phone || "",
           subject: student.subject || "",
           grade: student.grade || "",
-          teacher: teachers[0]?.name || "",
+          teacher: student.teacher || "",
           status: "재원",
           registrationDate: new Date().toISOString().slice(0, 10),
           memo: student.note || "",
@@ -7382,6 +7383,19 @@ export default function App() {
         });
 
         setStudents((prev) => [...prev, { ...updatedData, id: docRef.id }]);
+
+        // 상담에서 넘어온 경우 상담 상태를 "registered"로 변경
+        if (updatedData.fromConsultationId) {
+          try {
+            const consultRef = doc(
+              db, "artifacts", safeAppId, "public", "data", "consultations", updatedData.fromConsultationId
+            );
+            await updateDoc(consultRef, { status: "registered" });
+          } catch (err) {
+            console.error("상담 상태 업데이트 실패:", err);
+          }
+        }
+
         showToast("새 원생이 등록되었습니다.", "success");
       }
     } catch (e) {
@@ -7405,14 +7419,14 @@ export default function App() {
       name: consultation.name || "",
       phone: consultation.phone || "",
       subject: consultation.subject || "",
-      grade: consultation.grade || "",
+      grade: consultation.type === "adult" ? "성인" : (consultation.grade || ""),
       note: consultation.note || "",
       fromConsultationId: consultation.id, // 등록 완료 처리를 위해
       status: "재원",
       registrationDate: new Date().toISOString().slice(0, 10),
       totalSessions: 4,
       schedules: {},
-      teacher: teachers && teachers.length > 0 ? teachers[0].name : "",
+      teacher: "",
     };
 
     // 2. 탭 이동
