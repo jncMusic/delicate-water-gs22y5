@@ -128,26 +128,6 @@ const INITIAL_TEACHERS_LIST = [
   "강열혁",
 ];
 
-const TEACHER_PASSWORDS = {
-  남선오: "0351",
-  한수정: "4314",
-  이윤석: "9876",
-  민숙현: "0412",
-  김소형: "5858",
-  김주원: "5259",
-  권시문: "6312",
-  김여빈: "5408",
-  김맑음: "2313",
-  최지영: "5912",
-  조국화: "7904",
-  이상현: "2723",
-  문세영: "7608",
-  공성윤: "2001",
-  진승하: "3090",
-  강열혁: "1123",
-  태유민: "8825",
-};
-
 const HOLIDAYS = {
   "2025-01-01": "신정",
   "2025-01-29": "설날",
@@ -275,6 +255,7 @@ const LoginModal = ({
   onLogin,
   showToast,
   isInitialLogin,
+  adminPassword: adminPw = "1123",
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [isAdminLoginMode, setIsAdminLoginMode] = useState(false);
@@ -298,7 +279,7 @@ const LoginModal = ({
   const filteredTeachers = teachers.filter((t) => t.name.includes(searchTerm));
 
   const handleAdminLogin = () => {
-    if (password === "1123") {
+    if (password === adminPw) {
       onLogin({ name: "원장님", role: "admin" });
       setPassword("");
       setIsAdminLoginMode(false);
@@ -308,12 +289,10 @@ const LoginModal = ({
   };
 
   const handleTeacherLoginSubmit = () => {
-    const dbPassword = selectedTeacherForLogin.password;
-    const hardcodedPassword = TEACHER_PASSWORDS[selectedTeacherForLogin.name];
-    const correctPassword = dbPassword || hardcodedPassword;
+    const correctPassword = selectedTeacherForLogin.password;
 
     if (!correctPassword) {
-      showToast("비밀번호가 설정되지 않은 강사입니다.", "error");
+      showToast("비밀번호가 설정되지 않은 강사입니다. 환경설정에서 비밀번호를 지정해주세요.", "error");
       return;
     }
     if (teacherPassword === correctPassword) {
@@ -3237,8 +3216,12 @@ const ClassLogView = ({ students, teachers, user }) => {
 };
 
 // [SettingsView] - (강사 관리 완전체: 비밀번호/파트/요일 통합 관리)
-const SettingsView = ({ teachers, students, showToast, seedData }) => {
+const SettingsView = ({ teachers, students, showToast, seedData, adminPassword }) => {
   // --- [상태 관리] ---
+  // 0. 관리자 비밀번호 변경용 상태
+  const [newAdminPw, setNewAdminPw] = useState("");
+  const [confirmAdminPw, setConfirmAdminPw] = useState("");
+
   // 1. 신규 강사 등록용 상태
   const [newTeacherName, setNewTeacherName] = useState("");
   const [newTeacherPassword, setNewTeacherPassword] = useState("");
@@ -3278,6 +3261,24 @@ const SettingsView = ({ teachers, students, showToast, seedData }) => {
   ];
 
   // --- [핸들러 함수] ---
+
+  // 0. 관리자 비밀번호 변경
+  const handleChangeAdminPassword = async () => {
+    if (!newAdminPw.trim()) return showToast("새 비밀번호를 입력해주세요.", "error");
+    if (newAdminPw !== confirmAdminPw) return showToast("비밀번호가 일치하지 않습니다.", "error");
+    try {
+      await setDoc(
+        doc(db, "artifacts", APP_ID, "public", "data", "settings", "admin"),
+        { password: newAdminPw.trim() },
+        { merge: true }
+      );
+      setNewAdminPw("");
+      setConfirmAdminPw("");
+      showToast("관리자 비밀번호가 변경되었습니다.", "success");
+    } catch (e) {
+      showToast("변경 실패: " + e.message, "error");
+    }
+  };
 
   // 요일 토글 (신규 등록용)
   const toggleDay = (dayId) => {
@@ -3678,6 +3679,35 @@ const SettingsView = ({ teachers, students, showToast, seedData }) => {
               />
             </label>
           </div>
+        </div>
+      </div>
+
+      <div className="border-t border-slate-200 my-6"></div>
+
+      {/* 1-1. 관리자 비밀번호 변경 */}
+      <div className="mb-6 bg-slate-50 p-4 rounded-xl border border-slate-200">
+        <h4 className="font-bold text-slate-700 text-sm mb-3">🔐 관리자 비밀번호 변경</h4>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <input
+            type="password"
+            value={newAdminPw}
+            onChange={(e) => setNewAdminPw(e.target.value)}
+            placeholder="새 비밀번호"
+            className="flex-1 border rounded-lg px-3 py-2 text-sm"
+          />
+          <input
+            type="password"
+            value={confirmAdminPw}
+            onChange={(e) => setConfirmAdminPw(e.target.value)}
+            placeholder="비밀번호 확인"
+            className="flex-1 border rounded-lg px-3 py-2 text-sm"
+          />
+          <button
+            onClick={handleChangeAdminPassword}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors"
+          >
+            변경
+          </button>
         </div>
       </div>
 
@@ -7045,6 +7075,7 @@ export default function App() {
   const [teachers, setTeachers] = useState([]);
   const [consultations, setConsultations] = useState([]);
   const [reports, setReports] = useState([]);
+  const [adminPassword, setAdminPassword] = useState("1123"); // 기본값, Firestore에서 덮어씌움
 
   // UI 상태
   const [registerFromConsultation, setRegisterFromConsultation] =
@@ -7105,6 +7136,12 @@ export default function App() {
         (s) => setConsultations(s.docs.map((d) => ({ ...d.data(), id: d.id })))
       );
 
+      // 4-0. 관리자 비밀번호
+      onSnapshot(
+        doc(db, "artifacts", safeAppId, "public", "data", "settings", "admin"),
+        (d) => { if (d.exists() && d.data().password) setAdminPassword(d.data().password); }
+      );
+
       // 4. [문제 해결] 보고서 데이터 (ID가 덮어씌워지지 않도록 순서 변경)
       onSnapshot(
         collection(db, "artifacts", safeAppId, "public", "data", "reports"),
@@ -7131,6 +7168,12 @@ export default function App() {
         doc(collection(db, "artifacts", APP_ID, "public", "data", "teachers")),
         { name, days: [1, 2, 3, 4, 5], createdAt: new Date().toISOString() }
       )
+    );
+    // 관리자 비밀번호 기본값 설정
+    batch.set(
+      doc(db, "artifacts", APP_ID, "public", "data", "settings", "admin"),
+      { password: "1123" },
+      { merge: true }
     );
     await batch.commit();
     showToast("기본 데이터 생성 완료");
@@ -7404,6 +7447,7 @@ export default function App() {
           onLogin={handleLoginProcess}
           showToast={showToast}
           isInitialLogin={true}
+          adminPassword={adminPassword}
         />
       </div>
     );
@@ -7431,6 +7475,7 @@ export default function App() {
         onLogin={handleLoginProcess}
         showToast={showToast}
         isInitialLogin={!currentUser}
+        adminPassword={adminPassword}
       />
 
       {/* 3-0. 모바일 사이드바 backdrop */}
@@ -7753,6 +7798,7 @@ export default function App() {
               students={students}
               showToast={showToast}
               seedData={seedData}
+              adminPassword={adminPassword}
             />
           )}
         </main>
