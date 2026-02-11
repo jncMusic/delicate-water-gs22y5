@@ -4958,8 +4958,8 @@ const StudentModal = ({
 
   // --- UI 렌더링 ---
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-fade-in">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4">
+    <div className="fixed inset-0 bg-black/50 z-[110] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         {/* 1. 헤더 영역 */}
         <div className="flex justify-between items-center p-6 border-b sticky top-0 bg-white z-10">
           <h2 className="text-xl font-bold flex items-center gap-2 text-slate-800">
@@ -5916,7 +5916,7 @@ const StudentView = ({
                 DAYS.map((d) => (
                   <th
                     key={d}
-                    className="p-2 text-center w-24 bg-slate-50 border-b border-slate-200 shadow-sm"
+                    className="p-2 text-center w-24 sticky top-0 bg-slate-50 border-b border-slate-200 shadow-sm"
                   >
                     {d}
                   </th>
