@@ -1,10 +1,19 @@
+<<<<<<< HEAD
 /* 1. 나눔스퀘어 폰트 불러오기 (CDN) */
 @import url("https://cdn.jsdelivr.net/gh/moonspam/NanumSquare@2.0/nanumsquare.css");
+=======
+/* 1. 프리텐다드 폰트 불러오기 (CDN) */
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css");
+>>>>>>> ed2bae399fb6b8b52205e802872c4aa027899bbe
 
 /* 2. 전체 문서에 폰트 적용 */
 body {
   margin: 0;
+<<<<<<< HEAD
   font-family: "NanumSquare", -apple-system, BlinkMacSystemFont, system-ui, Roboto, "Helvetica Neue", "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", sans-serif;
+=======
+  font-family: "Pretendard", -apple-system, BlinkMacSystemFont, system-ui, Roboto, "Helvetica Neue", "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", sans-serif;
+>>>>>>> ed2bae399fb6b8b52205e802872c4aa027899bbe
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
