@@ -512,14 +512,17 @@ const StudentEditModal = ({ student, teachers, onClose, onUpdate, user }) => {
   };
 
   const handleSave = () => {
-    const days = Object.keys(formData.schedules);
-    const className = days.length > 0 ? days[0] : "";
-    const time = days.length > 0 ? formData.schedules[days[0]] || "" : "";
-
+    // 빈 시간의 요일 제거
     const cleanSchedules = { ...formData.schedules };
     Object.keys(cleanSchedules).forEach((key) => {
-      if (cleanSchedules[key] === undefined) cleanSchedules[key] = "";
+      if (!cleanSchedules[key] || cleanSchedules[key].trim() === "") {
+        delete cleanSchedules[key];
+      }
     });
+
+    const days = Object.keys(cleanSchedules);
+    const className = days.length > 0 ? days[0] : "";
+    const time = days.length > 0 ? cleanSchedules[days[0]] || "" : "";
 
     onUpdate(student.id, {
       ...formData,
@@ -6183,10 +6186,15 @@ const StudentManagementModal = ({
   };
 
   const handleScheduleChange = (day, value) => {
-    setFormData((prev) => ({
-      ...prev,
-      schedules: { ...prev.schedules, [day]: value },
-    }));
+    setFormData((prev) => {
+      const newSchedules = { ...prev.schedules };
+      if (!value || value.trim() === "") {
+        delete newSchedules[day];
+      } else {
+        newSchedules[day] = value;
+      }
+      return { ...prev, schedules: newSchedules };
+    });
   };
 
   const toggleAttendance = (dateStr) => {
@@ -6231,8 +6239,17 @@ const StudentManagementModal = ({
 
     setIsSaving(true);
 
+    // 빈 시간의 요일 제거
+    const cleanSchedules = { ...(formData.schedules || {}) };
+    Object.keys(cleanSchedules).forEach((day) => {
+      if (!cleanSchedules[day] || cleanSchedules[day].trim() === "") {
+        delete cleanSchedules[day];
+      }
+    });
+
     const updatedData = {
       ...formData,
+      schedules: cleanSchedules,
       attendanceHistory: attHistory,
       paymentHistory: payHistory,
       updatedAt: new Date().toISOString(),
