@@ -6000,7 +6000,7 @@ const StudentView = ({
                   ) : (
                     <td className="p-4 border-r border-slate-50">
                       <div className="flex flex-wrap gap-1.5">
-                        {Object.entries(s.schedules || {}).map(
+                        {Object.entries(s.schedules || {}).filter(([_, time]) => time).map(
                           ([day, time]) => (
                             <span
                               key={day}
