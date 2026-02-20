@@ -512,14 +512,17 @@ const StudentEditModal = ({ student, teachers, onClose, onUpdate, user }) => {
   };
 
   const handleSave = () => {
-    const days = Object.keys(formData.schedules);
-    const className = days.length > 0 ? days[0] : "";
-    const time = days.length > 0 ? formData.schedules[days[0]] || "" : "";
-
+    // 빈 시간의 요일 제거
     const cleanSchedules = { ...formData.schedules };
     Object.keys(cleanSchedules).forEach((key) => {
-      if (cleanSchedules[key] === undefined) cleanSchedules[key] = "";
+      if (!cleanSchedules[key] || cleanSchedules[key].trim() === "") {
+        delete cleanSchedules[key];
+      }
     });
+
+    const days = Object.keys(cleanSchedules);
+    const className = days.length > 0 ? days[0] : "";
+    const time = days.length > 0 ? cleanSchedules[days[0]] || "" : "";
 
     onUpdate(student.id, {
       ...formData,
@@ -1492,33 +1495,45 @@ const ReportView = ({
   const [isWriting, setIsWriting] = useState(false);
   const [studentReports, setStudentReports] = useState({});
 
-  // 기간 문자열
-  const getPeriodString = (year, month) => {
+  // 커스텀 집계 기간
+  const getDefaultPeriod = (year, month) => {
     let prevYear = year;
     let prevMonth = month - 1;
     if (prevMonth === 0) {
       prevMonth = 12;
       prevYear = year - 1;
     }
-    return `${prevYear}년 ${prevMonth}월 24일 ~ ${year}년 ${month}월 23일`;
+    return {
+      start: `${prevYear}-${String(prevMonth).padStart(2, "0")}-24`,
+      end: `${year}-${String(month).padStart(2, "0")}-23`,
+    };
+  };
+  const defaultPeriod = getDefaultPeriod(selectedYear, selectedMonth);
+  const [customStart, setCustomStart] = useState(defaultPeriod.start);
+  const [customEnd, setCustomEnd] = useState(defaultPeriod.end);
+
+  // 년/월 변경 시 커스텀 기간 초기화
+  useEffect(() => {
+    const p = getDefaultPeriod(selectedYear, selectedMonth);
+    setCustomStart(p.start);
+    setCustomEnd(p.end);
+  }, [selectedYear, selectedMonth]);
+
+  // 기간 문자열
+  const getPeriodString = () => {
+    const s = customStart.split("-");
+    const e = customEnd.split("-");
+    return `${parseInt(s[0])}년 ${parseInt(s[1])}월 ${parseInt(s[2])}일 ~ ${parseInt(e[0])}년 ${parseInt(e[1])}월 ${parseInt(e[2])}일`;
   };
 
   // 수업일 추출
-  const getAttendanceDates = (student, year, month) => {
+  const getAttendanceDates = (student) => {
     if (!student) return "";
-    let prevYear = year;
-    let prevMonth = month - 1;
-    if (prevMonth === 0) {
-      prevMonth = 12;
-      prevYear = year - 1;
-    }
-    const startDate = `${prevYear}-${String(prevMonth).padStart(2, "0")}-24`;
-    const endDate = `${year}-${String(month).padStart(2, "0")}-23`;
 
     return (student.attendanceHistory || [])
       .filter(
         (h) =>
-          h.date >= startDate && h.date <= endDate && h.status === "present"
+          h.date >= customStart && h.date <= customEnd && h.status === "present"
       )
       .map((h) => h.date.slice(5))
       .sort()
@@ -1586,12 +1601,22 @@ const ReportView = ({
           <h2 className="text-xl font-bold text-slate-800 flex items-center">
             <File className="mr-2 text-indigo-600" size={24} /> 월간 수업 보고서
           </h2>
-          <p className="text-xs text-slate-500 mt-1 ml-8">
-            집계 기간:{" "}
-            <span className="font-bold text-indigo-600">
-              {getPeriodString(selectedYear, selectedMonth)}
-            </span>
-          </p>
+          <div className="flex items-center gap-2 mt-1 ml-8 flex-wrap">
+            <span className="text-xs text-slate-500">집계 기간:</span>
+            <input
+              type="date"
+              value={customStart}
+              onChange={(e) => setCustomStart(e.target.value)}
+              className="px-2 py-0.5 border border-slate-200 rounded text-xs font-bold text-indigo-600 bg-indigo-50"
+            />
+            <span className="text-xs text-slate-400">~</span>
+            <input
+              type="date"
+              value={customEnd}
+              onChange={(e) => setCustomEnd(e.target.value)}
+              className="px-2 py-0.5 border border-slate-200 rounded text-xs font-bold text-indigo-600 bg-indigo-50"
+            />
+          </div>
         </div>
         <div className="flex flex-wrap gap-2 items-center">
           <select
@@ -1656,11 +1681,7 @@ const ReportView = ({
             <div className="grid grid-cols-1 gap-4">
               {myStudents.length > 0 ? (
                 myStudents.map((s) => {
-                  const dates = getAttendanceDates(
-                    s,
-                    selectedYear,
-                    selectedMonth
-                  );
+                  const dates = getAttendanceDates(s);
                   const sData = studentReports[s.id] || {
                     note: "",
                     feedbackSent: false,
@@ -1796,11 +1817,7 @@ const ReportView = ({
                       {studentList.length > 0 ? (
                         studentList.map((s) => {
                           const sData = (report.data || {})[s.id] || {};
-                          const dates = getAttendanceDates(
-                            s,
-                            report.year,
-                            report.month
-                          );
+                          const dates = getAttendanceDates(s);
                           return (
                             <div
                               key={s.id}
@@ -5997,7 +6014,7 @@ const StudentView = ({
                   ) : (
                     <td className="p-4 border-r border-slate-50">
                       <div className="flex flex-wrap gap-1.5">
-                        {Object.entries(s.schedules || {}).map(
+                        {Object.entries(s.schedules || {}).filter(([_, time]) => time).map(
                           ([day, time]) => (
                             <span
                               key={day}
@@ -6183,10 +6200,15 @@ const StudentManagementModal = ({
   };
 
   const handleScheduleChange = (day, value) => {
-    setFormData((prev) => ({
-      ...prev,
-      schedules: { ...prev.schedules, [day]: value },
-    }));
+    setFormData((prev) => {
+      const newSchedules = { ...prev.schedules };
+      if (!value || value.trim() === "") {
+        delete newSchedules[day];
+      } else {
+        newSchedules[day] = value;
+      }
+      return { ...prev, schedules: newSchedules };
+    });
   };
 
   const toggleAttendance = (dateStr) => {
@@ -6231,8 +6253,17 @@ const StudentManagementModal = ({
 
     setIsSaving(true);
 
+    // 빈 시간의 요일 제거
+    const cleanSchedules = { ...(formData.schedules || {}) };
+    Object.keys(cleanSchedules).forEach((day) => {
+      if (!cleanSchedules[day] || cleanSchedules[day].trim() === "") {
+        delete cleanSchedules[day];
+      }
+    });
+
     const updatedData = {
       ...formData,
+      schedules: cleanSchedules,
       attendanceHistory: attHistory,
       paymentHistory: payHistory,
       updatedAt: new Date().toISOString(),
