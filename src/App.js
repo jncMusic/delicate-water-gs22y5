@@ -5922,6 +5922,13 @@ const StudentView = ({
         </div>
       </div>
 
+      {/* 검색 결과 수 */}
+      {searchTerm.trim() && (
+        <div className="text-sm text-slate-500 px-1">
+          <span className="font-bold text-indigo-600">{filteredStudents.length}명</span> 검색됨
+        </div>
+      )}
+
       {/* 테이블 영역 */}
       <div className="bg-white rounded-2xl border shadow-sm overflow-auto max-h-[70vh] relative">
         <table className="w-full text-left border-separate border-spacing-0">
