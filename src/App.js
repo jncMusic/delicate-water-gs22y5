@@ -4975,7 +4975,7 @@ const StudentModal = ({
 
   // --- UI 렌더링 ---
   return (
-    <div className="fixed inset-0 bg-black/50 z-[110] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+    <div className="fixed inset-0 bg-black/50 z-[110] flex items-center justify-center p-4 md:pl-64 backdrop-blur-sm animate-fade-in">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         {/* 1. 헤더 영역 */}
         <div className="flex justify-between items-center p-6 border-b sticky top-0 bg-white z-10">
