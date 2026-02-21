@@ -5955,17 +5955,32 @@ const StudentView = ({
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-          <button
-            onClick={() => setFilterStatus("신규")}
-            className={`px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 border transition-all ${
-              filterStatus === "신규"
-                ? "bg-amber-500 text-white shadow-lg scale-105"
-                : "bg-white text-amber-600 border-amber-200"
-            }`}
-          >
-            <Plus size={18} /> ✨ 이번달 신규{" "}
-            <span className="opacity-80 text-xs">({stats.신규})</span>
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setFilterStatus("신규")}
+              className={`px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 border transition-all ${
+                filterStatus === "신규"
+                  ? "bg-amber-500 text-white shadow-lg scale-105"
+                  : "bg-white text-amber-600 border-amber-200"
+              }`}
+            >
+              <Plus size={18} /> ✨ 이번달 신규{" "}
+              <span className="opacity-80 text-xs">({stats.신규})</span>
+            </button>
+
+            {/* 검색 결과 수 표시 */}
+            <span className="text-xs text-slate-500">
+              <span className="font-bold text-slate-700">
+                {filteredStudents.length}명
+              </span>{" "}
+              표시 중
+              {searchTerm && (
+                <span className="ml-1 text-indigo-500">
+                  (검색: &quot;{searchTerm}&quot;)
+                </span>
+              )}
+            </span>
+          </div>
 
           <div className="flex gap-2">
             <button
