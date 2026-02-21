@@ -193,6 +193,13 @@ const getLessonDatesForMessage = (student) => {
     .map((h) => h.date.slice(5).replace("-", "/"));
 };
 
+// [중요] 학생의 주 수업 빈도 반환 (명시적 설정 우선, 없으면 스케줄로 자동 판별)
+const getWeeklyFrequency = (student) => {
+  if (student.weeklyFrequency) return student.weeklyFrequency;
+  const count = Object.keys(student.schedules || {}).length;
+  return count >= 2 ? 2 : 1;
+};
+
 // =================================================================
 // 3. UI 및 공통 컴포넌트
 // =================================================================
@@ -475,14 +482,20 @@ const LoginModal = ({
 
 // [StudentEditModal]
 const StudentEditModal = ({ student, teachers, onClose, onUpdate, user }) => {
-  const [formData, setFormData] = useState({
-    ...student,
-    schedules:
+  const [formData, setFormData] = useState(() => {
+    const schedules =
       student.schedules ||
-      (student.className ? { [student.className]: student.time || "" } : {}),
-    classDays:
-      student.classDays || (student.className ? [student.className] : []),
-    totalSessions: student.totalSessions || 4,
+      (student.className ? { [student.className]: student.time || "" } : {});
+    return {
+      ...student,
+      schedules,
+      classDays:
+        student.classDays || (student.className ? [student.className] : []),
+      totalSessions: student.totalSessions || 4,
+      weeklyFrequency:
+        student.weeklyFrequency ||
+        (Object.keys(schedules).length >= 2 ? 2 : 1),
+    };
   });
   const isAdmin = user.role === "admin";
 
@@ -494,12 +507,15 @@ const StudentEditModal = ({ student, teachers, onClose, onUpdate, user }) => {
       currentSchedules[day] = "";
     }
     const days = Object.keys(currentSchedules);
+    // 요일 수에 따라 주 수업 빈도 자동 갱신 (2개 이상이면 주2회)
+    const autoFrequency = days.length >= 2 ? 2 : 1;
     setFormData({
       ...formData,
       schedules: currentSchedules,
       classDays: days,
       className: days[0] || "",
       time: days.length > 0 ? currentSchedules[days[0]] || "" : "",
+      weeklyFrequency: autoFrequency,
     });
   };
 
@@ -675,6 +691,34 @@ const StudentEditModal = ({ student, teachers, onClose, onUpdate, user }) => {
                     </div>
                   );
                 })}
+              </div>
+
+              {/* 주 수업 빈도 선택 (요일 수에 따라 자동 반영, 수동 조정 가능) */}
+              <div className="mt-3">
+                <label className="block text-xs font-bold text-slate-500 mb-2">
+                  주 수업 빈도
+                </label>
+                <div className="flex gap-2">
+                  {[1, 2].map((freq) => (
+                    <button
+                      key={freq}
+                      type="button"
+                      onClick={() =>
+                        setFormData({ ...formData, weeklyFrequency: freq })
+                      }
+                      className={`flex-1 py-2 rounded-lg text-sm font-bold border transition-all ${
+                        (formData.weeklyFrequency || 1) === freq
+                          ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                          : "bg-white text-slate-500 border-slate-300 hover:border-indigo-400"
+                      }`}
+                    >
+                      주{freq}회
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  * 요일을 2개 이상 선택하면 자동으로 주2회로 변경됩니다.
+                </p>
               </div>
             </div>
           </div>
@@ -4828,7 +4872,13 @@ const StudentModal = ({
   // 모달 열릴 때 데이터 초기화
   useEffect(() => {
     if (isOpen && student) {
-      setFormData({ ...student, schedules: student.schedules || {} });
+      setFormData({
+        ...student,
+        schedules: student.schedules || {},
+        weeklyFrequency:
+          student.weeklyFrequency ||
+          (Object.keys(student.schedules || {}).length >= 2 ? 2 : 1),
+      });
       setAttHistory(student.attendanceHistory || []);
       setPayHistory(student.paymentHistory || []);
       setPayAmount(student.tuitionFee || 0);
@@ -4849,6 +4899,7 @@ const StudentModal = ({
         schedules: {},
         subject: "", // 과목 초기화 추가
         school: "", // 학교 초기화 추가
+        weeklyFrequency: 1, // 주 수업 빈도 기본값 (주1회)
       });
       setSchedule({});
       setIsAdult(false);
@@ -4864,14 +4915,19 @@ const StudentModal = ({
 
   // 스케줄 변경 핸들러
   const handleScheduleChange = (day, time) => {
-    setSchedule((prev) => {
-      if (!time) {
-        const next = { ...prev };
-        delete next[day];
-        return next;
-      }
-      return { ...prev, [day]: time };
-    });
+    const newSchedule = { ...schedule };
+    if (!time) {
+      delete newSchedule[day];
+    } else {
+      newSchedule[day] = time;
+    }
+    setSchedule(newSchedule);
+    // 요일 수에 따라 주 수업 빈도 자동 갱신 (2개 이상이면 주2회)
+    const dayCount = Object.keys(newSchedule).length;
+    setFormData((prev) => ({
+      ...prev,
+      weeklyFrequency: dayCount >= 2 ? 2 : 1,
+    }));
   };
 
   // 🔥 [핵심] 저장 로직 (괄호 닫기 문제 해결 + 유효성 검사)
@@ -5242,6 +5298,34 @@ const StudentModal = ({
                   )}
                 </div>
               ))}
+            </div>
+
+            {/* 주 수업 빈도 선택 (요일 설정 시 자동 반영, 수동 조정 가능) */}
+            <div className="mt-3">
+              <label className="block text-xs font-bold text-slate-500 mb-2">
+                주 수업 빈도
+              </label>
+              <div className="flex gap-2">
+                {[1, 2].map((freq) => (
+                  <button
+                    key={freq}
+                    type="button"
+                    onClick={() =>
+                      setFormData((prev) => ({ ...prev, weeklyFrequency: freq }))
+                    }
+                    className={`flex-1 py-2 rounded-lg text-sm font-bold border transition-all ${
+                      (formData.weeklyFrequency || 1) === freq
+                        ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                        : "bg-white text-slate-500 border-slate-300 hover:border-indigo-400"
+                    }`}
+                  >
+                    주{freq}회
+                  </button>
+                ))}
+              </div>
+              <p className="text-[11px] text-slate-400 mt-1">
+                * 요일을 2개 이상 설정하면 자동으로 주2회로 변경됩니다.
+              </p>
             </div>
           </section>
 
@@ -5871,17 +5955,32 @@ const StudentView = ({
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-          <button
-            onClick={() => setFilterStatus("신규")}
-            className={`px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 border transition-all ${
-              filterStatus === "신규"
-                ? "bg-amber-500 text-white shadow-lg scale-105"
-                : "bg-white text-amber-600 border-amber-200"
-            }`}
-          >
-            <Plus size={18} /> ✨ 이번달 신규{" "}
-            <span className="opacity-80 text-xs">({stats.신규})</span>
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setFilterStatus("신규")}
+              className={`px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 border transition-all ${
+                filterStatus === "신규"
+                  ? "bg-amber-500 text-white shadow-lg scale-105"
+                  : "bg-white text-amber-600 border-amber-200"
+              }`}
+            >
+              <Plus size={18} /> ✨ 이번달 신규{" "}
+              <span className="opacity-80 text-xs">({stats.신규})</span>
+            </button>
+
+            {/* 검색 결과 수 표시 */}
+            <span className="text-xs text-slate-500">
+              <span className="font-bold text-slate-700">
+                {filteredStudents.length}명
+              </span>{" "}
+              표시 중
+              {searchTerm && (
+                <span className="ml-1 text-indigo-500">
+                  (검색: &quot;{searchTerm}&quot;)
+                </span>
+              )}
+            </span>
+          </div>
 
           <div className="flex gap-2">
             <button
@@ -5968,6 +6067,15 @@ const StudentView = ({
                         </span>
                         <span className="text-[10px] px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-full font-bold border border-indigo-100">
                           {s.subject}
+                        </span>
+                        <span
+                          className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
+                            getWeeklyFrequency(s) === 2
+                              ? "bg-violet-50 text-violet-600 border-violet-100"
+                              : "bg-slate-50 text-slate-500 border-slate-200"
+                          }`}
+                        >
+                          주{getWeeklyFrequency(s)}회
                         </span>
                       </div>
                       <div className="flex items-center gap-2 text-xs text-slate-600 font-medium">
@@ -6154,12 +6262,18 @@ const StudentManagementModal = ({
           tuitionFee: 0,
           schedules: {},
           fromConsultationId: student.fromConsultationId,
+          weeklyFrequency: 1, // 주 수업 빈도 기본값 (주1회)
         });
         setAttHistory([]);
         setPayHistory([]);
         setPayAmount(0);
       } else if (student && student.id) {
-        setFormData({ ...student });
+        setFormData({
+          ...student,
+          weeklyFrequency:
+            student.weeklyFrequency ||
+            (Object.keys(student.schedules || {}).length >= 2 ? 2 : 1),
+        });
         setAttHistory(student.attendanceHistory || []);
         setPayHistory(student.paymentHistory || []);
         setPayAmount(student.tuitionFee || 0);
@@ -6175,6 +6289,7 @@ const StudentManagementModal = ({
           teacher: teachers[0]?.name || "",
           registrationDate: new Date().toISOString().slice(0, 10),
           schedules: {},
+          weeklyFrequency: 1, // 주 수업 빈도 기본값 (주1회)
         });
         setAttHistory([]);
         setPayHistory([]);
@@ -6207,7 +6322,13 @@ const StudentManagementModal = ({
       } else {
         newSchedules[day] = value;
       }
-      return { ...prev, schedules: newSchedules };
+      // 요일 수에 따라 주 수업 빈도 자동 갱신 (2개 이상이면 주2회)
+      const dayCount = Object.keys(newSchedules).length;
+      return {
+        ...prev,
+        schedules: newSchedules,
+        weeklyFrequency: dayCount >= 2 ? 2 : 1,
+      };
     });
   };
 
@@ -6353,7 +6474,7 @@ const StudentManagementModal = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
+    <div className="fixed inset-0 md:left-64 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl flex flex-col max-h-[90vh]">
         {/* 헤더 */}
         <div className="p-5 border-b flex justify-between items-center bg-slate-50/80 rounded-t-3xl shrink-0 backdrop-blur-sm">
@@ -6574,6 +6695,37 @@ const StudentManagementModal = ({
                       />
                     </div>
                   ))}
+                </div>
+
+                {/* 주 수업 빈도 선택 (요일 수에 따라 자동 반영, 수동 조정 가능) */}
+                <div className="mt-4">
+                  <label className="text-xs font-bold text-slate-500 mb-2 block">
+                    주 수업 빈도
+                  </label>
+                  <div className="flex gap-2">
+                    {[1, 2].map((freq) => (
+                      <button
+                        key={freq}
+                        type="button"
+                        onClick={() =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            weeklyFrequency: freq,
+                          }))
+                        }
+                        className={`flex-1 py-2 rounded-xl text-sm font-bold border transition-all ${
+                          (formData.weeklyFrequency || 1) === freq
+                            ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                            : "bg-white text-slate-500 border-slate-300 hover:border-indigo-400"
+                        }`}
+                      >
+                        주{freq}회
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1.5">
+                    * 요일을 2개 이상 입력하면 자동으로 주2회로 변경됩니다.
+                  </p>
                 </div>
               </div>
 
@@ -6911,7 +7063,7 @@ const PaymentView = ({
 
 수업료 결제 안내입니다. 아래 수업일자와 결제내용 확인하시어 결제 부탁드리겠습니다.
 -------------------------------
-- 과정명 : ${student.subject || "음악"} 과정 - ${student.name} 학생
+- 과정명 : ${student.subject || "음악"} 과정 - ${student.name} 학생 (주${getWeeklyFrequency(student)}회)
 - 최종 결제일 : ${lastPayment.slice(5).replace("-", "/")}
 - 수업일자 : ${recentSessions}
 - 결제하신 수업 완료일 : ${lastCoveredDate}
