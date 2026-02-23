@@ -1486,9 +1486,13 @@ const ReportView = ({
   reports,
   onSaveReport,
   onDeleteReport,
+  onUpdateStudent,
 }) => {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
+  const [reportSelectedStudent, setReportSelectedStudent] = useState(null);
+  const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
+  const [studentModalTab, setStudentModalTab] = useState("attendance");
   const [selectedTeacher, setSelectedTeacher] = useState(
     user.role === "teacher" ? user.name : "전체"
   );
@@ -1824,8 +1828,16 @@ const ReportView = ({
                               className="p-4 hover:bg-slate-50 transition-colors"
                             >
                               <div className="flex justify-between items-start mb-2">
-                                <div className="flex items-center">
-                                  <span className="font-bold text-slate-800 mr-2">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span
+                                    className="font-bold text-slate-800 cursor-pointer hover:text-indigo-600 transition-colors"
+                                    onClick={() => {
+                                      setReportSelectedStudent(s);
+                                      setStudentModalTab("attendance");
+                                      setIsStudentModalOpen(true);
+                                    }}
+                                    title="출석콕콕 보기"
+                                  >
                                     {s.name}
                                   </span>
                                   <span
@@ -1839,6 +1851,28 @@ const ReportView = ({
                                       ? "피드백 완료"
                                       : "피드백 미발송"}
                                   </span>
+                                  <button
+                                    onClick={() => {
+                                      setReportSelectedStudent(s);
+                                      setStudentModalTab("attendance");
+                                      setIsStudentModalOpen(true);
+                                    }}
+                                    className="text-[10px] px-2 py-0.5 rounded-full border bg-blue-50 text-blue-600 border-blue-100 hover:bg-blue-100 transition-colors"
+                                  >
+                                    출석콕콕
+                                  </button>
+                                  {user.role === "admin" && (
+                                    <button
+                                      onClick={() => {
+                                        setReportSelectedStudent(s);
+                                        setStudentModalTab("payment");
+                                        setIsStudentModalOpen(true);
+                                      }}
+                                      className="text-[10px] px-2 py-0.5 rounded-full border bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-100 transition-colors"
+                                    >
+                                      수납콕콕
+                                    </button>
+                                  )}
                                 </div>
                               </div>
                               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
@@ -1879,6 +1913,21 @@ const ReportView = ({
               )}
         </div>
       </div>
+      <StudentManagementModal
+        isOpen={isStudentModalOpen}
+        onClose={() => setIsStudentModalOpen(false)}
+        student={reportSelectedStudent}
+        teachers={teachers}
+        initialTab={studentModalTab}
+        user={user}
+        onSave={(data) => {
+          if (onUpdateStudent && reportSelectedStudent?.id) {
+            onUpdateStudent(reportSelectedStudent.id, data);
+          }
+          setIsStudentModalOpen(false);
+        }}
+        onDelete={() => setIsStudentModalOpen(false)}
+      />
     </div>
   );
 };
@@ -2489,7 +2538,8 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
       const isStatusMatch = s.status === "재원";
       const isDayMatch =
         (s.classDays && s.classDays.includes(dayName)) ||
-        s.className === dayName;
+        s.className === dayName ||
+        (s.schedules && s.schedules[dayName]);
       return isTeacherMatch && isDayMatch && isStatusMatch;
     });
     const attended = students.filter((s) => {
@@ -5921,6 +5971,13 @@ const StudentView = ({
         </div>
       </div>
 
+      {/* 검색 결과 수 */}
+      {searchTerm.trim() && (
+        <div className="text-sm text-slate-500 px-1">
+          <span className="font-bold text-indigo-600">{filteredStudents.length}명</span> 검색됨
+        </div>
+      )}
+
       {/* 테이블 영역 */}
       <div className="bg-white rounded-2xl border shadow-sm overflow-auto max-h-[70vh] relative">
         <table className="w-full text-left border-separate border-spacing-0">
@@ -7859,6 +7916,7 @@ export default function App() {
               reports={reports}
               onSaveReport={handleSaveReport}
               onDeleteReport={handleDeleteReport}
+              onUpdateStudent={handleUpdateStudent}
             />
           )}
           {activeTab === "payments" && currentUser.role === "admin" && (
