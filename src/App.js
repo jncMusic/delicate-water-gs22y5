@@ -6895,11 +6895,11 @@ const PaymentView = ({
             .join(", ")
         : "없음";
 
-    // [수정 1, 2] 최근 수업일자 (라벨 변경, 말줄임표 제거)
+    // 수업일자: 이전 결제로 소진된 회차 제외, 다음 결제 주기 수업만 표시
     const recentSessions = allAttendance
-      .slice(-12) // 최근 12개까지만 표시 (너무 길면 잘림 방지)
+      .slice(totalPaidCapacity, totalPaidCapacity + sessionUnit)
       .map((h) => h.date.slice(5).replace("-", "/"))
-      .join(", ");
+      .join(", ") || "(출석 기록 없음)";
 
     // [수정 3] 새로운 1회차 수업 (자동 계산)
     // 마지막 수업일(또는 오늘) 기준으로 학생의 수업 요일 중 가장 가까운 미래 날짜 찾기
