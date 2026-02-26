@@ -6758,7 +6758,7 @@ const StudentManagementModal = ({
                             </div>
                           ) : (
                             <div className="mt-1 text-[11px] text-slate-400">
-                              출석 기록 없음
+                              세션 진행중
                             </div>
                           )}
                         </div>
