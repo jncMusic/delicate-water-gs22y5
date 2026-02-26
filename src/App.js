@@ -6968,7 +6968,7 @@ const PaymentView = ({
 
 수업료 결제 안내입니다. 아래 수업일자와 결제내용 확인하시어 결제 부탁드리겠습니다.
 -------------------------------
-- 과정명 : ${(student.subject === "드럼" ? "드럼 1:1 개인레슨" : student.subject) || "음악"} 과정 - ${student.name} 학생
+- 과정명 : ${student.subject || "음악"} 1:1 개인레슨 과정 - ${student.name} 학생
 - 최종 결제일 : ${lastPayment.slice(5).replace("-", "/")}
 - 수업일자 : ${recentSessions}
 - 결제하신 수업 완료일 : ${lastCoveredDate}
