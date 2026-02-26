@@ -68,6 +68,7 @@ import {
   CheckSquare,
   Printer, // 🔥 인쇄 아이콘 추가
   Music, // 🔥 파트 아이콘 추가
+  ChevronDown,
 } from "lucide-react";
 import html2canvas from "html2canvas"; // 🔥 이미지 저장 라이브러리 추가
 
@@ -5868,8 +5869,9 @@ const StudentView = ({
   setRegisterFromConsultation,
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
-  // 기본값을 '재원'으로 설정
+  // 기본값을 '재원'으로 설정 (휴원·퇴원은 드롭다운으로 접근)
   const [filterStatus, setFilterStatus] = useState("재원");
+  const [showInactiveMenu, setShowInactiveMenu] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [modalTab, setModalTab] = useState("info");
@@ -6002,29 +6004,59 @@ const StudentView = ({
             />
           </div>
 
-          <div className="flex bg-slate-100 p-1 rounded-xl w-fit shrink-0">
-            {["재원", "휴원", "퇴원"].map((status) => (
+          <div className="flex items-center gap-2 shrink-0">
+            {/* 주 필터: 재원 */}
+            <button
+              onClick={() => { setFilterStatus("재원"); setShowInactiveMenu(false); }}
+              className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${
+                filterStatus === "재원"
+                  ? "bg-indigo-600 text-white shadow-sm"
+                  : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+              }`}
+            >
+              재원
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${filterStatus === "재원" ? "bg-white/25 text-white" : "bg-slate-200 text-slate-500"}`}>
+                {stats.재원}
+              </span>
+            </button>
+
+            {/* 보조 필터: 휴원·퇴원 드롭다운 */}
+            <div className="relative">
               <button
-                key={status}
-                onClick={() => setFilterStatus(status)}
-                className={`px-5 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${
-                  filterStatus === status
-                    ? "bg-white text-indigo-600 shadow-sm"
-                    : "text-slate-500 hover:text-slate-800"
+                onClick={() => setShowInactiveMenu((v) => !v)}
+                className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-1.5 ${
+                  filterStatus === "휴원" || filterStatus === "퇴원"
+                    ? "bg-slate-600 text-white shadow-sm"
+                    : "bg-slate-100 text-slate-400 hover:bg-slate-200"
                 }`}
               >
-                {status}
-                <span
-                  className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-                    filterStatus === status
-                      ? "bg-indigo-100 text-indigo-600"
-                      : "bg-slate-200 text-slate-500"
-                  }`}
-                >
-                  {stats[status]}
+                {filterStatus === "휴원" || filterStatus === "퇴원"
+                  ? filterStatus
+                  : "휴원·퇴원"}
+                <span className="text-[10px]">
+                  {filterStatus === "휴원" || filterStatus === "퇴원"
+                    ? stats[filterStatus]
+                    : stats.휴원 + stats.퇴원}
                 </span>
+                <ChevronDown size={13} />
               </button>
-            ))}
+              {showInactiveMenu && (
+                <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-20 overflow-hidden min-w-[120px]">
+                  {["휴원", "퇴원"].map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => { setFilterStatus(s); setShowInactiveMenu(false); }}
+                      className={`w-full text-left px-4 py-3 text-sm flex justify-between items-center hover:bg-slate-50 transition-colors ${
+                        filterStatus === s ? "text-indigo-600 font-bold bg-indigo-50" : "text-slate-600"
+                      }`}
+                    >
+                      {s}
+                      <span className="text-xs text-slate-400 ml-3">{stats[s]}명</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
