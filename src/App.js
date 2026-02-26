@@ -6722,24 +6722,49 @@ const StudentManagementModal = ({
                 <h4 className="text-xs font-bold text-slate-500 mb-2">
                   최근 결제 내역 (요약)
                 </h4>
-                <div className="space-y-1">
-                  {payHistory
-                    .slice()
-                    .sort((a, b) => b.date.localeCompare(a.date))
-                    .slice(0, 3)
-                    .map((h, idx) => (
-                      <div
-                        key={idx}
-                        className="flex justify-between text-xs bg-white p-2 rounded border border-slate-100"
-                      >
-                        <span className="font-mono text-slate-600">
-                          {h.date}
-                        </span>
-                        <span className="font-bold text-indigo-600">
-                          {Number(h.amount).toLocaleString()}원
-                        </span>
-                      </div>
-                    ))}
+                <div className="space-y-2">
+                  {(() => {
+                    const sessionUnit = parseInt(formData.totalSessions) || 4;
+                    const sortedPay = [...payHistory].sort((a, b) =>
+                      a.date.localeCompare(b.date)
+                    );
+                    const sortedAtt = [...attHistory]
+                      .filter((h) => h.status === "present")
+                      .sort((a, b) => a.date.localeCompare(b.date));
+                    const payWithIdx = sortedPay.map((h, i) => ({ ...h, payIdx: i }));
+                    const recentPays = [...payWithIdx].reverse().slice(0, 3);
+                    return recentPays.map((h, idx) => {
+                      const startSession = h.payIdx * sessionUnit;
+                      const sessions = sortedAtt.slice(startSession, startSession + sessionUnit);
+                      const startNum = startSession + 1;
+                      const endNum = startNum + sessions.length - 1;
+                      return (
+                        <div
+                          key={idx}
+                          className="bg-white rounded border border-slate-100 p-2 text-xs"
+                        >
+                          <div className="flex justify-between">
+                            <span className="font-mono text-slate-600">{h.date}</span>
+                            <span className="font-bold text-indigo-600">
+                              {Number(h.amount).toLocaleString()}원
+                            </span>
+                          </div>
+                          {sessions.length > 0 ? (
+                            <div className="mt-1 text-[11px] text-slate-500">
+                              <span className="text-slate-400 font-medium">
+                                {startNum}~{endNum}회차:{" "}
+                              </span>
+                              {sessions.map((s) => s.date.slice(5).replace("-", "/")).join(", ")}
+                            </div>
+                          ) : (
+                            <div className="mt-1 text-[11px] text-slate-400">
+                              출석 기록 없음
+                            </div>
+                          )}
+                        </div>
+                      );
+                    });
+                  })()}
                   {payHistory.length === 0 && (
                     <p className="text-xs text-slate-400">
                       등록된 수납 내역이 없습니다.
