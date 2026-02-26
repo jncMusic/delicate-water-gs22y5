@@ -1205,7 +1205,31 @@ const DashboardView = ({
     return { paymentDueCount, totalRevenue, newStudentsCount, pendingConsults };
   }, [myStudents, consultations, user]);
 
-  // 4. 강사용 월간 보고서 상태
+  // 4. 원생 추이 (관리자 전용, 최근 12개월)
+  const trendData = useMemo(() => {
+    if (user.role !== "admin") return [];
+    const now = new Date();
+    const months = [];
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      months.push(
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+      );
+    }
+    return months.map((ym) => {
+      const newCount = students.filter((s) =>
+        (s.registrationDate || s.createdAt || "").startsWith(ym)
+      ).length;
+      // 해당 월까지 등록한 현재 재원생 수 (현재 재원 기준 하한선)
+      const activeCount = students.filter((s) => {
+        const reg = s.registrationDate || s.createdAt || "";
+        return reg && reg.slice(0, 7) <= ym && s.status === "재원";
+      }).length;
+      return { month: ym, new: newCount, active: activeCount };
+    });
+  }, [students, user]);
+
+  // 5. 강사용 월간 보고서 상태
   const reportStatus = useMemo(() => {
     if (user.role !== "teacher") return null;
     const now = new Date();
@@ -1436,6 +1460,80 @@ const DashboardView = ({
               </p>
             </div>
           )}
+        </div>
+      )}
+
+      {/* 5. 원생 추이 (관리자 전용) */}
+      {user.role === "admin" && (
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+          <div className="flex justify-between items-center mb-5">
+            <h3 className="font-bold text-slate-800 flex items-center text-lg">
+              <TrendingUp className="mr-2 text-indigo-600" size={22} /> 원생 추이
+            </h3>
+            <span className="text-xs text-slate-400">최근 12개월 · 신규 등록 기준</span>
+          </div>
+
+          {/* 막대 그래프 */}
+          {(() => {
+            const maxNew = Math.max(...trendData.map((d) => d.new), 1);
+            return (
+              <div>
+                <div className="flex items-end gap-1.5 h-28 mb-1">
+                  {trendData.map((d) => (
+                    <div key={d.month} className="flex-1 flex flex-col items-center justify-end gap-0.5">
+                      {d.new > 0 && (
+                        <span className="text-[9px] font-bold text-indigo-600">
+                          +{d.new}
+                        </span>
+                      )}
+                      <div
+                        className="w-full rounded-t-md bg-indigo-200 hover:bg-indigo-400 transition-colors cursor-default"
+                        style={{ height: `${Math.max((d.new / maxNew) * 100, d.new > 0 ? 8 : 2)}%` }}
+                        title={`${d.month.replace("-", "년 ")}월: 신규 ${d.new}명, 재원 ${d.active}명`}
+                      />
+                    </div>
+                  ))}
+                </div>
+                {/* X축 레이블 */}
+                <div className="flex gap-1.5 mb-5">
+                  {trendData.map((d) => (
+                    <div key={d.month} className="flex-1 text-center text-[9px] text-slate-400">
+                      {d.month.slice(5)}월
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* 표 */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 text-slate-400 font-medium">
+                  <th className="py-2 pr-4 text-left">월</th>
+                  <th className="py-2 pr-4 text-center">재원생</th>
+                  <th className="py-2 text-center">신규 등록</th>
+                </tr>
+              </thead>
+              <tbody>
+                {trendData.map((d) => (
+                  <tr key={d.month} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
+                    <td className="py-2 pr-4 font-bold text-slate-700">
+                      {d.month.replace("-", "년 ")}월
+                    </td>
+                    <td className="py-2 pr-4 text-center text-slate-600">{d.active}명</td>
+                    <td className="py-2 text-center font-bold text-indigo-600">
+                      {d.new > 0 ? `+${d.new}명` : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="text-[10px] text-slate-400 mt-2">
+              * 재원생 수는 현재 재원 중인 학생 기준으로, 이미 퇴원한 학생은 반영되지 않습니다.
+            </p>
+          </div>
         </div>
       )}
     </div>
