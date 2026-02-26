@@ -3321,7 +3321,7 @@ const SettingsView = ({ teachers, students, showToast, seedData, adminPassword }
   const TEACHER_PARTS = [
     { id: "피아노", label: "🎹 피아노" },
     { id: "재즈피아노", label: "🎹 재즈피아노" },
-    { id: "드럼", label: "🥁 드럼" },
+    { id: "드럼 1:1 개인레슨", label: "🥁 드럼 1:1 개인레슨" },
     { id: "기타", label: "🎸 기타" },
     { id: "베이스", label: "🎸 베이스" },
     { id: "보컬", label: "🎤 보컬" },
@@ -5152,7 +5152,7 @@ const StudentModal = ({
                     "성악",
                     "클라리넷",
                     "기타",
-                    "드럼",
+                    "드럼 1:1 개인레슨",
                     "작곡",
                   ].map((sub) => (
                     <option key={sub} value={sub}>
@@ -8365,7 +8365,7 @@ const SubjectTimetableView = ({ students, teachers, showToast }) => {
       첼로: "bg-amber-100 text-amber-700 border-amber-200",
       성악: "bg-rose-100 text-rose-700 border-rose-200",
       기타: "bg-sky-100 text-sky-700 border-sky-200",
-      드럼: "bg-slate-100 text-slate-700 border-slate-200",
+      "드럼 1:1 개인레슨": "bg-slate-100 text-slate-700 border-slate-200",
     };
     return map[subject] || "bg-gray-100 text-gray-600 border-gray-200";
   };
