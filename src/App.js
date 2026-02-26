@@ -2625,8 +2625,13 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
     const validSessions = history
       .filter((h) => h.status === "present" && h.date >= lastPayment)
       .sort((a, b) => a.date.localeCompare(b.date));
-    const index = validSessions.findIndex((h) => h.date === targetDate);
-    return index !== -1 ? index + 1 : null;
+    let cumulative = 0;
+    for (const h of validSessions) {
+      if (h.date === targetDate) return cumulative + 1;
+      if (h.date > targetDate) break;
+      cumulative += h.count || 1;
+    }
+    return null;
   };
 
   const getDetailModalData = (dateStr, dayOfWeek) => {
@@ -3143,8 +3148,13 @@ const ClassLogView = ({ students, teachers, user }) => {
     const validSessions = history
       .filter((h) => h.status === "present" && h.date >= lastPayment)
       .sort((a, b) => a.date.localeCompare(b.date));
-    const index = validSessions.findIndex((h) => h.date === targetDate);
-    return index !== -1 ? index + 1 : 0;
+    let cumulative = 0;
+    for (const h of validSessions) {
+      if (h.date === targetDate) return cumulative + 1;
+      if (h.date > targetDate) break;
+      cumulative += h.count || 1;
+    }
+    return 0;
   };
   const getCellContent = (dateStr, dayIndex) => {
     let content = [];
@@ -6270,17 +6280,27 @@ const StudentManagementModal = ({
 
   const toggleAttendance = (dateStr) => {
     const exists = attHistory.find((h) => h.date === dateStr);
-    if (exists) {
-      setAttHistory(attHistory.filter((h) => h.date !== dateStr));
-    } else {
+    if (!exists) {
+      // 없음 → 1회 출석
       setAttHistory([
         ...attHistory,
         {
           date: dateStr,
           status: "present",
+          count: 1,
           timestamp: new Date().toISOString(),
         },
       ]);
+    } else if ((exists.count || 1) === 1) {
+      // 1회 → 2회 연강
+      setAttHistory(
+        attHistory.map((h) =>
+          h.date === dateStr ? { ...h, count: 2 } : h
+        )
+      );
+    } else {
+      // 2회 → 제거
+      setAttHistory(attHistory.filter((h) => h.date !== dateStr));
     }
   };
 
@@ -6374,11 +6394,16 @@ const StudentManagementModal = ({
                 "0"
               )}-${String(day).padStart(2, "0")}`;
               let isSelected = false;
-              if (type === "attendance")
-                isSelected = attHistory.some(
+              let isDouble = false;
+              if (type === "attendance") {
+                const attRecord = attHistory.find(
                   (h) => h.date === dateStr && h.status === "present"
                 );
-              else isSelected = payHistory.some((h) => h.date === dateStr);
+                isSelected = !!attRecord;
+                isDouble = isSelected && (attRecord.count || 1) === 2;
+              } else {
+                isSelected = payHistory.some((h) => h.date === dateStr);
+              }
 
               return (
                 <div
@@ -6388,8 +6413,10 @@ const StudentManagementModal = ({
                       ? toggleAttendance(dateStr)
                       : togglePayment(dateStr)
                   }
-                  className={`aspect-square flex items-center justify-center rounded-lg text-xs cursor-pointer transition-all border ${
-                    isSelected
+                  className={`aspect-square flex items-center justify-center rounded-lg text-xs cursor-pointer transition-all border relative ${
+                    isDouble
+                      ? "bg-emerald-700 text-white font-bold border-emerald-800 shadow-md transform scale-105"
+                      : isSelected
                       ? type === "attendance"
                         ? "bg-emerald-500 text-white font-bold border-emerald-600 shadow-md transform scale-105"
                         : "bg-indigo-600 text-white font-bold border-indigo-700 shadow-md transform scale-105"
@@ -6397,6 +6424,11 @@ const StudentManagementModal = ({
                   }`}
                 >
                   {day}
+                  {isDouble && (
+                    <span className="absolute -top-1 -right-1 bg-amber-400 text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center leading-none">
+                      ×2
+                    </span>
+                  )}
                 </div>
               );
             })}
@@ -6731,13 +6763,26 @@ const StudentManagementModal = ({
                     const sortedAtt = [...attHistory]
                       .filter((h) => h.status === "present")
                       .sort((a, b) => a.date.localeCompare(b.date));
+                    // count 반영: 연강(count:2)은 슬롯 2개로 확장
+                    const sessionSlots = [];
+                    sortedAtt.forEach((h) => {
+                      const cnt = h.count || 1;
+                      for (let i = 0; i < cnt; i++) sessionSlots.push(h.date);
+                    });
                     const payWithIdx = sortedPay.map((h, i) => ({ ...h, payIdx: i }));
                     const recentPays = [...payWithIdx].reverse().slice(0, 3);
                     return recentPays.map((h, idx) => {
                       const startSession = h.payIdx * sessionUnit;
-                      const sessions = sortedAtt.slice(startSession, startSession + sessionUnit);
+                      const slots = sessionSlots.slice(startSession, startSession + sessionUnit);
                       const startNum = startSession + 1;
-                      const endNum = startNum + sessions.length - 1;
+                      const endNum = startSession + slots.length;
+                      // 날짜별로 그룹화 (연강 여부 확인)
+                      const dateGroups = [];
+                      slots.forEach((date) => {
+                        const last = dateGroups[dateGroups.length - 1];
+                        if (last && last.date === date) last.cnt++;
+                        else dateGroups.push({ date, cnt: 1 });
+                      });
                       return (
                         <div
                           key={idx}
@@ -6749,12 +6794,17 @@ const StudentManagementModal = ({
                               {Number(h.amount).toLocaleString()}원
                             </span>
                           </div>
-                          {sessions.length > 0 ? (
+                          {slots.length > 0 ? (
                             <div className="mt-1 text-[11px] text-slate-500">
                               <span className="text-slate-400 font-medium">
                                 {startNum}~{endNum}회차:{" "}
                               </span>
-                              {sessions.map((s) => s.date.slice(5).replace("-", "/")).join(", ")}
+                              {dateGroups
+                                .map((g) =>
+                                  g.date.slice(5).replace("-", "/") +
+                                  (g.cnt > 1 ? "(연강)" : "")
+                                )
+                                .join(", ")}
                             </div>
                           ) : (
                             <div className="mt-1 text-[11px] text-slate-400">
