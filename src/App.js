@@ -6895,9 +6895,9 @@ const PaymentView = ({
             .join(", ")
         : "없음";
 
-    // 수업일자: 이전 결제로 소진된 회차 제외, 다음 결제 주기 수업만 표시
+    // 수업일자: 선불 모델 → 직전 결제로 커버된 sessionUnit회 수업 날짜
     const recentSessions = allAttendance
-      .slice(totalPaidCapacity, totalPaidCapacity + sessionUnit)
+      .slice(totalPaidCapacity - sessionUnit, totalPaidCapacity)
       .map((h) => h.date.slice(5).replace("-", "/"))
       .join(", ") || "(출석 기록 없음)";
 
