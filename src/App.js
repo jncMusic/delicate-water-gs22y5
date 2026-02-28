@@ -245,7 +245,20 @@ const StatCard = ({ icon: Icon, label, value, trend, trendUp, onClick }) => (
 );
 
 // =================================================================
-// 4. 모달 및 팝업 컴포넌트
+// 4. 공통 헬퍼 함수
+// =================================================================
+
+// 결제 주기(세션 단위) 계산: 주2회(schedules 2개 이상)인데 totalSessions가
+// 구버전 기본값(4)으로 저장된 학생을 자동으로 8회로 보정한다.
+const getEffectiveSessions = (student) => {
+  const saved = parseInt(student.totalSessions) || 4;
+  const scheduleCount = Object.keys(student.schedules || {}).length;
+  if (scheduleCount >= 2 && saved === 4) return 8;
+  return saved;
+};
+
+// =================================================================
+// 5. 모달 및 팝업 컴포넌트
 // =================================================================
 
 // [LoginModal]
@@ -835,8 +848,8 @@ const PaymentDetailModal = ({
   // [NEW] 출석 수정 모달 상태
   const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState(false);
 
-  // 4회 or 8회 단위 설정
-  const SESSION_UNIT = parseInt(student.totalSessions) || 4;
+  // 4회 or 8회 단위 설정 (주2회 학생 자동 보정 포함)
+  const SESSION_UNIT = getEffectiveSessions(student);
 
   const { historyRows, nextSessionStartIndex, currentStatus } = useMemo(() => {
     const allAttendance = [...(student.attendanceHistory || [])]
@@ -1247,7 +1260,7 @@ const DashboardView = ({
     const totalAttended = (s.attendanceHistory || []).filter(
       (h) => h.status === "present"
     ).length;
-    const sessionUnit = parseInt(s.totalSessions) || 4;
+    const sessionUnit = getEffectiveSessions(s);
     const totalPaidCapacity = (s.paymentHistory || []).length * sessionUnit;
 
     let currentUsage = totalAttended % sessionUnit;
@@ -6429,7 +6442,7 @@ const StudentManagementModal = ({
         setPayHistory([]);
         setPayAmount(0);
       } else if (student && student.id) {
-        setFormData({ ...student });
+        setFormData({ ...student, totalSessions: getEffectiveSessions(student) });
         setAttHistory(student.attendanceHistory || []);
         setPayHistory(student.paymentHistory || []);
         setPayAmount(student.tuitionFee || 0);
@@ -7092,7 +7105,7 @@ const PaymentView = ({
     const totalAttended = (s.attendanceHistory || []).filter(
       (h) => h.status === "present"
     ).length;
-    const sessionUnit = parseInt(s.totalSessions) || 4;
+    const sessionUnit = getEffectiveSessions(s);
     const totalPaidCapacity = (s.paymentHistory || []).length * sessionUnit;
 
     let currentUsage = totalAttended % sessionUnit;
@@ -7149,7 +7162,7 @@ const PaymentView = ({
   const handleOpenMsgPreview = (e, student) => {
     e.stopPropagation();
 
-    const sessionUnit = parseInt(student.totalSessions) || 4;
+    const sessionUnit = getEffectiveSessions(student);
     const tuition = parseInt(student.tuitionFee || 0).toLocaleString();
 
     // 출석 이력 (날짜순 정렬)
