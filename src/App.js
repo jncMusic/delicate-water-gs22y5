@@ -7297,6 +7297,11 @@ J&C 음악학원장 올림.`;
               className="pl-9 pr-4 py-1.5 border rounded-lg text-sm bg-slate-50 focus:outline-indigo-500 w-48"
             />
           </div>
+          {searchTerm && (
+            <span className="ml-2 text-sm text-slate-500">
+              {list.length}명
+            </span>
+          )}
         </div>
         <button
           onClick={() => setFilterDue(!filterDue)}
