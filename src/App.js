@@ -7070,6 +7070,7 @@ const PaymentView = ({
   const [filterDue, setFilterDue] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [selectedTeacher, setSelectedTeacher] = useState("");
 
   const [showMsgPreview, setShowMsgPreview] = useState(false);
   const [msgContent, setMsgContent] = useState("");
@@ -7106,6 +7107,13 @@ const PaymentView = ({
     };
   };
 
+  // 강사 목록 (드롭다운용)
+  const teacherOptions = useMemo(() => {
+    const set = new Set();
+    students.forEach((s) => { if (s.teacher) set.add(s.teacher); });
+    return Array.from(set).sort();
+  }, [students]);
+
   const list = useMemo(() => {
     return students.filter((s) => {
       const { isOverdue, isCompleted } = getStudentProgress(s);
@@ -7113,10 +7121,12 @@ const PaymentView = ({
       const isReEnrolled = s.status === "재원";
       const matchesSearch =
         s.name.includes(searchTerm) ||
-        (s.subject && s.subject.includes(searchTerm));
-      return isReEnrolled && isDue && matchesSearch;
+        (s.subject && s.subject.includes(searchTerm)) ||
+        (s.teacher && s.teacher.includes(searchTerm));
+      const matchesTeacher = !selectedTeacher || s.teacher === selectedTeacher;
+      return isReEnrolled && isDue && matchesSearch && matchesTeacher;
     });
-  }, [students, filterDue, searchTerm]);
+  }, [students, filterDue, searchTerm, selectedTeacher]);
 
   const selectedStudent = useMemo(
     () => students.find((s) => s.id === selectedStudentId) || null,
@@ -7341,8 +7351,8 @@ J&C 음악학원장 올림.`;
       )}
 
       <div className="flex flex-col md:flex-row justify-between items-center mb-4 shrink-0 gap-3">
-        <div className="flex items-center">
-          <h2 className="text-lg font-bold flex items-center mr-4">
+        <div className="flex items-center gap-2 flex-wrap">
+          <h2 className="text-lg font-bold flex items-center mr-2">
             <CreditCard className="mr-2" /> 수납 관리
           </h2>
           <div className="relative">
@@ -7351,12 +7361,22 @@ J&C 음악학원장 올림.`;
               size={16}
             />
             <input
-              placeholder="이름, 과목 검색"
+              placeholder="이름, 과목, 강사 검색"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-9 pr-4 py-1.5 border rounded-lg text-sm bg-slate-50 focus:outline-indigo-500 w-48"
             />
           </div>
+          <select
+            value={selectedTeacher}
+            onChange={(e) => setSelectedTeacher(e.target.value)}
+            className="py-1.5 px-3 border rounded-lg text-sm bg-slate-50 focus:outline-indigo-500"
+          >
+            <option value="">강사 전체</option>
+            {teacherOptions.map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
         </div>
         <button
           onClick={() => setFilterDue(!filterDue)}
@@ -7376,6 +7396,7 @@ J&C 음악학원장 올림.`;
           <thead className="sticky top-0 bg-slate-50 border-b">
             <tr className="text-slate-500 text-xs uppercase">
               <th className="py-3 px-4">이름/과목</th>
+              <th className="py-3 px-4">강사</th>
               <th className="py-3 px-4">원비</th>
               <th className="py-3 px-4">진척도</th>
               <th className="py-3 px-4">상태</th>
@@ -7399,6 +7420,9 @@ J&C 음악학원장 올림.`;
                         ({s.subject})
                       </span>
                     )}
+                  </td>
+                  <td className="py-3 px-4 text-sm text-slate-600">
+                    {s.teacher || <span className="text-slate-300">-</span>}
                   </td>
                   <td className="py-3 px-4 font-bold text-indigo-600">
                     {s.tuitionFee ? Number(s.tuitionFee).toLocaleString() : 0}
