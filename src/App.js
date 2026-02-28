@@ -476,14 +476,23 @@ const LoginModal = ({
 
 // [StudentEditModal]
 const StudentEditModal = ({ student, teachers, onClose, onUpdate, user }) => {
-  const [formData, setFormData] = useState({
-    ...student,
-    schedules:
+  const [formData, setFormData] = useState(() => {
+    const initSchedules =
       student.schedules ||
-      (student.className ? { [student.className]: student.time || "" } : {}),
-    classDays:
-      student.classDays || (student.className ? [student.className] : []),
-    totalSessions: student.totalSessions || 4,
+      (student.className ? { [student.className]: student.time || "" } : {});
+    const count = Object.keys(initSchedules).length;
+    // 기존 데이터의 기본값(4)이 저장된 주2회 학생 → 8로 보정
+    const correctedSessions =
+      count >= 2 && (!student.totalSessions || student.totalSessions === 4)
+        ? 8
+        : student.totalSessions || 4;
+    return {
+      ...student,
+      schedules: initSchedules,
+      classDays:
+        student.classDays || (student.className ? [student.className] : []),
+      totalSessions: correctedSessions,
+    };
   });
   const isAdmin = user.role === "admin";
 
@@ -494,7 +503,10 @@ const StudentEditModal = ({ student, teachers, onClose, onUpdate, user }) => {
       (student.className ? { [student.className]: student.time || "" } : {});
     const count = Object.keys(initSchedules).length;
     const autoSessions = count >= 2 ? 8 : 4;
-    return (student.totalSessions || 4) === autoSessions ? "auto" : "manual";
+    const saved = student.totalSessions || 4;
+    // 주2회인데 구버전 기본값(4)으로 저장된 경우 → auto로 간주
+    if (count >= 2 && saved === 4) return "auto";
+    return saved === autoSessions ? "auto" : "manual";
   });
 
   const toggleDay = (day) => {
