@@ -7052,7 +7052,8 @@ const PaymentView = ({
       const isReEnrolled = s.status === "재원";
       const matchesSearch =
         s.name.includes(searchTerm) ||
-        (s.subject && s.subject.includes(searchTerm));
+        (s.subject && s.subject.includes(searchTerm)) ||
+        (s.teacher && s.teacher.includes(searchTerm));
       return isReEnrolled && isDue && matchesSearch;
     });
   }, [students, filterDue, searchTerm]);
@@ -7290,7 +7291,7 @@ J&C 음악학원장 올림.`;
               size={16}
             />
             <input
-              placeholder="이름, 과목 검색"
+              placeholder="이름, 과목, 강사 검색"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-9 pr-4 py-1.5 border rounded-lg text-sm bg-slate-50 focus:outline-indigo-500 w-48"
