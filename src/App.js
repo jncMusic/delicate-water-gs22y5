@@ -487,6 +487,16 @@ const StudentEditModal = ({ student, teachers, onClose, onUpdate, user }) => {
   });
   const isAdmin = user.role === "admin";
 
+  // 결제 주기 자동/수동 모드: 시간표 슬롯 수에 따라 자동 설정 여부
+  const [weeklyMode, setWeeklyMode] = useState(() => {
+    const initSchedules =
+      student.schedules ||
+      (student.className ? { [student.className]: student.time || "" } : {});
+    const count = Object.keys(initSchedules).length;
+    const autoSessions = count >= 2 ? 8 : 4;
+    return (student.totalSessions || 4) === autoSessions ? "auto" : "manual";
+  });
+
   const toggleDay = (day) => {
     const currentSchedules = { ...formData.schedules };
     if (currentSchedules[day] !== undefined) {
@@ -495,12 +505,20 @@ const StudentEditModal = ({ student, teachers, onClose, onUpdate, user }) => {
       currentSchedules[day] = "";
     }
     const days = Object.keys(currentSchedules);
+    // 자동 모드: 시간표 슬롯 수에 따라 결제 주기 자동 설정 (주2회=8회, 주1회=4회)
+    const newTotalSessions =
+      weeklyMode === "auto"
+        ? days.length >= 2
+          ? 8
+          : 4
+        : formData.totalSessions;
     setFormData({
       ...formData,
       schedules: currentSchedules,
       classDays: days,
       className: days[0] || "",
       time: days.length > 0 ? currentSchedules[days[0]] || "" : "",
+      totalSessions: newTotalSessions,
     });
   };
 
@@ -597,12 +615,37 @@ const StudentEditModal = ({ student, teachers, onClose, onUpdate, user }) => {
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-500 mb-1">
-                총 수업 횟수 (1세트)
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-bold text-slate-500">
+                  결제 주기 (1세트)
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (weeklyMode === "auto") {
+                      setWeeklyMode("manual");
+                    } else {
+                      const count = Object.keys(formData.schedules).length;
+                      const autoSessions = count >= 2 ? 8 : 4;
+                      setWeeklyMode("auto");
+                      setFormData({ ...formData, totalSessions: autoSessions });
+                    }
+                  }}
+                  className={`text-xs px-2 py-0.5 rounded-full border font-medium transition-colors ${
+                    weeklyMode === "auto"
+                      ? "bg-indigo-50 border-indigo-300 text-indigo-600"
+                      : "bg-amber-50 border-amber-300 text-amber-600"
+                  }`}
+                >
+                  {weeklyMode === "auto" ? "자동" : "수동"}
+                </button>
+              </div>
               <select
-                className="w-full p-2 border rounded-lg bg-white"
+                className={`w-full p-2 border rounded-lg bg-white ${
+                  weeklyMode === "auto" ? "opacity-60 cursor-not-allowed" : ""
+                }`}
                 value={formData.totalSessions}
+                disabled={weeklyMode === "auto"}
                 onChange={(e) =>
                   setFormData({
                     ...formData,
@@ -610,10 +653,15 @@ const StudentEditModal = ({ student, teachers, onClose, onUpdate, user }) => {
                   })
                 }
               >
-                <option value={4}>4회 (기본)</option>
-                <option value={8}>8회</option>
+                <option value={4}>4회 (주1회)</option>
+                <option value={8}>8회 (주2회)</option>
                 <option value={12}>12회</option>
               </select>
+              {weeklyMode === "auto" && (
+                <p className="text-xs text-slate-400 mt-1">
+                  시간표 {Object.keys(formData.schedules).length}개 기준 자동 설정
+                </p>
+              )}
             </div>
           </div>
           <div className="grid grid-cols-1 gap-4">
@@ -637,9 +685,22 @@ const StudentEditModal = ({ student, teachers, onClose, onUpdate, user }) => {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-500 mb-2">
-                수업 요일 및 시간
-              </label>
+              <div className="flex items-center gap-2 mb-2">
+                <label className="text-xs font-bold text-slate-500">
+                  수업 요일 및 시간
+                </label>
+                {Object.keys(formData.schedules).length > 0 && (
+                  <span
+                    className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                      Object.keys(formData.schedules).length >= 2
+                        ? "bg-indigo-100 text-indigo-600"
+                        : "bg-slate-100 text-slate-500"
+                    }`}
+                  >
+                    주{Object.keys(formData.schedules).length}회
+                  </span>
+                )}
+              </div>
               <div className="flex flex-wrap gap-2">
                 {CLASS_NAMES.map((day) => {
                   const isSelected =
