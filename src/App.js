@@ -7402,6 +7402,11 @@ J&C 음악학원장 올림.`;
               <option key={t} value={t}>{t}</option>
             ))}
           </select>
+          {(searchTerm || selectedTeacher) && (
+            <span className="text-sm text-slate-500">
+              <span className="font-bold text-indigo-600">{list.length}명</span> 검색됨
+            </span>
+          )}
         </div>
         <button
           onClick={() => setFilterDue(!filterDue)}
