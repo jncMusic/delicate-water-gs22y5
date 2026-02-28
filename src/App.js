@@ -68,6 +68,7 @@ import {
   CheckSquare,
   Printer, // 🔥 인쇄 아이콘 추가
   Music, // 🔥 파트 아이콘 추가
+  ChevronDown,
 } from "lucide-react";
 import html2canvas from "html2canvas"; // 🔥 이미지 저장 라이브러리 추가
 
@@ -244,7 +245,20 @@ const StatCard = ({ icon: Icon, label, value, trend, trendUp, onClick }) => (
 );
 
 // =================================================================
-// 4. 모달 및 팝업 컴포넌트
+// 4. 공통 헬퍼 함수
+// =================================================================
+
+// 결제 주기(세션 단위) 계산: 주2회(schedules 2개 이상)인데 totalSessions가
+// 구버전 기본값(4)으로 저장된 학생을 자동으로 8회로 보정한다.
+const getEffectiveSessions = (student) => {
+  const saved = parseInt(student.totalSessions) || 4;
+  const scheduleCount = Object.keys(student.schedules || {}).length;
+  if (scheduleCount >= 2 && saved === 4) return 8;
+  return saved;
+};
+
+// =================================================================
+// 5. 모달 및 팝업 컴포넌트
 // =================================================================
 
 // [LoginModal]
@@ -475,16 +489,38 @@ const LoginModal = ({
 
 // [StudentEditModal]
 const StudentEditModal = ({ student, teachers, onClose, onUpdate, user }) => {
-  const [formData, setFormData] = useState({
-    ...student,
-    schedules:
+  const [formData, setFormData] = useState(() => {
+    const initSchedules =
       student.schedules ||
-      (student.className ? { [student.className]: student.time || "" } : {}),
-    classDays:
-      student.classDays || (student.className ? [student.className] : []),
-    totalSessions: student.totalSessions || 4,
+      (student.className ? { [student.className]: student.time || "" } : {});
+    const count = Object.keys(initSchedules).length;
+    // 기존 데이터의 기본값(4)이 저장된 주2회 학생 → 8로 보정
+    const correctedSessions =
+      count >= 2 && (!student.totalSessions || student.totalSessions === 4)
+        ? 8
+        : student.totalSessions || 4;
+    return {
+      ...student,
+      schedules: initSchedules,
+      classDays:
+        student.classDays || (student.className ? [student.className] : []),
+      totalSessions: correctedSessions,
+    };
   });
   const isAdmin = user.role === "admin";
+
+  // 결제 주기 자동/수동 모드: 시간표 슬롯 수에 따라 자동 설정 여부
+  const [weeklyMode, setWeeklyMode] = useState(() => {
+    const initSchedules =
+      student.schedules ||
+      (student.className ? { [student.className]: student.time || "" } : {});
+    const count = Object.keys(initSchedules).length;
+    const autoSessions = count >= 2 ? 8 : 4;
+    const saved = student.totalSessions || 4;
+    // 주2회인데 구버전 기본값(4)으로 저장된 경우 → auto로 간주
+    if (count >= 2 && saved === 4) return "auto";
+    return saved === autoSessions ? "auto" : "manual";
+  });
 
   const toggleDay = (day) => {
     const currentSchedules = { ...formData.schedules };
@@ -494,12 +530,20 @@ const StudentEditModal = ({ student, teachers, onClose, onUpdate, user }) => {
       currentSchedules[day] = "";
     }
     const days = Object.keys(currentSchedules);
+    // 자동 모드: 시간표 슬롯 수에 따라 결제 주기 자동 설정 (주2회=8회, 주1회=4회)
+    const newTotalSessions =
+      weeklyMode === "auto"
+        ? days.length >= 2
+          ? 8
+          : 4
+        : formData.totalSessions;
     setFormData({
       ...formData,
       schedules: currentSchedules,
       classDays: days,
       className: days[0] || "",
       time: days.length > 0 ? currentSchedules[days[0]] || "" : "",
+      totalSessions: newTotalSessions,
     });
   };
 
@@ -596,12 +640,37 @@ const StudentEditModal = ({ student, teachers, onClose, onUpdate, user }) => {
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-500 mb-1">
-                총 수업 횟수 (1세트)
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-bold text-slate-500">
+                  결제 주기 (1세트)
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (weeklyMode === "auto") {
+                      setWeeklyMode("manual");
+                    } else {
+                      const count = Object.keys(formData.schedules).length;
+                      const autoSessions = count >= 2 ? 8 : 4;
+                      setWeeklyMode("auto");
+                      setFormData({ ...formData, totalSessions: autoSessions });
+                    }
+                  }}
+                  className={`text-xs px-2 py-0.5 rounded-full border font-medium transition-colors ${
+                    weeklyMode === "auto"
+                      ? "bg-indigo-50 border-indigo-300 text-indigo-600"
+                      : "bg-amber-50 border-amber-300 text-amber-600"
+                  }`}
+                >
+                  {weeklyMode === "auto" ? "자동" : "수동"}
+                </button>
+              </div>
               <select
-                className="w-full p-2 border rounded-lg bg-white"
+                className={`w-full p-2 border rounded-lg bg-white ${
+                  weeklyMode === "auto" ? "opacity-60 cursor-not-allowed" : ""
+                }`}
                 value={formData.totalSessions}
+                disabled={weeklyMode === "auto"}
                 onChange={(e) =>
                   setFormData({
                     ...formData,
@@ -609,10 +678,15 @@ const StudentEditModal = ({ student, teachers, onClose, onUpdate, user }) => {
                   })
                 }
               >
-                <option value={4}>4회 (기본)</option>
-                <option value={8}>8회</option>
+                <option value={4}>4회 (주1회)</option>
+                <option value={8}>8회 (주2회)</option>
                 <option value={12}>12회</option>
               </select>
+              {weeklyMode === "auto" && (
+                <p className="text-xs text-slate-400 mt-1">
+                  시간표 {Object.keys(formData.schedules).length}개 기준 자동 설정
+                </p>
+              )}
             </div>
           </div>
           <div className="grid grid-cols-1 gap-4">
@@ -636,9 +710,22 @@ const StudentEditModal = ({ student, teachers, onClose, onUpdate, user }) => {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-500 mb-2">
-                수업 요일 및 시간
-              </label>
+              <div className="flex items-center gap-2 mb-2">
+                <label className="text-xs font-bold text-slate-500">
+                  수업 요일 및 시간
+                </label>
+                {Object.keys(formData.schedules).length > 0 && (
+                  <span
+                    className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                      Object.keys(formData.schedules).length >= 2
+                        ? "bg-indigo-100 text-indigo-600"
+                        : "bg-slate-100 text-slate-500"
+                    }`}
+                  >
+                    주{Object.keys(formData.schedules).length}회
+                  </span>
+                )}
+              </div>
               <div className="flex flex-wrap gap-2">
                 {CLASS_NAMES.map((day) => {
                   const isSelected =
@@ -761,8 +848,8 @@ const PaymentDetailModal = ({
   // [NEW] 출석 수정 모달 상태
   const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState(false);
 
-  // 4회 or 8회 단위 설정
-  const SESSION_UNIT = parseInt(student.totalSessions) || 4;
+  // 4회 or 8회 단위 설정 (주2회 학생 자동 보정 포함)
+  const SESSION_UNIT = getEffectiveSessions(student);
 
   const { historyRows, nextSessionStartIndex, currentStatus } = useMemo(() => {
     const allAttendance = [...(student.attendanceHistory || [])]
@@ -1173,7 +1260,7 @@ const DashboardView = ({
     const totalAttended = (s.attendanceHistory || []).filter(
       (h) => h.status === "present"
     ).length;
-    const sessionUnit = parseInt(s.totalSessions) || 4;
+    const sessionUnit = getEffectiveSessions(s);
     const totalPaidCapacity = (s.paymentHistory || []).length * sessionUnit;
 
     let currentUsage = totalAttended % sessionUnit;
@@ -1205,7 +1292,31 @@ const DashboardView = ({
     return { paymentDueCount, totalRevenue, newStudentsCount, pendingConsults };
   }, [myStudents, consultations, user]);
 
-  // 4. 강사용 월간 보고서 상태
+  // 4. 원생 추이 (관리자 전용, 최근 12개월)
+  const trendData = useMemo(() => {
+    if (user.role !== "admin") return [];
+    const now = new Date();
+    const months = [];
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      months.push(
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+      );
+    }
+    return months.map((ym) => {
+      const newCount = students.filter((s) =>
+        (s.registrationDate || s.createdAt || "").startsWith(ym)
+      ).length;
+      // 해당 월까지 등록한 현재 재원생 수 (현재 재원 기준 하한선)
+      const activeCount = students.filter((s) => {
+        const reg = s.registrationDate || s.createdAt || "";
+        return reg && reg.slice(0, 7) <= ym && s.status === "재원";
+      }).length;
+      return { month: ym, new: newCount, active: activeCount };
+    });
+  }, [students, user]);
+
+  // 5. 강사용 월간 보고서 상태
   const reportStatus = useMemo(() => {
     if (user.role !== "teacher") return null;
     const now = new Date();
@@ -1438,6 +1549,80 @@ const DashboardView = ({
           )}
         </div>
       )}
+
+      {/* 5. 원생 추이 (관리자 전용) */}
+      {user.role === "admin" && (
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+          <div className="flex justify-between items-center mb-5">
+            <h3 className="font-bold text-slate-800 flex items-center text-lg">
+              <TrendingUp className="mr-2 text-indigo-600" size={22} /> 원생 추이
+            </h3>
+            <span className="text-xs text-slate-400">최근 12개월 · 신규 등록 기준</span>
+          </div>
+
+          {/* 막대 그래프 */}
+          {(() => {
+            const maxNew = Math.max(...trendData.map((d) => d.new), 1);
+            return (
+              <div>
+                <div className="flex items-end gap-1.5 h-28 mb-1">
+                  {trendData.map((d) => (
+                    <div key={d.month} className="flex-1 flex flex-col items-center justify-end gap-0.5">
+                      {d.new > 0 && (
+                        <span className="text-[9px] font-bold text-indigo-600">
+                          +{d.new}
+                        </span>
+                      )}
+                      <div
+                        className="w-full rounded-t-md bg-indigo-200 hover:bg-indigo-400 transition-colors cursor-default"
+                        style={{ height: `${Math.max((d.new / maxNew) * 100, d.new > 0 ? 8 : 2)}%` }}
+                        title={`${d.month.replace("-", "년 ")}월: 신규 ${d.new}명, 재원 ${d.active}명`}
+                      />
+                    </div>
+                  ))}
+                </div>
+                {/* X축 레이블 */}
+                <div className="flex gap-1.5 mb-5">
+                  {trendData.map((d) => (
+                    <div key={d.month} className="flex-1 text-center text-[9px] text-slate-400">
+                      {d.month.slice(5)}월
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* 표 */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 text-slate-400 font-medium">
+                  <th className="py-2 pr-4 text-left">월</th>
+                  <th className="py-2 pr-4 text-center">재원생</th>
+                  <th className="py-2 text-center">신규 등록</th>
+                </tr>
+              </thead>
+              <tbody>
+                {trendData.map((d) => (
+                  <tr key={d.month} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
+                    <td className="py-2 pr-4 font-bold text-slate-700">
+                      {d.month.replace("-", "년 ")}월
+                    </td>
+                    <td className="py-2 pr-4 text-center text-slate-600">{d.active}명</td>
+                    <td className="py-2 text-center font-bold text-indigo-600">
+                      {d.new > 0 ? `+${d.new}명` : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="text-[10px] text-slate-400 mt-2">
+              * 재원생 수는 현재 재원 중인 학생 기준으로, 이미 퇴원한 학생은 반영되지 않습니다.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -1486,9 +1671,13 @@ const ReportView = ({
   reports,
   onSaveReport,
   onDeleteReport,
+  onUpdateStudent,
 }) => {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
+  const [reportSelectedStudent, setReportSelectedStudent] = useState(null);
+  const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
+  const [studentModalTab, setStudentModalTab] = useState("attendance");
   const [selectedTeacher, setSelectedTeacher] = useState(
     user.role === "teacher" ? user.name : "전체"
   );
@@ -1824,8 +2013,16 @@ const ReportView = ({
                               className="p-4 hover:bg-slate-50 transition-colors"
                             >
                               <div className="flex justify-between items-start mb-2">
-                                <div className="flex items-center">
-                                  <span className="font-bold text-slate-800 mr-2">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span
+                                    className="font-bold text-slate-800 cursor-pointer hover:text-indigo-600 transition-colors"
+                                    onClick={() => {
+                                      setReportSelectedStudent(s);
+                                      setStudentModalTab("attendance");
+                                      setIsStudentModalOpen(true);
+                                    }}
+                                    title="출석콕콕 보기"
+                                  >
                                     {s.name}
                                   </span>
                                   <span
@@ -1839,6 +2036,28 @@ const ReportView = ({
                                       ? "피드백 완료"
                                       : "피드백 미발송"}
                                   </span>
+                                  <button
+                                    onClick={() => {
+                                      setReportSelectedStudent(s);
+                                      setStudentModalTab("attendance");
+                                      setIsStudentModalOpen(true);
+                                    }}
+                                    className="text-[10px] px-2 py-0.5 rounded-full border bg-blue-50 text-blue-600 border-blue-100 hover:bg-blue-100 transition-colors"
+                                  >
+                                    출석콕콕
+                                  </button>
+                                  {user.role === "admin" && (
+                                    <button
+                                      onClick={() => {
+                                        setReportSelectedStudent(s);
+                                        setStudentModalTab("payment");
+                                        setIsStudentModalOpen(true);
+                                      }}
+                                      className="text-[10px] px-2 py-0.5 rounded-full border bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-100 transition-colors"
+                                    >
+                                      수납콕콕
+                                    </button>
+                                  )}
                                 </div>
                               </div>
                               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
@@ -1879,6 +2098,21 @@ const ReportView = ({
               )}
         </div>
       </div>
+      <StudentManagementModal
+        isOpen={isStudentModalOpen}
+        onClose={() => setIsStudentModalOpen(false)}
+        student={reportSelectedStudent}
+        teachers={teachers}
+        initialTab={studentModalTab}
+        user={user}
+        onSave={(data) => {
+          if (onUpdateStudent && reportSelectedStudent?.id) {
+            onUpdateStudent(reportSelectedStudent.id, data);
+          }
+          setIsStudentModalOpen(false);
+        }}
+        onDelete={() => setIsStudentModalOpen(false)}
+      />
     </div>
   );
 };
@@ -2489,7 +2723,8 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
       const isStatusMatch = s.status === "재원";
       const isDayMatch =
         (s.classDays && s.classDays.includes(dayName)) ||
-        s.className === dayName;
+        s.className === dayName ||
+        (s.schedules && s.schedules[dayName]);
       return isTeacherMatch && isDayMatch && isStatusMatch;
     });
     const attended = students.filter((s) => {
@@ -2575,8 +2810,13 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
     const validSessions = history
       .filter((h) => h.status === "present" && h.date >= lastPayment)
       .sort((a, b) => a.date.localeCompare(b.date));
-    const index = validSessions.findIndex((h) => h.date === targetDate);
-    return index !== -1 ? index + 1 : null;
+    let cumulative = 0;
+    for (const h of validSessions) {
+      if (h.date === targetDate) return cumulative + 1;
+      if (h.date > targetDate) break;
+      cumulative += h.count || 1;
+    }
+    return null;
   };
 
   const getDetailModalData = (dateStr, dayOfWeek) => {
@@ -3093,8 +3333,13 @@ const ClassLogView = ({ students, teachers, user }) => {
     const validSessions = history
       .filter((h) => h.status === "present" && h.date >= lastPayment)
       .sort((a, b) => a.date.localeCompare(b.date));
-    const index = validSessions.findIndex((h) => h.date === targetDate);
-    return index !== -1 ? index + 1 : 0;
+    let cumulative = 0;
+    for (const h of validSessions) {
+      if (h.date === targetDate) return cumulative + 1;
+      if (h.date > targetDate) break;
+      cumulative += h.count || 1;
+    }
+    return 0;
   };
   const getCellContent = (dateStr, dayIndex) => {
     let content = [];
@@ -5710,8 +5955,9 @@ const StudentView = ({
   setRegisterFromConsultation,
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
-  // 기본값을 '재원'으로 설정
+  // 기본값을 '재원'으로 설정 (휴원·퇴원은 드롭다운으로 접근)
   const [filterStatus, setFilterStatus] = useState("재원");
+  const [showInactiveMenu, setShowInactiveMenu] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [modalTab, setModalTab] = useState("info");
@@ -5844,29 +6090,59 @@ const StudentView = ({
             />
           </div>
 
-          <div className="flex bg-slate-100 p-1 rounded-xl w-fit shrink-0">
-            {["재원", "휴원", "퇴원"].map((status) => (
+          <div className="flex items-center gap-2 shrink-0">
+            {/* 주 필터: 재원 */}
+            <button
+              onClick={() => { setFilterStatus("재원"); setShowInactiveMenu(false); }}
+              className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${
+                filterStatus === "재원"
+                  ? "bg-indigo-600 text-white shadow-sm"
+                  : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+              }`}
+            >
+              재원
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${filterStatus === "재원" ? "bg-white/25 text-white" : "bg-slate-200 text-slate-500"}`}>
+                {stats.재원}
+              </span>
+            </button>
+
+            {/* 보조 필터: 휴원·퇴원 드롭다운 */}
+            <div className="relative">
               <button
-                key={status}
-                onClick={() => setFilterStatus(status)}
-                className={`px-5 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${
-                  filterStatus === status
-                    ? "bg-white text-indigo-600 shadow-sm"
-                    : "text-slate-500 hover:text-slate-800"
+                onClick={() => setShowInactiveMenu((v) => !v)}
+                className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-1.5 ${
+                  filterStatus === "휴원" || filterStatus === "퇴원"
+                    ? "bg-slate-600 text-white shadow-sm"
+                    : "bg-slate-100 text-slate-400 hover:bg-slate-200"
                 }`}
               >
-                {status}
-                <span
-                  className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-                    filterStatus === status
-                      ? "bg-indigo-100 text-indigo-600"
-                      : "bg-slate-200 text-slate-500"
-                  }`}
-                >
-                  {stats[status]}
+                {filterStatus === "휴원" || filterStatus === "퇴원"
+                  ? filterStatus
+                  : "휴원·퇴원"}
+                <span className="text-[10px]">
+                  {filterStatus === "휴원" || filterStatus === "퇴원"
+                    ? stats[filterStatus]
+                    : stats.휴원 + stats.퇴원}
                 </span>
+                <ChevronDown size={13} />
               </button>
-            ))}
+              {showInactiveMenu && (
+                <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-20 overflow-hidden min-w-[120px]">
+                  {["휴원", "퇴원"].map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => { setFilterStatus(s); setShowInactiveMenu(false); }}
+                      className={`w-full text-left px-4 py-3 text-sm flex justify-between items-center hover:bg-slate-50 transition-colors ${
+                        filterStatus === s ? "text-indigo-600 font-bold bg-indigo-50" : "text-slate-600"
+                      }`}
+                    >
+                      {s}
+                      <span className="text-xs text-slate-400 ml-3">{stats[s]}명</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -5920,6 +6196,13 @@ const StudentView = ({
           </div>
         </div>
       </div>
+
+      {/* 검색 결과 수 */}
+      {searchTerm.trim() && (
+        <div className="text-sm text-slate-500 px-1">
+          <span className="font-bold text-indigo-600">{filteredStudents.length}명</span> 검색됨
+        </div>
+      )}
 
       {/* 테이블 영역 */}
       <div className="bg-white rounded-2xl border shadow-sm overflow-auto max-h-[70vh] relative">
@@ -6159,7 +6442,7 @@ const StudentManagementModal = ({
         setPayHistory([]);
         setPayAmount(0);
       } else if (student && student.id) {
-        setFormData({ ...student });
+        setFormData({ ...student, totalSessions: getEffectiveSessions(student) });
         setAttHistory(student.attendanceHistory || []);
         setPayHistory(student.paymentHistory || []);
         setPayAmount(student.tuitionFee || 0);
@@ -6213,17 +6496,27 @@ const StudentManagementModal = ({
 
   const toggleAttendance = (dateStr) => {
     const exists = attHistory.find((h) => h.date === dateStr);
-    if (exists) {
-      setAttHistory(attHistory.filter((h) => h.date !== dateStr));
-    } else {
+    if (!exists) {
+      // 없음 → 1회 출석
       setAttHistory([
         ...attHistory,
         {
           date: dateStr,
           status: "present",
+          count: 1,
           timestamp: new Date().toISOString(),
         },
       ]);
+    } else if ((exists.count || 1) === 1) {
+      // 1회 → 2회 연강
+      setAttHistory(
+        attHistory.map((h) =>
+          h.date === dateStr ? { ...h, count: 2 } : h
+        )
+      );
+    } else {
+      // 2회 → 제거
+      setAttHistory(attHistory.filter((h) => h.date !== dateStr));
     }
   };
 
@@ -6317,11 +6610,16 @@ const StudentManagementModal = ({
                 "0"
               )}-${String(day).padStart(2, "0")}`;
               let isSelected = false;
-              if (type === "attendance")
-                isSelected = attHistory.some(
+              let isDouble = false;
+              if (type === "attendance") {
+                const attRecord = attHistory.find(
                   (h) => h.date === dateStr && h.status === "present"
                 );
-              else isSelected = payHistory.some((h) => h.date === dateStr);
+                isSelected = !!attRecord;
+                isDouble = isSelected && (attRecord.count || 1) === 2;
+              } else {
+                isSelected = payHistory.some((h) => h.date === dateStr);
+              }
 
               return (
                 <div
@@ -6331,8 +6629,10 @@ const StudentManagementModal = ({
                       ? toggleAttendance(dateStr)
                       : togglePayment(dateStr)
                   }
-                  className={`aspect-square flex items-center justify-center rounded-lg text-xs cursor-pointer transition-all border ${
-                    isSelected
+                  className={`aspect-square flex items-center justify-center rounded-lg text-xs cursor-pointer transition-all border relative ${
+                    isDouble
+                      ? "bg-emerald-700 text-white font-bold border-emerald-800 shadow-md transform scale-105"
+                      : isSelected
                       ? type === "attendance"
                         ? "bg-emerald-500 text-white font-bold border-emerald-600 shadow-md transform scale-105"
                         : "bg-indigo-600 text-white font-bold border-indigo-700 shadow-md transform scale-105"
@@ -6340,6 +6640,11 @@ const StudentManagementModal = ({
                   }`}
                 >
                   {day}
+                  {isDouble && (
+                    <span className="absolute -top-1 -right-1 bg-amber-400 text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center leading-none">
+                      ×2
+                    </span>
+                  )}
                 </div>
               );
             })}
@@ -6353,7 +6658,7 @@ const StudentManagementModal = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
+    <div className="fixed inset-0 md:left-64 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl flex flex-col max-h-[90vh]">
         {/* 헤더 */}
         <div className="p-5 border-b flex justify-between items-center bg-slate-50/80 rounded-t-3xl shrink-0 backdrop-blur-sm">
@@ -6665,24 +6970,67 @@ const StudentManagementModal = ({
                 <h4 className="text-xs font-bold text-slate-500 mb-2">
                   최근 결제 내역 (요약)
                 </h4>
-                <div className="space-y-1">
-                  {payHistory
-                    .slice()
-                    .sort((a, b) => b.date.localeCompare(a.date))
-                    .slice(0, 3)
-                    .map((h, idx) => (
-                      <div
-                        key={idx}
-                        className="flex justify-between text-xs bg-white p-2 rounded border border-slate-100"
-                      >
-                        <span className="font-mono text-slate-600">
-                          {h.date}
-                        </span>
-                        <span className="font-bold text-indigo-600">
-                          {Number(h.amount).toLocaleString()}원
-                        </span>
-                      </div>
-                    ))}
+                <div className="space-y-2">
+                  {(() => {
+                    const sessionUnit = parseInt(formData.totalSessions) || 4;
+                    const sortedPay = [...payHistory].sort((a, b) =>
+                      a.date.localeCompare(b.date)
+                    );
+                    const sortedAtt = [...attHistory]
+                      .filter((h) => h.status === "present")
+                      .sort((a, b) => a.date.localeCompare(b.date));
+                    // count 반영: 연강(count:2)은 슬롯 2개로 확장
+                    const sessionSlots = [];
+                    sortedAtt.forEach((h) => {
+                      const cnt = h.count || 1;
+                      for (let i = 0; i < cnt; i++) sessionSlots.push(h.date);
+                    });
+                    const payWithIdx = sortedPay.map((h, i) => ({ ...h, payIdx: i }));
+                    const recentPays = [...payWithIdx].reverse().slice(0, 3);
+                    return recentPays.map((h, idx) => {
+                      const startSession = h.payIdx * sessionUnit;
+                      const slots = sessionSlots.slice(startSession, startSession + sessionUnit);
+                      const startNum = startSession + 1;
+                      const endNum = startSession + slots.length;
+                      // 날짜별로 그룹화 (연강 여부 확인)
+                      const dateGroups = [];
+                      slots.forEach((date) => {
+                        const last = dateGroups[dateGroups.length - 1];
+                        if (last && last.date === date) last.cnt++;
+                        else dateGroups.push({ date, cnt: 1 });
+                      });
+                      return (
+                        <div
+                          key={idx}
+                          className="bg-white rounded border border-slate-100 p-2 text-xs"
+                        >
+                          <div className="flex justify-between">
+                            <span className="font-mono text-slate-600">{h.date}</span>
+                            <span className="font-bold text-indigo-600">
+                              {Number(h.amount).toLocaleString()}원
+                            </span>
+                          </div>
+                          {slots.length > 0 ? (
+                            <div className="mt-1 text-[11px] text-slate-500">
+                              <span className="text-slate-400 font-medium">
+                                {startNum}~{endNum}회차:{" "}
+                              </span>
+                              {dateGroups
+                                .map((g) =>
+                                  g.date.slice(5).replace("-", "/") +
+                                  (g.cnt > 1 ? "(연강)" : "")
+                                )
+                                .join(", ")}
+                            </div>
+                          ) : (
+                            <div className="mt-1 text-[11px] text-slate-400">
+                              세션 진행중
+                            </div>
+                          )}
+                        </div>
+                      );
+                    });
+                  })()}
                   {payHistory.length === 0 && (
                     <p className="text-xs text-slate-400">
                       등록된 수납 내역이 없습니다.
@@ -6747,6 +7095,7 @@ const PaymentView = ({
   const [filterDue, setFilterDue] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [selectedTeacher, setSelectedTeacher] = useState("");
 
   const [showMsgPreview, setShowMsgPreview] = useState(false);
   const [msgContent, setMsgContent] = useState("");
@@ -6756,7 +7105,7 @@ const PaymentView = ({
     const totalAttended = (s.attendanceHistory || []).filter(
       (h) => h.status === "present"
     ).length;
-    const sessionUnit = parseInt(s.totalSessions) || 4;
+    const sessionUnit = getEffectiveSessions(s);
     const totalPaidCapacity = (s.paymentHistory || []).length * sessionUnit;
 
     let currentUsage = totalAttended % sessionUnit;
@@ -6783,6 +7132,13 @@ const PaymentView = ({
     };
   };
 
+  // 강사 목록 (드롭다운용)
+  const teacherOptions = useMemo(() => {
+    const set = new Set();
+    students.forEach((s) => { if (s.teacher) set.add(s.teacher); });
+    return Array.from(set).sort();
+  }, [students]);
+
   const list = useMemo(() => {
     return students.filter((s) => {
       const { isOverdue, isCompleted } = getStudentProgress(s);
@@ -6790,10 +7146,12 @@ const PaymentView = ({
       const isReEnrolled = s.status === "재원";
       const matchesSearch =
         s.name.includes(searchTerm) ||
-        (s.subject && s.subject.includes(searchTerm));
-      return isReEnrolled && isDue && matchesSearch;
+        (s.subject && s.subject.includes(searchTerm)) ||
+        (s.teacher && s.teacher.includes(searchTerm));
+      const matchesTeacher = !selectedTeacher || s.teacher === selectedTeacher;
+      return isReEnrolled && isDue && matchesSearch && matchesTeacher;
     });
-  }, [students, filterDue, searchTerm]);
+  }, [students, filterDue, searchTerm, selectedTeacher]);
 
   const selectedStudent = useMemo(
     () => students.find((s) => s.id === selectedStudentId) || null,
@@ -6804,7 +7162,7 @@ const PaymentView = ({
   const handleOpenMsgPreview = (e, student) => {
     e.stopPropagation();
 
-    const sessionUnit = parseInt(student.totalSessions) || 4;
+    const sessionUnit = getEffectiveSessions(student);
     const tuition = parseInt(student.tuitionFee || 0).toLocaleString();
 
     // 출석 이력 (날짜순 정렬)
@@ -6838,11 +7196,11 @@ const PaymentView = ({
             .join(", ")
         : "없음";
 
-    // [수정 1, 2] 최근 수업일자 (라벨 변경, 말줄임표 제거)
+    // 수업일자: 직전 결제 커버 회차 + 미납회차 합산 표시
     const recentSessions = allAttendance
-      .slice(-12) // 최근 12개까지만 표시 (너무 길면 잘림 방지)
+      .slice(totalPaidCapacity - sessionUnit)
       .map((h) => h.date.slice(5).replace("-", "/"))
-      .join(", ");
+      .join(", ") || "(출석 기록 없음)";
 
     // [수정 3] 새로운 1회차 수업 (자동 계산)
     // 마지막 수업일(또는 오늘) 기준으로 학생의 수업 요일 중 가장 가까운 미래 날짜 찾기
@@ -6911,7 +7269,7 @@ const PaymentView = ({
 
 수업료 결제 안내입니다. 아래 수업일자와 결제내용 확인하시어 결제 부탁드리겠습니다.
 -------------------------------
-- 과정명 : ${student.subject || "음악"} 과정 - ${student.name} 학생
+- 과정명 : ${student.subject || "음악"} 1:1 개인레슨 과정 - ${student.name} 학생
 - 최종 결제일 : ${lastPayment.slice(5).replace("-", "/")}
 - 수업일자 : ${recentSessions}
 - 결제하신 수업 완료일 : ${lastCoveredDate}
@@ -6930,7 +7288,7 @@ const PaymentView = ({
 하나은행 125-91025-766307 강열혁(제이앤씨음악학원)
 - 결제방법: 방문(카드/현금), 계좌이체, 제로페이, 온라인 결제
 
-* 당일취소와 노쇼는 수업 횟수에 포함되며, 해당 회차는 차감됩니다. 방역 이슈관련 회차는 차감되지 않습니다.
+* 당일취소와 노쇼는 수업 횟수에 포함되며, 해당 회차는 차감됩니다. 감기 등의 호흡기 질병관련 회차는 차감되지 않습니다.
 
 - 온라인 카드 결제를 원하시는 경우 알려주시면 발송드리겠습니다. 결제 선생(카카오톡 페이지) 페이지 보내드립니다.
 
@@ -7018,8 +7376,8 @@ J&C 음악학원장 올림.`;
       )}
 
       <div className="flex flex-col md:flex-row justify-between items-center mb-4 shrink-0 gap-3">
-        <div className="flex items-center">
-          <h2 className="text-lg font-bold flex items-center mr-4">
+        <div className="flex items-center gap-2 flex-wrap">
+          <h2 className="text-lg font-bold flex items-center mr-2">
             <CreditCard className="mr-2" /> 수납 관리
           </h2>
           <div className="relative">
@@ -7028,12 +7386,27 @@ J&C 음악학원장 올림.`;
               size={16}
             />
             <input
-              placeholder="이름, 과목 검색"
+              placeholder="이름, 과목, 강사 검색"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-9 pr-4 py-1.5 border rounded-lg text-sm bg-slate-50 focus:outline-indigo-500 w-48"
             />
           </div>
+          <select
+            value={selectedTeacher}
+            onChange={(e) => setSelectedTeacher(e.target.value)}
+            className="py-1.5 px-3 border rounded-lg text-sm bg-slate-50 focus:outline-indigo-500"
+          >
+            <option value="">강사 전체</option>
+            {teacherOptions.map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+          {(searchTerm || selectedTeacher) && (
+            <span className="text-sm text-slate-500">
+              <span className="font-bold text-indigo-600">{list.length}명</span> 검색됨
+            </span>
+          )}
         </div>
         <button
           onClick={() => setFilterDue(!filterDue)}
@@ -7053,6 +7426,7 @@ J&C 음악학원장 올림.`;
           <thead className="sticky top-0 bg-slate-50 border-b">
             <tr className="text-slate-500 text-xs uppercase">
               <th className="py-3 px-4">이름/과목</th>
+              <th className="py-3 px-4">강사</th>
               <th className="py-3 px-4">원비</th>
               <th className="py-3 px-4">진척도</th>
               <th className="py-3 px-4">상태</th>
@@ -7076,6 +7450,9 @@ J&C 음악학원장 올림.`;
                         ({s.subject})
                       </span>
                     )}
+                  </td>
+                  <td className="py-3 px-4 text-sm text-slate-600">
+                    {s.teacher || <span className="text-slate-300">-</span>}
                   </td>
                   <td className="py-3 px-4 font-bold text-indigo-600">
                     {s.tuitionFee ? Number(s.tuitionFee).toLocaleString() : 0}
@@ -7859,6 +8236,7 @@ export default function App() {
               reports={reports}
               onSaveReport={handleSaveReport}
               onDeleteReport={handleDeleteReport}
+              onUpdateStudent={handleUpdateStudent}
             />
           )}
           {activeTab === "payments" && currentUser.role === "admin" && (
