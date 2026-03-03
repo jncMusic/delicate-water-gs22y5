@@ -3400,6 +3400,9 @@ const ClassLogView = ({ students, teachers, user }) => {
     return 0;
   };
   const getCellContent = (dateStr, dayIndex) => {
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    const isFuture = dateStr > todayStr;
     let content = [];
     const dayName = DAYS_OF_WEEK.find((d) => d.id === dayIndex)?.label;
     students.forEach((s) => {
@@ -3407,7 +3410,7 @@ const ClassLogView = ({ students, teachers, user }) => {
       const hasSchedule =
         (s.schedules && s.schedules[dayName]) ||
         (!s.schedules && s.className === dayName);
-      if (record || (hasSchedule && s.status === "재원")) {
+      if (record || (!isFuture && hasSchedule && s.status === "재원")) {
         if (selectedTeacher && s.teacher !== selectedTeacher) return;
         const sessionNum = getSessionCount(s, dateStr);
         const statusMark =
@@ -8788,15 +8791,27 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
                   <div className="flex flex-1 min-w-max">
                     {DAYS.map((day) => {
                       const lessons = getLessons(myName, day, hour);
+                      const isWeekend = day === "토" || day === "일";
+                      const opStart = isWeekend ? 9 : 10;
+                      const isOperating = hour >= opStart && hour < 22;
                       return (
                         <div
                           key={day}
-                          className={`flex-1 min-w-[100px] md:min-w-[140px] border-r p-1 hover:bg-slate-50 transition-colors flex flex-col gap-1 print:border-slate-300 ${
-                            selectedDay === day
-                              ? "bg-indigo-50/10 print:bg-transparent"
-                              : "bg-white"
+                          className={`flex-1 min-w-[100px] md:min-w-[140px] border-r p-1 transition-colors flex flex-col gap-1 print:border-slate-300 ${
+                            !isOperating
+                              ? "bg-slate-100/60"
+                              : lessons.length === 0
+                              ? "bg-emerald-50 hover:bg-emerald-100"
+                              : selectedDay === day
+                              ? "bg-indigo-50/10 hover:bg-slate-50 print:bg-transparent"
+                              : "bg-white hover:bg-slate-50"
                           }`}
                         >
+                          {isOperating && lessons.length === 0 && (
+                            <div className="flex items-center justify-center h-full py-2">
+                              <span className="text-[10px] font-semibold text-emerald-400">가능</span>
+                            </div>
+                          )}
                           {lessons.map((l, idx) => (
                             <div
                               key={idx}
@@ -8825,13 +8840,27 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
                     {activeTeachers.map((t) => {
                       const targetName = isTeacherMode ? myName : t.name;
                       const lessons = getLessons(targetName, selectedDay, hour);
+                      const isWeekend = selectedDay === "토" || selectedDay === "일";
+                      const opStart = isWeekend ? 9 : 10;
+                      const isOperating = hour >= opStart && hour < 22;
                       return (
                         <div
                           key={t.id}
                           className={`${
                             isTeacherMode ? "w-full" : "w-[120px] md:w-[160px]"
-                          } border-r p-1 bg-white hover:bg-slate-50 transition-colors shrink-0 flex flex-col gap-1 print:border-slate-300`}
+                          } border-r p-1 transition-colors shrink-0 flex flex-col gap-1 print:border-slate-300 ${
+                            !isOperating
+                              ? "bg-slate-100/60"
+                              : lessons.length === 0
+                              ? "bg-emerald-50 hover:bg-emerald-100"
+                              : "bg-white hover:bg-slate-50"
+                          }`}
                         >
+                          {isOperating && lessons.length === 0 && (
+                            <div className="flex items-center justify-center h-full py-2">
+                              <span className="text-[10px] font-semibold text-emerald-400">가능</span>
+                            </div>
+                          )}
                           {lessons.map((l, idx) => (
                             <div
                               key={idx}
