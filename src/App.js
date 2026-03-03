@@ -505,6 +505,7 @@ const StudentEditModal = ({ student, teachers, onClose, onUpdate, user }) => {
       classDays:
         student.classDays || (student.className ? [student.className] : []),
       totalSessions: correctedSessions,
+      weeklyLessons: student.weeklyLessons || 1,
     };
   });
   const isAdmin = user.role === "admin";
@@ -688,6 +689,25 @@ const StudentEditModal = ({ student, teachers, onClose, onUpdate, user }) => {
                 </p>
               )}
             </div>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-500 mb-1">
+              총 수업 횟수 / 세트 (수동 조정)
+            </label>
+            <select
+              className="w-full p-2 border rounded-lg bg-white"
+              value={formData.totalSessions}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  totalSessions: parseInt(e.target.value),
+                })
+              }
+            >
+              <option value={4}>4회</option>
+              <option value={8}>8회</option>
+              <option value={12}>12회</option>
+            </select>
           </div>
           <div className="grid grid-cols-1 gap-4">
             <div>
@@ -6434,6 +6454,7 @@ const StudentManagementModal = ({
           registrationDate: new Date().toISOString().slice(0, 10),
           memo: student.note || "",
           totalSessions: 4,
+          weeklyLessons: 1,
           tuitionFee: 0,
           schedules: {},
           fromConsultationId: student.fromConsultationId,
@@ -6442,7 +6463,7 @@ const StudentManagementModal = ({
         setPayHistory([]);
         setPayAmount(0);
       } else if (student && student.id) {
-        setFormData({ ...student, totalSessions: getEffectiveSessions(student) });
+        setFormData({ ...student, totalSessions: getEffectiveSessions(student), weeklyLessons: student.weeklyLessons || 1 });
         setAttHistory(student.attendanceHistory || []);
         setPayHistory(student.paymentHistory || []);
         setPayAmount(student.tuitionFee || 0);
@@ -6454,6 +6475,7 @@ const StudentManagementModal = ({
           grade: "",
           status: "재원",
           totalSessions: 4,
+          weeklyLessons: 1,
           tuitionFee: 0,
           teacher: teachers[0]?.name || "",
           registrationDate: new Date().toISOString().slice(0, 10),
@@ -6849,6 +6871,58 @@ const StudentManagementModal = ({
                         })
                       }
                     />
+                  </div>
+                </div>
+              </div>
+
+              {/* 주당 수업 횟수 / 세트 횟수 */}
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-500 ml-1">
+                      주당 수업 횟수
+                    </label>
+                    <div className="flex gap-2">
+                      {[{ v: 1, label: "주1회" }, { v: 2, label: "주2회" }].map(({ v, label }) => (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() =>
+                            setFormData({
+                              ...formData,
+                              weeklyLessons: v,
+                              totalSessions: v === 2 ? 8 : 4,
+                            })
+                          }
+                          className={`flex-1 py-2 rounded-xl text-sm font-bold border transition-all ${
+                            formData.weeklyLessons === v
+                              ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                              : "bg-slate-50 border-slate-200 text-slate-400 hover:border-indigo-300"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-500 ml-1">
+                      총 수업 횟수 / 세트 (수동 조정)
+                    </label>
+                    <select
+                      className="w-full p-3 border rounded-xl bg-slate-50 outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-slate-600"
+                      value={formData.totalSessions || 4}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          totalSessions: parseInt(e.target.value),
+                        })
+                      }
+                    >
+                      <option value={4}>4회</option>
+                      <option value={8}>8회</option>
+                      <option value={12}>12회</option>
+                    </select>
                   </div>
                 </div>
               </div>
