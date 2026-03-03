@@ -3386,20 +3386,16 @@ const ClassLogView = ({ students, teachers, user }) => {
   for (let i = 0; i < firstDay; i++) days.push(null);
   for (let i = 1; i <= daysInMonth; i++) days.push(i);
   const getSessionCount = (student, targetDate) => {
-    // lastPaymentDate 대신 paymentHistory의 sessionStartDate를 직접 기준으로 삼아
-    // lastPaymentDate 필드 오염 여부와 무관하게 회차를 정확히 계산한다.
-    const cycleStarts = (student.paymentHistory || [])
-      .map((p) => p.sessionStartDate || p.date)
-      .filter((d) => d <= targetDate)
-      .sort((a, b) => b.localeCompare(a));
-    if (cycleStarts.length === 0) return 0; // 결제 이력 없음 → 번호 없음
-    const cycleStart = cycleStarts[0];
+    // 결제 사이클과 무관하게 전체 출석 이력 기준 누적 순번을 구하고,
+    // totalSessions로 나눈 나머지로 사이클 내 회차를 반환한다.
+    // 주1회(4회): (1)(2)(3)(4)(1)(2)...  주2회(8회): (1)~(8)(1)...
+    const total = getEffectiveSessions(student);
     const sessions = (student.attendanceHistory || [])
-      .filter((h) => h.status === "present" && h.date >= cycleStart)
+      .filter((h) => h.status === "present")
       .sort((a, b) => a.date.localeCompare(b.date));
     let cumulative = 0;
     for (const h of sessions) {
-      if (h.date === targetDate) return cumulative + 1;
+      if (h.date === targetDate) return (cumulative % total) + 1;
       if (h.date > targetDate) break;
       cumulative += h.count || 1;
     }
