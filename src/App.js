@@ -3385,21 +3385,24 @@ const ClassLogView = ({ students, teachers, user }) => {
   const days = [];
   for (let i = 0; i < firstDay; i++) days.push(null);
   for (let i = 1; i <= daysInMonth; i++) days.push(i);
-  const getSessionCount = (student, targetDate) => {
-    // 결제 사이클과 무관하게 전체 출석 이력 기준 누적 순번을 구하고,
-    // totalSessions로 나눈 나머지로 사이클 내 회차를 반환한다.
-    // 주1회(4회): (1)(2)(3)(4)(1)(2)...  주2회(8회): (1)~(8)(1)...
+  const getSessionNumbers = (student, targetDate) => {
+    // 전체 출석 이력 누적 기준으로 해당 날짜 수업의 회차 배열을 반환한다.
+    // 월 관계없이 totalSessions 단위로 순환: 주1회(4회), 주2회(8회)
+    // 연강(count=2)이면 [n, n+1] 두 회차를 반환, 일반은 [n] 한 개
     const total = getEffectiveSessions(student);
     const sessions = (student.attendanceHistory || [])
       .filter((h) => h.status === "present")
       .sort((a, b) => a.date.localeCompare(b.date));
     let cumulative = 0;
     for (const h of sessions) {
-      if (h.date === targetDate) return (cumulative % total) + 1;
+      if (h.date === targetDate) {
+        const cnt = h.count || 1;
+        return Array.from({ length: cnt }, (_, i) => (cumulative + i) % total + 1);
+      }
       if (h.date > targetDate) break;
       cumulative += h.count || 1;
     }
-    return 0;
+    return [];
   };
   const getCellContent = (dateStr, dayIndex) => {
     const today = new Date();
@@ -3414,20 +3417,27 @@ const ClassLogView = ({ students, teachers, user }) => {
         (!s.schedules && s.className === dayName);
       if (record || (!isFuture && hasSchedule && s.status === "재원")) {
         if (selectedTeacher && s.teacher !== selectedTeacher) return;
-        const sessionNum = getSessionCount(s, dateStr);
-        const statusMark =
-          record?.status === "present"
-            ? sessionNum > 0 ? `(${sessionNum})` : ""
-            : record?.status
-            ? "(x)"
-            : "";
         const time = getStudentScheduleTime(s, dayName);
-        content.push({
-          id: s.id,
-          text: `${time} ${s.name}${statusMark}`,
-          status: record?.status || "scheduled",
-          time,
-        });
+        if (record?.status === "present") {
+          // 연강(count>=2)이면 회차별로 행을 분리해서 표시
+          const nums = getSessionNumbers(s, dateStr);
+          nums.forEach((num) => {
+            content.push({
+              id: s.id,
+              text: `${time} ${s.name}(${num})`,
+              status: "present",
+              time,
+            });
+          });
+        } else {
+          const statusMark = record?.status ? "(x)" : "";
+          content.push({
+            id: s.id,
+            text: `${time} ${s.name}${statusMark}`,
+            status: record?.status || "scheduled",
+            time,
+          });
+        }
       }
     });
     content.sort((a, b) => a.time.localeCompare(b.time));
