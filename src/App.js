@@ -3098,7 +3098,10 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
 
   const renderMonthView = () => {
     return (
-      <div className="grid grid-cols-7 gap-px bg-slate-200 border border-slate-200 rounded-lg overflow-hidden flex-1 h-full">
+      <div
+          className="grid grid-cols-7 gap-px bg-slate-200 border border-slate-200 rounded-lg overflow-hidden flex-1"
+          style={{ gridTemplateRows: `auto repeat(${Math.ceil(monthDays.length / 7)}, minmax(0, 1fr))` }}
+        >
         {["일", "월", "화", "수", "목", "금", "토"].map((day) => (
           <div
             key={day}
@@ -3110,7 +3113,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
         {monthDays.map((day, idx) => {
           if (!day)
             return (
-              <div key={idx} className="bg-slate-50/50 min-h-[80px]"></div>
+              <div key={idx} className="bg-slate-50/50"></div>
             );
           const dateStr = `${year}-${String(month + 1).padStart(
             2,
@@ -3143,7 +3146,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
           return (
             <div
               key={idx}
-              className={`bg-white p-2 min-h-[80px] hover:bg-indigo-50 transition-colors relative group border-t border-slate-50 cursor-pointer`}
+              className={`bg-white p-2 overflow-hidden hover:bg-indigo-50 transition-colors relative group border-t border-slate-50 cursor-pointer`}
               onClick={() => {
                 const details = getDetailModalData(dateStr, dayOfWeek);
                 if (
