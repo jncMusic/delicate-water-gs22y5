@@ -3386,13 +3386,19 @@ const ClassLogView = ({ students, teachers, user }) => {
   for (let i = 0; i < firstDay; i++) days.push(null);
   for (let i = 1; i <= daysInMonth; i++) days.push(i);
   const getSessionCount = (student, targetDate) => {
-    const history = student.attendanceHistory || [];
-    const lastPayment = student.lastPaymentDate || "0000-00-00";
-    const validSessions = history
-      .filter((h) => h.status === "present" && h.date >= lastPayment)
+    // lastPaymentDate 대신 paymentHistory의 sessionStartDate를 직접 기준으로 삼아
+    // lastPaymentDate 필드 오염 여부와 무관하게 회차를 정확히 계산한다.
+    const cycleStarts = (student.paymentHistory || [])
+      .map((p) => p.sessionStartDate || p.date)
+      .filter((d) => d <= targetDate)
+      .sort((a, b) => b.localeCompare(a));
+    if (cycleStarts.length === 0) return 0; // 결제 이력 없음 → 번호 없음
+    const cycleStart = cycleStarts[0];
+    const sessions = (student.attendanceHistory || [])
+      .filter((h) => h.status === "present" && h.date >= cycleStart)
       .sort((a, b) => a.date.localeCompare(b.date));
     let cumulative = 0;
-    for (const h of validSessions) {
+    for (const h of sessions) {
       if (h.date === targetDate) return cumulative + 1;
       if (h.date > targetDate) break;
       cumulative += h.count || 1;
@@ -3415,7 +3421,7 @@ const ClassLogView = ({ students, teachers, user }) => {
         const sessionNum = getSessionCount(s, dateStr);
         const statusMark =
           record?.status === "present"
-            ? `(${sessionNum})`
+            ? sessionNum > 0 ? `(${sessionNum})` : ""
             : record?.status
             ? "(x)"
             : "";
