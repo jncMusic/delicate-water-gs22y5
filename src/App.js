@@ -7344,9 +7344,9 @@ const PaymentView = ({
 
   // 수강 현황 계산 헬퍼
   const getStudentProgress = (s) => {
-    const totalAttended = (s.attendanceHistory || []).filter(
-      (h) => h.status === "present"
-    ).length;
+    const totalAttended = (s.attendanceHistory || [])
+      .filter((h) => h.status === "present")
+      .reduce((sum, h) => sum + (h.count || 1), 0);
     const sessionUnit = getEffectiveSessions(s);
     const totalPaidCapacity = (s.paymentHistory || []).length * sessionUnit;
 
