@@ -7348,13 +7348,15 @@ const PaymentView = ({
       .filter((h) => h.status === "present")
       .reduce((sum, h) => sum + (h.count || 1), 0);
     const sessionUnit = getEffectiveSessions(s);
-    const totalPaidCapacity = (s.paymentHistory || []).length * sessionUnit;
+    const numPayments = (s.paymentHistory || []).length;
+    const totalPaidCapacity = numPayments * sessionUnit;
 
-    let currentUsage = totalAttended % sessionUnit;
-    if (currentUsage === 0 && totalAttended > 0) currentUsage = sessionUnit;
+    // 현재 수강권 사이클 내 진행 회차 (결제 횟수 기준)
+    const currentCycleStart = Math.max(0, (numPayments - 1) * sessionUnit);
+    const currentUsage = Math.min(sessionUnit, Math.max(0, totalAttended - currentCycleStart));
 
     const isOverdue = totalAttended > totalPaidCapacity;
-    const isCompleted = currentUsage === sessionUnit;
+    const isCompleted = !isOverdue && totalPaidCapacity > 0 && totalAttended >= totalPaidCapacity;
 
     return {
       currentUsage,
