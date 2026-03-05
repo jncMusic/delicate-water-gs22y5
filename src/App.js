@@ -7383,6 +7383,43 @@ const PaymentView = ({
     [students, selectedStudentId]
   );
 
+  // 시즌 인사 자동 생성 (이벤트 D-7~D+3 우선, 이후 월별 기본 문구)
+  const getSeasonalGreeting = () => {
+    const today = new Date();
+    const month = today.getMonth() + 1;
+    const diffDays = (m, d) =>
+      Math.round((new Date(today.getFullYear(), m - 1, d) - today) / 86400000);
+
+    const events = [
+      { m: 1,  d: 1,  open: "새해가 밝았습니다! 새해 복 많이 받으세요.",            close: "새해에도 변함없는 성원에 깊이 감사드립니다." },
+      { m: 3,  d: 1,  open: "삼일절을 맞아 뜻깊은 하루 되시길 바랍니다.",           close: "항상 감사드립니다." },
+      { m: 5,  d: 5,  open: "어린이날을 앞두고 행복 가득한 시간 보내시길 바랍니다.", close: "소중한 아이들과 함께해 주셔서 진심으로 감사드립니다." },
+      { m: 5,  d: 15, open: "스승의 날을 맞아 함께 성장하는 기쁨에 감사드립니다.",  close: "앞으로도 최선을 다하겠습니다. 감사합니다." },
+      { m: 12, d: 25, open: "즐거운 성탄절 보내고 계신지요?",                       close: "따뜻한 연말 행복하게 마무리하시길 바랍니다." },
+      { m: 12, d: 31, open: "한 해가 저물어 가고 있습니다.",                        close: "올 한 해도 함께해 주셔서 진심으로 감사드립니다." },
+    ];
+    for (const e of events) {
+      const d = diffDays(e.m, e.d);
+      if (d >= -3 && d <= 7) return { open: e.open, close: e.close };
+    }
+
+    const monthly = {
+      1:  { open: "새해 첫 달, 희망찬 1월입니다.",                    close: "새해에도 건강하고 행복한 한 해 되시길 바랍니다." },
+      2:  { open: "봄을 기다리는 2월, 건강하게 잘 지내고 계신지요?",  close: "따뜻한 봄날이 곧 찾아오길 바랍니다. 감사합니다." },
+      3:  { open: "새 학기가 시작되는 따뜻한 봄입니다.",              close: "새로운 시작을 응원합니다. 항상 감사드립니다." },
+      4:  { open: "꽃이 만개하는 아름다운 4월입니다.",                close: "봄처럼 따뜻한 하루하루 되시길 바랍니다. 감사합니다." },
+      5:  { open: "싱그러운 5월, 가정의 달입니다.",                   close: "소중한 가족과 행복한 시간 보내시길 바랍니다. 감사합니다." },
+      6:  { open: "여름이 다가오는 6월입니다.",                       close: "건강하고 활기찬 여름 준비하시길 바랍니다. 감사합니다." },
+      7:  { open: "무더운 여름, 건강하게 잘 지내고 계신지요?",        close: "더위에 건강 유의하시길 바랍니다. 항상 감사드립니다." },
+      8:  { open: "무더위가 절정인 8월입니다. 건강 챙기고 계신가요?", close: "남은 여름도 건강하게 보내시길 바랍니다. 감사합니다." },
+      9:  { open: "선선한 바람이 부는 9월, 2학기가 시작됩니다.",      close: "새 학기도 힘차게 함께해요. 항상 감사드립니다." },
+      10: { open: "단풍이 물드는 아름다운 10월입니다.",               close: "풍성한 가을 보내시길 바랍니다. 감사합니다." },
+      11: { open: "깊어가는 가을, 11월입니다.",                       close: "따뜻하게 마무리하는 11월 되시길 바랍니다. 감사합니다." },
+      12: { open: "한 해를 마무리하는 12월입니다.",                   close: "올 한 해도 함께해 주셔서 진심으로 감사드립니다." },
+    };
+    return monthly[month] || { open: "", close: "항상 감사드립니다." };
+  };
+
   // [수정됨] 안내 문자 미리보기 생성 함수
   const handleOpenMsgPreview = (e, student) => {
     e.stopPropagation();
@@ -7488,9 +7525,10 @@ const PaymentView = ({
     }
 
     // [템플릿 적용]
+    const { open: seasonOpen, close: seasonClose } = getSeasonalGreeting();
     const generatedMsg = `안녕하세요, J&C 음악학원입니다.
 
-(시즌 인사)
+${seasonOpen}
 
 수업료 결제 안내입니다. 아래 수업일자와 결제내용 확인하시어 결제 부탁드리겠습니다.
 -------------------------------
@@ -7503,7 +7541,7 @@ const PaymentView = ({
       unpaidSessions.length > 0 ? `(${unpaidSessions.length}회)` : ""
     }
 
-- 결제금액 : ${sessionUnit}회 ${tuition}원 ${
+- 결제금액 : 1:1 개인레슨 ${sessionUnit}회 ${tuition}원 ${
       unpaidSessions.length > 0 ? `(미납 ${unpaidSessions.length}회 포함)` : ""
     }
 - 결제요청일 : ${requestDateStr} 까지 결제 부탁드립니다.
@@ -7520,7 +7558,7 @@ const PaymentView = ({
 - 이미 결제하신 경우 알려주시면 감사하겠습니다. 특히 제로페이의 경우 학생명 확인이 어려우니 꼭 알려주시면 감사하겠습니다.
 
 
-항상 감사드립니다. (마무리 인사)
+${seasonClose}
 
 J&C 음악학원장 올림.`;
 
