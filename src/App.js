@@ -910,9 +910,15 @@ const PaymentDetailModal = ({
   const SESSION_UNIT = getEffectiveSessions(student);
 
   const { historyRows, nextSessionStartIndex, currentStatus } = useMemo(() => {
-    const allAttendance = [...(student.attendanceHistory || [])]
+    // count 반영: 연강(count:2)을 2슬롯으로 확장
+    const sessionSlots = [];
+    [...(student.attendanceHistory || [])]
       .filter((h) => h.status === "present")
-      .sort((a, b) => a.date.localeCompare(b.date));
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .forEach((h) => {
+        const cnt = h.count || 1;
+        for (let i = 0; i < cnt; i++) sessionSlots.push(h);
+      });
 
     const sortedPayments = [...(student.paymentHistory || [])].sort((a, b) =>
       a.date.localeCompare(b.date)
@@ -921,7 +927,7 @@ const PaymentDetailModal = ({
     const rows = sortedPayments.map((payment, index) => {
       const startIndex = index * SESSION_UNIT;
       const endIndex = startIndex + SESSION_UNIT;
-      const matchedSessions = allAttendance.slice(startIndex, endIndex);
+      const matchedSessions = sessionSlots.slice(startIndex, endIndex);
 
       return {
         payment: payment,
@@ -931,13 +937,13 @@ const PaymentDetailModal = ({
     });
 
     const totalPaidSessions = sortedPayments.length * SESSION_UNIT;
-    const totalAttended = allAttendance.length;
+    const totalAttended = sessionSlots.length;
     const balance = totalPaidSessions - totalAttended;
     const lastPaidIndex = Math.max(
       0,
       (sortedPayments.length - 1) * SESSION_UNIT
     );
-    const currentActiveSessions = allAttendance.slice(lastPaidIndex);
+    const currentActiveSessions = sessionSlots.slice(lastPaidIndex);
 
     return {
       historyRows: rows.reverse(),
@@ -973,10 +979,12 @@ const PaymentDetailModal = ({
       showToast("금액을 확인해주세요.", "warning");
       return;
     }
-    const allAttendance = [...(student.attendanceHistory || [])]
+    // count 반영: 슬롯 단위로 확장하여 연강이 2슬롯으로 계산되도록
+    const sessionSlots = [...(student.attendanceHistory || [])]
       .filter((h) => h.status === "present")
-      .sort((a, b) => a.date.localeCompare(b.date));
-    const targetSession = allAttendance[nextSessionStartIndex];
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .flatMap((h) => Array(h.count || 1).fill(h));
+    const targetSession = sessionSlots[nextSessionStartIndex];
     const realSessionStartDate = targetSession
       ? targetSession.date
       : paymentDate;
