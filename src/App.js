@@ -954,9 +954,9 @@ const PaymentDetailModal = ({
   const handleSaveAttendanceInside = (studentId, newHistory) => {
     // 1. 진행도(sessionsCompleted) 재계산
     const lastPayment = student.lastPaymentDate || "0000-00-00";
-    const newSessionCount = newHistory.filter(
-      (h) => h.status === "present" && h.date >= lastPayment
-    ).length;
+    const newSessionCount = newHistory
+      .filter((h) => h.status === "present" && h.date >= lastPayment)
+      .reduce((sum, h) => sum + (h.count || 1), 0);
 
     // 2. 부모(App.js)에게 업데이트 요청
     onUpdateStudent(studentId, {
@@ -4597,9 +4597,10 @@ const FastAttendanceModal = ({ student, onClose, onSave }) => {
               2,
               "0"
             )}-${String(day).padStart(2, "0")}`;
-            const isPresent = tempHistory.some(
+            const record = tempHistory.find(
               (h) => h.date === dateStr && h.status === "present"
             );
+            const cellCount = record ? (record.count || 1) : 0;
             const dayOfWeek = idx % 7;
             const isClassDay = targetDays.includes(dayOfWeek); // 수업 요일인지 확인
 
@@ -4607,18 +4608,24 @@ const FastAttendanceModal = ({ student, onClose, onSave }) => {
               <div
                 key={day}
                 onClick={() => toggleDate(dateStr)}
+                title={cellCount === 2 ? "연강(2회) — 클릭하면 삭제" : cellCount === 1 ? "출석(1회) — 클릭하면 연강" : "클릭하면 출석"}
                 className={`
-                  aspect-square flex items-center justify-center rounded-full text-xs cursor-pointer select-none transition-all
+                  aspect-square flex items-center justify-center rounded-full text-xs cursor-pointer select-none transition-all relative
                   ${
-                    isPresent
+                    cellCount === 2
+                      ? "bg-violet-600 text-white font-bold shadow-md transform scale-110 ring-2 ring-violet-300"
+                      : cellCount === 1
                       ? "bg-indigo-600 text-white font-bold shadow-md transform scale-110"
                       : isClassDay
-                      ? "bg-indigo-50 text-indigo-400 hover:bg-indigo-200 border border-indigo-100" // 수업 요일 힌트
-                      : "text-slate-300 hover:bg-slate-100" // 수업 없는 날
+                      ? "bg-indigo-50 text-indigo-400 hover:bg-indigo-200 border border-indigo-100"
+                      : "text-slate-300 hover:bg-slate-100"
                   }
                 `}
               >
                 {day}
+                {cellCount === 2 && (
+                  <span className="absolute -top-1 -right-1 bg-violet-800 text-white text-[8px] rounded-full w-3 h-3 flex items-center justify-center font-bold leading-none">2</span>
+                )}
               </div>
             );
           })}
@@ -4812,8 +4819,7 @@ const FastAttendanceModal = ({ student, onClose, onSave }) => {
               onClick={handleSave}
               className="px-6 py-2.5 rounded-lg bg-indigo-600 text-white font-bold hover:bg-indigo-700 shadow-md flex items-center"
             >
-              <CheckCircle size={18} className="mr-2" />총 {tempHistory.length}
-              건 저장하기
+              <CheckCircle size={18} className="mr-2" />총 {tempHistory.reduce((s, h) => s + (h.count || 1), 0)}회 저장하기
             </button>
           </div>
         </div>
@@ -4823,20 +4829,26 @@ const FastAttendanceModal = ({ student, onClose, onSave }) => {
 
   const toggleDate = (dateStr) => {
     const exists = tempHistory.find((h) => h.date === dateStr);
-    if (exists) {
-      // 이미 있으면 삭제 (토글)
-      setTempHistory(tempHistory.filter((h) => h.date !== dateStr));
-    } else {
-      // 없으면 추가 (출석)
+    if (!exists) {
+      // 없음 → 1회 출석
       setTempHistory([
         ...tempHistory,
         {
           date: dateStr,
           status: "present",
+          count: 1,
           reason: "초기입력",
           timestamp: new Date().toISOString(),
         },
       ]);
+    } else if ((exists.count || 1) < 2) {
+      // 1회 → 연강(2회)
+      setTempHistory(
+        tempHistory.map((h) => (h.date === dateStr ? { ...h, count: 2 } : h))
+      );
+    } else {
+      // 2회 → 삭제
+      setTempHistory(tempHistory.filter((h) => h.date !== dateStr));
     }
   };
 
@@ -4866,11 +4878,8 @@ const FastAttendanceModal = ({ student, onClose, onSave }) => {
               출석 콕콕 입력
             </h2>
             <p className="text-sm text-slate-500">
-              수업 요일은{" "}
-              <span className="bg-indigo-50 text-indigo-500 px-1 rounded">
-                연한 색
-              </span>
-              으로 표시됩니다. 클릭하여 출석을 체크하세요.
+              <span className="bg-indigo-600 text-white px-1 rounded text-xs">1회</span> 클릭 → 출석,{" "}
+              <span className="bg-violet-600 text-white px-1 rounded text-xs">2회</span> 클릭 → 연강, 3회 클릭 → 삭제
             </p>
           </div>
           <button onClick={onClose}>
@@ -7427,10 +7436,15 @@ const PaymentView = ({
     const sessionUnit = getEffectiveSessions(student);
     const tuition = parseInt(student.tuitionFee || 0).toLocaleString();
 
-    // 출석 이력 (날짜순 정렬)
-    const allAttendance = (student.attendanceHistory || [])
+    // 출석 이력 → count 반영하여 슬롯 단위로 확장 (연강 count:2 → 2슬롯)
+    const sessionSlots = [];
+    (student.attendanceHistory || [])
       .filter((h) => h.status === "present")
-      .sort((a, b) => a.date.localeCompare(b.date));
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .forEach((h) => {
+        const cnt = h.count || 1;
+        for (let i = 0; i < cnt; i++) sessionSlots.push(h.date);
+      });
 
     // 결제 이력
     const allPayments = (student.paymentHistory || []).sort((a, b) =>
@@ -7444,24 +7458,21 @@ const PaymentView = ({
         : "기록 없음";
 
     // 결제된 마지막 수업
-    const lastCoveredSession = allAttendance[totalPaidCapacity - 1];
-    const lastCoveredDate = lastCoveredSession
-      ? lastCoveredSession.date.slice(5).replace("-", "/")
+    const lastCoveredDate = sessionSlots[totalPaidCapacity - 1]
+      ? sessionSlots[totalPaidCapacity - 1].slice(5).replace("-", "/")
       : "없음";
 
-    // 미납 회차 계산
-    const unpaidSessions = allAttendance.slice(totalPaidCapacity);
+    // 미납 회차 계산 (슬롯 기준)
+    const unpaidSessions = sessionSlots.slice(totalPaidCapacity);
     const unpaidDatesStr =
       unpaidSessions.length > 0
-        ? unpaidSessions
-            .map((h) => h.date.slice(5).replace("-", "/"))
-            .join(", ")
+        ? unpaidSessions.map((d) => d.slice(5).replace("-", "/")).join(", ")
         : "없음";
 
     // 수업일자: 직전 결제 커버 회차 + 미납회차 합산 표시
-    const recentSessions = allAttendance
-      .slice(totalPaidCapacity - sessionUnit)
-      .map((h) => h.date.slice(5).replace("-", "/"))
+    const recentSessions = sessionSlots
+      .slice(Math.max(0, totalPaidCapacity - sessionUnit))
+      .map((d) => d.slice(5).replace("-", "/"))
       .join(", ") || "(출석 기록 없음)";
 
     // [수정 3] 새로운 1회차 수업 (자동 계산)
