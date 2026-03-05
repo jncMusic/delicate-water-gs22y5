@@ -924,25 +924,27 @@ const PaymentDetailModal = ({
       a.date.localeCompare(b.date)
     );
 
-    const rows = sortedPayments.map((payment, index) => {
-      const startIndex = index * SESSION_UNIT;
-      const endIndex = startIndex + SESSION_UNIT;
-      const matchedSessions = sessionSlots.slice(startIndex, endIndex);
-
+    // 결제별 sessionUnit 개별 적용 (주2회→주1회 전환 대응)
+    let slotOffset = 0;
+    const rows = sortedPayments.map((payment) => {
+      const unit = payment.sessionUnit || SESSION_UNIT;
+      const matchedSessions = sessionSlots.slice(slotOffset, slotOffset + unit);
+      slotOffset += unit;
       return {
-        payment: payment,
+        payment,
         sessions: matchedSessions,
-        isFull: matchedSessions.length === SESSION_UNIT,
+        isFull: matchedSessions.length === unit,
+        unit,
       };
     });
 
-    const totalPaidSessions = sortedPayments.length * SESSION_UNIT;
+    const totalPaidSessions = slotOffset; // 각 결제 unit 합산
     const totalAttended = sessionSlots.length;
     const balance = totalPaidSessions - totalAttended;
-    const lastPaidIndex = Math.max(
-      0,
-      (sortedPayments.length - 1) * SESSION_UNIT
-    );
+    const lastPaymentUnit = sortedPayments.length > 0
+      ? (sortedPayments[sortedPayments.length - 1].sessionUnit || SESSION_UNIT)
+      : SESSION_UNIT;
+    const lastPaidIndex = Math.max(0, totalPaidSessions - lastPaymentUnit);
     const currentActiveSessions = sessionSlots.slice(lastPaidIndex);
 
     return {
@@ -952,6 +954,7 @@ const PaymentDetailModal = ({
         balance: balance,
         totalAttended: totalAttended,
         activeSessions: currentActiveSessions,
+        lastPaymentUnit,
       },
     };
   }, [student.attendanceHistory, student.paymentHistory, SESSION_UNIT]);
@@ -979,7 +982,7 @@ const PaymentDetailModal = ({
       showToast("금액을 확인해주세요.", "warning");
       return;
     }
-    // count 반영: 슬롯 단위로 확장하여 연강이 2슬롯으로 계산되도록
+    // count 반영 슬롯 확장 후 다음 시작 슬롯 날짜 계산
     const sessionSlots = [...(student.attendanceHistory || [])]
       .filter((h) => h.status === "present")
       .sort((a, b) => a.date.localeCompare(b.date))
@@ -988,6 +991,8 @@ const PaymentDetailModal = ({
     const realSessionStartDate = targetSession
       ? targetSession.date
       : paymentDate;
+    // 이번 결제에 적용될 단위 (현재 학생 스케줄 기준)
+    const thisPaymentUnit = SESSION_UNIT;
 
     let confirmMsg = `${student.name} 원생 수강권 갱신(선불)\n(설정된 회차: ${SESSION_UNIT}회)\n\n`;
     if (targetSession && targetSession.date < paymentDate) {
@@ -1198,7 +1203,7 @@ const PaymentDetailModal = ({
                   <tr>
                     <th className="px-4 py-3 w-32">결제일</th>
                     <th className="px-4 py-3">
-                      수업 내역 ({SESSION_UNIT}회/건)
+                      수업 내역
                     </th>
                     <th className="px-4 py-3 w-28 text-right">금액</th>
                     <th className="px-4 py-3 w-20 text-center">관리</th>
@@ -1231,10 +1236,10 @@ const PaymentDetailModal = ({
                                   {c.date.slice(2)}
                                 </span>
                               ))}
-                              {row.sessions.length < SESSION_UNIT &&
+                              {row.sessions.length < row.unit &&
                                 index === 0 && (
                                   <span className="text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 ml-1">
-                                    +{SESSION_UNIT - row.sessions.length}회 잔여
+                                    +{row.unit - row.sessions.length}회 잔여
                                   </span>
                                 )}
                             </div>
@@ -7350,13 +7355,23 @@ const PaymentView = ({
     const totalAttended = (s.attendanceHistory || [])
       .filter((h) => h.status === "present")
       .reduce((sum, h) => sum + (h.count || 1), 0);
-    const sessionUnit = getEffectiveSessions(s);
-    const numPayments = (s.paymentHistory || []).length;
-    const totalPaidCapacity = numPayments * sessionUnit;
+    const currentSessionUnit = getEffectiveSessions(s);
+    const sortedPayments = [...(s.paymentHistory || [])].sort((a, b) =>
+      a.date.localeCompare(b.date)
+    );
+    // 결제별 sessionUnit 합산 (하위호환: 없으면 currentSessionUnit fallback)
+    const totalPaidCapacity = sortedPayments.reduce(
+      (sum, p) => sum + (p.sessionUnit || currentSessionUnit), 0
+    );
+    const lastPayment = sortedPayments[sortedPayments.length - 1];
+    const lastUnit = lastPayment
+      ? (lastPayment.sessionUnit || currentSessionUnit)
+      : currentSessionUnit;
 
-    // 현재 수강권 사이클 내 진행 회차 (결제 횟수 기준)
-    const currentCycleStart = Math.max(0, (numPayments - 1) * sessionUnit);
-    const currentUsage = Math.min(sessionUnit, Math.max(0, totalAttended - currentCycleStart));
+    // 현재 수강권 사이클 내 진행 회차
+    const currentCycleStart = Math.max(0, totalPaidCapacity - lastUnit);
+    const currentUsage = Math.min(lastUnit, Math.max(0, totalAttended - currentCycleStart));
+    const sessionUnit = lastUnit;
 
     const isOverdue = totalAttended > totalPaidCapacity;
     const isCompleted = !isOverdue && totalPaidCapacity > 0 && totalAttended >= totalPaidCapacity;
@@ -7446,7 +7461,12 @@ const PaymentView = ({
   const handleOpenMsgPreview = (e, student) => {
     e.stopPropagation();
 
-    const sessionUnit = getEffectiveSessions(student);
+    // 다음 결제에 적용될 단위: 마지막 결제의 sessionUnit 기준 (없으면 현재 스케줄 기준)
+    const sortedPay = [...(student.paymentHistory || [])].sort((a, b) =>
+      a.date.localeCompare(b.date)
+    );
+    const lastPay = sortedPay[sortedPay.length - 1];
+    const sessionUnit = lastPay?.sessionUnit || getEffectiveSessions(student);
     const tuition = parseInt(student.tuitionFee || 0).toLocaleString();
 
     // 출석 이력 → count 반영하여 슬롯 단위로 확장 (연강 count:2 → 2슬롯)
@@ -7459,16 +7479,12 @@ const PaymentView = ({
         for (let i = 0; i < cnt; i++) sessionSlots.push(h.date);
       });
 
-    // 결제 이력
-    const allPayments = (student.paymentHistory || []).sort((a, b) =>
-      a.date.localeCompare(b.date)
+    // 결제별 sessionUnit 합산 (주2회→주1회 전환 대응)
+    const totalPaidCapacity = sortedPay.reduce(
+      (sum, p) => sum + (p.sessionUnit || getEffectiveSessions(student)), 0
     );
-
-    const totalPaidCapacity = allPayments.length * sessionUnit;
     const lastPayment =
-      allPayments.length > 0
-        ? allPayments[allPayments.length - 1].date
-        : "기록 없음";
+      sortedPay.length > 0 ? sortedPay[sortedPay.length - 1].date : "기록 없음";
 
     // 결제된 마지막 수업
     const lastCoveredDate = sessionSlots[totalPaidCapacity - 1]
@@ -7482,7 +7498,7 @@ const PaymentView = ({
         ? unpaidSessions.map((d) => d.slice(5).replace("-", "/")).join(", ")
         : "없음";
 
-    // 수업일자: 직전 결제 커버 회차 + 미납회차 합산 표시
+    // 수업일자: 마지막 결제 단위 기준 + 미납 표시
     const recentSessions = sessionSlots
       .slice(Math.max(0, totalPaidCapacity - sessionUnit))
       .map((d) => d.slice(5).replace("-", "/"))
@@ -7991,6 +8007,7 @@ export default function App() {
         date,
         amount,
         type: "tuition",
+        sessionUnit: getEffectiveSessions(student),
         sessionStartDate: realSessionStartDate,
         createdAt: new Date().toISOString(),
       };
