@@ -4561,8 +4561,11 @@ const DateDetailModal = ({ date, students, onClose, onStudentClick }) => (
 );
 // [New Component] 초기 데이터 구축용: 원생별 달력 콕콕 (Fast Attendance Clicker)
 const FastAttendanceModal = ({ student, onClose, onSave }) => {
-  // 기본적으로 2025년 10월부터 현재까지 보여줌 (초기 구축용)
-  const [baseDate, setBaseDate] = useState(new Date("2025-10-01"));
+  // 현재일 기준 2개월 전부터 시작 → 4개월치 표시 시 현재월 포함 앞뒤 2개월 커버
+  const defaultBase = new Date();
+  defaultBase.setDate(1);
+  defaultBase.setMonth(defaultBase.getMonth() - 2);
+  const [baseDate, setBaseDate] = useState(defaultBase);
   // 로컬 상태로 출석 기록 관리 (저장 전까지 DB 안 건드림)
   const [tempHistory, setTempHistory] = useState(
     student.attendanceHistory || []
