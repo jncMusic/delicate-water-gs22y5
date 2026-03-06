@@ -7516,8 +7516,8 @@ const PaymentView = ({
     let requestDateStr = ""; // 결제 요청일 (3번 날짜와 동일하게 설정)
 
     const lastClassDateStr =
-      allAttendance.length > 0
-        ? allAttendance[allAttendance.length - 1].date
+      sessionSlots.length > 0
+        ? sessionSlots[sessionSlots.length - 1]
         : new Date().toISOString().split("T")[0];
 
     // 학생의 수업 요일 찾기 (schedule 객체 사용)
