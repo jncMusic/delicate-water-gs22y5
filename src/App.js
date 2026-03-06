@@ -6726,6 +6726,8 @@ const StudentManagementModal = ({
     const updatedData = {
       ...formData,
       schedules: cleanSchedules,
+      classDays: Object.keys(cleanSchedules), // 수업 요일 동기화
+      className: Object.keys(cleanSchedules)[0] || "",
       attendanceHistory: attHistory,
       paymentHistory: payHistory,
       updatedAt: new Date().toISOString(),
