@@ -6723,11 +6723,13 @@ const StudentManagementModal = ({
       }
     });
 
+    const firstDay = Object.keys(cleanSchedules)[0] || "";
     const updatedData = {
       ...formData,
       schedules: cleanSchedules,
       classDays: Object.keys(cleanSchedules), // 수업 요일 동기화
-      className: Object.keys(cleanSchedules)[0] || "",
+      className: firstDay,
+      time: cleanSchedules[firstDay] || "", // 레거시 time 필드도 동기화
       attendanceHistory: attHistory,
       paymentHistory: payHistory,
       updatedAt: new Date().toISOString(),
@@ -8670,8 +8672,11 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
 
   const getLessonTime = (student, targetDay) => {
     if (student.status !== "재원") return null;
-    if (student.schedules && student.schedules[targetDay])
-      return student.schedules[targetDay];
+    // schedules 필드가 있으면 schedules만 사용 (className/time 레거시 무시)
+    if (student.schedules && Object.keys(student.schedules).length > 0) {
+      return student.schedules[targetDay] || null;
+    }
+    // 레거시 폴백: schedules 없는 구버전 데이터
     if (student.className === targetDay && student.time) return student.time;
     return null;
   };
