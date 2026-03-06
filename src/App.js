@@ -5249,6 +5249,8 @@ const StudentModal = ({
       ...formData,
       grade: isAdult ? "성인" : formData.grade,
       schedules: schedule, // 스케줄 포함
+      classDays: Object.keys(schedule), // 수업 요일 동기화
+      className: Object.keys(schedule)[0] || "",
       attendanceHistory: attHistory,
       paymentHistory: payHistory,
       updatedAt: new Date().toISOString(),
