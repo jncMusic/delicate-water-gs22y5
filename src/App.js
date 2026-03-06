@@ -7537,28 +7537,15 @@ const PaymentView = ({
       targetDayIdx = daysKor.indexOf(student.className);
     }
 
-    if (targetDayIdx !== -1) {
-      // 마지막 수업일 다음 날부터 검색 시작
-      let d = new Date(lastClassDateStr);
-      d.setDate(d.getDate() + 1);
-
-      // 14일 이내로 다음 해당 요일 찾기
-      for (let i = 0; i < 14; i++) {
-        if (d.getDay() === targetDayIdx) {
-          const m = d.getMonth() + 1;
-          const dt = d.getDate();
-          const dayName = daysKor[d.getDay()];
-
-          // 포맷팅
-          nextDateStr = `${String(m).padStart(2, "0")}/${String(dt).padStart(
-            2,
-            "0"
-          )}`; // 02/05
-          requestDateStr = `${m}/${dt}(${dayName})`; // 2/5(목)
-          break;
-        }
-        d.setDate(d.getDate() + 1);
-      }
+    {
+      // 마지막 수업일 기준 7일 후 (주 1회 레슨: 다음 주 동일 요일)
+      const d = new Date(lastClassDateStr);
+      d.setDate(d.getDate() + 7);
+      const m = d.getMonth() + 1;
+      const dt = d.getDate();
+      const dayName = daysKor[d.getDay()];
+      nextDateStr = `${String(m).padStart(2, "0")}/${String(dt).padStart(2, "0")}`;
+      requestDateStr = `${m}/${dt}(${dayName})`;
     }
 
     // 만약 요일을 못 찾았거나 계산 실패시 기본값 (3일 뒤)
