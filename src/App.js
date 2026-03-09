@@ -7588,9 +7588,12 @@ const PaymentView = ({
     const lastPayment =
       sortedPay.length > 0 ? sortedPay[sortedPay.length - 1].date : "기록 없음";
 
-    // 결제된 마지막 수업
-    const lastCoveredDate = sessionSlots[totalPaidCapacity - 1]
-      ? sessionSlots[totalPaidCapacity - 1].slice(5).replace("-", "/")
+    // 결제된 마지막 수업 (미납 회차가 있으면 미납 포함 마지막 수업일이 완료일)
+    const lastCoveredIdx = sessionSlots.length > totalPaidCapacity
+      ? sessionSlots.length - 1   // 미납 있음: 미납 포함 마지막 수업일
+      : totalPaidCapacity - 1;    // 미납 없음: 결제 범위 마지막 수업일
+    const lastCoveredDate = sessionSlots[lastCoveredIdx]
+      ? sessionSlots[lastCoveredIdx].slice(5).replace("-", "/")
       : "없음";
 
     // 미납 회차 계산 (슬롯 기준)
