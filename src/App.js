@@ -3389,7 +3389,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
   );
 };
 // [ClassLogView]
-const ClassLogView = ({ students, teachers, user }) => {
+const ClassLogView = ({ students, teachers, user, onUpdateStudent, showToast }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedTeacher, setSelectedTeacher] = useState(
     user.role === "teacher" ? user.name : ""
@@ -3420,6 +3420,36 @@ const ClassLogView = ({ students, teachers, user }) => {
     }
     return [];
   };
+
+  // 강사 출석부: 학생 출석 토글 (없음 → 1회 → 2회 연강 → 삭제)
+  const toggleStudentAttendance = async (student, dateStr) => {
+    if (!onUpdateStudent) return;
+    const history = student.attendanceHistory || [];
+    const existing = history.find((h) => h.date === dateStr);
+    let newHistory;
+    if (!existing) {
+      // 없음 → 1회 출석
+      newHistory = [
+        ...history,
+        { date: dateStr, status: "present", count: 1, timestamp: new Date().toISOString() },
+      ];
+    } else if (existing.status === "present" && (existing.count || 1) < 2) {
+      // 1회 → 2회 연강
+      newHistory = history.map((h) =>
+        h.date === dateStr ? { ...h, count: 2 } : h
+      );
+    } else if (existing.status === "present" && (existing.count || 1) >= 2) {
+      // 2회 → 삭제
+      newHistory = history.filter((h) => h.date !== dateStr);
+    } else {
+      // 결석/취소 등 다른 상태는 건드리지 않음
+      if (showToast) showToast("출석 외 다른 기록은 원생관리에서 수정해주세요.", "info");
+      return;
+    }
+    const sorted = [...newHistory].sort((a, b) => a.date.localeCompare(b.date));
+    await onUpdateStudent(student.id, { attendanceHistory: sorted });
+  };
+
   const getCellContent = (dateStr, dayIndex) => {
     const today = new Date();
     const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
@@ -3437,11 +3467,14 @@ const ClassLogView = ({ students, teachers, user }) => {
         if (record?.status === "present") {
           // 연강(count>=2)이면 회차별로 행을 분리해서 표시
           const nums = getSessionNumbers(s, dateStr);
+          const isDouble = (record.count || 1) >= 2;
           nums.forEach((num) => {
             content.push({
               id: s.id,
+              student: s,
               text: `${time} ${s.name}(${num})`,
               status: "present",
+              isDouble,
               time,
             });
           });
@@ -3449,8 +3482,10 @@ const ClassLogView = ({ students, teachers, user }) => {
           const statusMark = record?.status ? "(x)" : "";
           content.push({
             id: s.id,
+            student: s,
             text: `${time} ${s.name}${statusMark}`,
             status: record?.status || "scheduled",
+            isDouble: false,
             time,
           });
         }
@@ -3554,13 +3589,28 @@ const ClassLogView = ({ students, teachers, user }) => {
                   {items.map((item, idx) => (
                     <div
                       key={idx}
+                      onClick={() => onUpdateStudent && toggleStudentAttendance(item.student, dateStr)}
+                      title={
+                        item.isDouble
+                          ? "2회 연강 — 클릭하면 삭제"
+                          : item.status === "present"
+                          ? "1회 출석 — 클릭하면 2회 연강"
+                          : item.status === "scheduled"
+                          ? "클릭하면 출석 처리"
+                          : "출석 외 기록 (원생관리에서 수정)"
+                      }
                       className={`text-[10px] px-1 py-0.5 rounded truncate ${
-                        item.status === "present"
-                          ? "text-slate-700"
+                        onUpdateStudent ? "cursor-pointer hover:opacity-75" : ""
+                      } ${
+                        item.isDouble
+                          ? "bg-violet-100 text-violet-700 font-bold"
+                          : item.status === "present"
+                          ? "bg-indigo-50 text-slate-700"
                           : "text-slate-400 line-through"
                       }`}
                     >
                       {item.text}
+                      {item.isDouble && <span className="ml-0.5 text-violet-500 font-bold">×2</span>}
                     </div>
                   ))}
                 </div>
@@ -8503,6 +8553,8 @@ export default function App() {
               teachers={teachers}
               user={currentUser}
               students={students}
+              onUpdateStudent={handleUpdateStudent}
+              showToast={showToast}
             />
           )}
           {activeTab === "students" && (
