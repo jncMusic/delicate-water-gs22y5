@@ -5799,22 +5799,22 @@ const AttendanceView = ({ students, showToast, user, teachers }) => {
       }
 
       // [횟수 차감 로직] 1:1 레슨 룰 적용
-      // 1. 출석(present): 차감 (+1)
+      // 1. 출석(present): 차감 (+1, 연강은 +2)
       // 2. 결석(absent): 차감 안 함 (0) -> 보강 예정이므로
       // 3. 당일취소(canceled):
       //    - 질병(방역 등): 차감 안 함 (0)
       //    - 경조사/기타: 원칙적 차감 (+1) (학원 규정에 따라 수정 가능, 여기선 차감으로 설정)
       const lastPay = student.lastPaymentDate || "0000-00-00";
-      const count = history.filter((h) => {
-        if (h.date < lastPay) return false; // 지난 결제일 이전 기록 무시
+      const count = history.reduce((sum, h) => {
+        if (h.date < lastPay) return sum; // 지난 결제일 이전 기록 무시
 
-        if (h.status === "present") return true; // 출석은 무조건 차감
+        if (h.status === "present") return sum + (h.count || 1); // 출석은 무조건 차감 (연강은 2회)
         if (h.status === "canceled") {
           // 당일취소 중 '질병'은 봐줌, 나머지는 차감 (노쇼 페널티)
-          return h.subType !== "질병";
+          return h.subType !== "질병" ? sum + 1 : sum;
         }
-        return false; // absent는 차감 안함
-      }).length;
+        return sum; // absent는 차감 안함
+      }, 0);
 
       await updateDoc(studentRef, {
         attendanceHistory: history,
@@ -5848,6 +5848,34 @@ const AttendanceView = ({ students, showToast, user, teachers }) => {
     } else {
       // 결석(absent)이나 당일취소(canceled)는 모달 띄우기
       setModalConfig({ type: action, student });
+    }
+  };
+
+  // 연강 토글: 1회 ↔ 2회 전환
+  const toggleDoubleLesson = async (student) => {
+    const dateStr = formatDate(selectedDate);
+    try {
+      const studentRef = doc(db, "artifacts", APP_ID, "public", "data", "students", student.id);
+      let history = [...(student.attendanceHistory || [])];
+      const idx = history.findIndex((h) => h.date === dateStr && h.status === "present");
+      if (idx === -1) return;
+      const current = history[idx];
+      const newCount = (current.count || 1) >= 2 ? 1 : 2;
+      history[idx] = { ...current, count: newCount };
+
+      const lastPay = student.lastPaymentDate || "0000-00-00";
+      const sessions = history.reduce((sum, h) => {
+        if (h.date < lastPay) return sum;
+        if (h.status === "present") return sum + (h.count || 1);
+        if (h.status === "canceled" && h.subType !== "질병") return sum + 1;
+        return sum;
+      }, 0);
+
+      await updateDoc(studentRef, { attendanceHistory: history, sessionsCompleted: sessions });
+      showToast(newCount === 2 ? `${student.name}님 연강(2회) 처리됨` : `${student.name}님 1회로 변경됨`);
+    } catch (e) {
+      console.error(e);
+      showToast("저장 실패", "error");
     }
   };
 
@@ -5930,6 +5958,7 @@ const AttendanceView = ({ students, showToast, user, teachers }) => {
               (h) => h.date === formatDate(selectedDate)
             );
             const status = record?.status;
+            const lessonCount = record?.count || 1; // 연강 여부 (1 or 2)
             // 상세 정보 (결석 사유 or 취소 유형)
             const detailInfo = record?.reason || record?.subType || "";
 
@@ -5964,14 +5993,18 @@ const AttendanceView = ({ students, showToast, user, teachers }) => {
                     <div className="text-right">
                       <span
                         className={`text-[10px] font-bold px-2 py-1 rounded-lg block w-fit ml-auto mb-1 ${
-                          status === "present"
+                          status === "present" && lessonCount >= 2
+                            ? "bg-violet-600 text-white"
+                            : status === "present"
                             ? "bg-emerald-500 text-white"
                             : status === "canceled"
                             ? "bg-rose-500 text-white"
                             : "bg-amber-500 text-white"
                         }`}
                       >
-                        {status === "present"
+                        {status === "present" && lessonCount >= 2
+                          ? "연강(2회)"
+                          : status === "present"
                           ? "출석완료"
                           : status === "canceled"
                           ? "당일취소"
@@ -6023,6 +6056,19 @@ const AttendanceView = ({ students, showToast, user, teachers }) => {
                     </span>
                   </button>
                 </div>
+                {/* 연강 버튼: 출석완료 상태에서만 표시 */}
+                {status === "present" && (
+                  <button
+                    onClick={() => toggleDoubleLesson(s)}
+                    className={`w-full mt-2 py-2 rounded-xl font-bold text-sm flex items-center justify-center gap-1 transition-all ${
+                      lessonCount >= 2
+                        ? "bg-violet-600 text-white hover:bg-violet-700 shadow-md shadow-violet-200"
+                        : "bg-slate-50 text-violet-600 border border-violet-200 hover:bg-violet-50"
+                    }`}
+                  >
+                    {lessonCount >= 2 ? "✓ 연강(2회) — 클릭하면 1회로" : "연강(+1회) 추가"}
+                  </button>
+                )}
                 {status && (
                   <button
                     onClick={(e) => {
