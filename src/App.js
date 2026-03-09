@@ -7640,7 +7640,10 @@ const PaymentView = ({
       const m = d.getMonth() + 1;
       const dt = d.getDate();
       const dayName = daysKor[d.getDay()];
-      nextDateStr = `${String(m).padStart(2, "0")}/${String(dt).padStart(2, "0")}`;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const isFuture = d >= today;
+      nextDateStr = `${String(m).padStart(2, "0")}/${String(dt).padStart(2, "0")}${isFuture ? " (예정)" : ""}`;
       requestDateStr = `${m}/${dt}(${dayName})`;
     }
 
