@@ -5699,11 +5699,25 @@ const AttendanceView = ({ students, showToast, user, teachers }) => {
       // 삭제 모드
       if (status === "delete") {
         if (existingIdx > -1) history.splice(existingIdx, 1);
+      } else if (status === "present") {
+        // 출석 토글: 없음 → 1회 → 2회(연강) → 삭제
+        if (existingIdx === -1 || history[existingIdx].status !== "present") {
+          // 없음 또는 다른 상태 → 1회 출석
+          const record = { date: dateStr, status: "present", count: 1, timestamp: new Date().toISOString() };
+          if (existingIdx > -1) history[existingIdx] = record;
+          else history.push(record);
+        } else if ((history[existingIdx].count || 1) === 1) {
+          // 1회 → 2회 연강
+          history[existingIdx] = { ...history[existingIdx], count: 2 };
+        } else {
+          // 2회 → 삭제
+          history.splice(existingIdx, 1);
+        }
       } else {
-        // 추가/수정 모드
+        // 결석/당일취소 추가/수정 모드
         const record = {
           date: dateStr,
-          status, // 'present', 'absent', 'canceled'
+          status, // 'absent', 'canceled'
           timestamp: new Date().toISOString(),
         };
 
@@ -5850,6 +5864,7 @@ const AttendanceView = ({ students, showToast, user, teachers }) => {
               (h) => h.date === formatDate(selectedDate)
             );
             const status = record?.status;
+            const isDouble = status === "present" && (record?.count || 1) === 2;
             // 상세 정보 (결석 사유 or 취소 유형)
             const detailInfo = record?.reason || record?.subType || "";
 
@@ -5892,7 +5907,7 @@ const AttendanceView = ({ students, showToast, user, teachers }) => {
                         }`}
                       >
                         {status === "present"
-                          ? "출석완료"
+                          ? isDouble ? "출석완료(연강)" : "출석완료"
                           : status === "canceled"
                           ? "당일취소"
                           : "결석"}
@@ -7425,53 +7440,54 @@ const PaymentView = ({
       .join(", ") || "(출석 기록 없음)";
 
     // [수정 3] 새로운 1회차 수업 (자동 계산)
-    // 마지막 수업일(또는 오늘) 기준으로 학생의 수업 요일 중 가장 가까운 미래 날짜 찾기
+    // 미납 회차가 있으면 미납 첫 번째 날짜가 새로운 1회차,
+    // 없으면 마지막 수업일 기준으로 다음 수업 요일 찾기
     let nextDateStr = "(예정)"; // 기본값
     let requestDateStr = ""; // 결제 요청일 (3번 날짜와 동일하게 설정)
 
-    const lastClassDateStr =
-      allAttendance.length > 0
-        ? allAttendance[allAttendance.length - 1].date
-        : new Date().toISOString().split("T")[0];
-
-    // 학생의 수업 요일 찾기 (schedule 객체 사용)
     const daysKor = ["일", "월", "화", "수", "목", "금", "토"];
-    let targetDayIdx = -1;
 
-    // schedules에 등록된 첫 번째 요일을 기준 요일로 잡음 (1:1 레슨 가정)
-    if (student.schedules) {
-      const scheduledDays = Object.keys(student.schedules);
-      if (scheduledDays.length > 0) {
-        // "월" -> 1 변환
-        targetDayIdx = daysKor.indexOf(scheduledDays[0]);
-      }
-    }
-    // schedules 없으면 className 확인 (레거시 데이터 대응)
-    if (targetDayIdx === -1 && student.className) {
-      targetDayIdx = daysKor.indexOf(student.className);
-    }
+    if (unpaidSessions.length > 0) {
+      // 미납 수업이 있으면 그 첫 번째 날짜가 새로운 1회차
+      const unpaidFirstDate = unpaidSessions[0].date;
+      const d = new Date(unpaidFirstDate);
+      const m = d.getMonth() + 1;
+      const dt = d.getDate();
+      const dayName = daysKor[d.getDay()];
+      nextDateStr = `${String(m).padStart(2, "0")}/${String(dt).padStart(2, "0")}`;
+      requestDateStr = `${m}/${dt}(${dayName})`;
+    } else {
+      // 미납 없으면 마지막 수업일 다음 수업 요일 찾기
+      const lastClassDateStr =
+        allAttendance.length > 0
+          ? allAttendance[allAttendance.length - 1].date
+          : new Date().toISOString().split("T")[0];
 
-    if (targetDayIdx !== -1) {
-      // 마지막 수업일 다음 날부터 검색 시작
-      let d = new Date(lastClassDateStr);
-      d.setDate(d.getDate() + 1);
-
-      // 14일 이내로 다음 해당 요일 찾기
-      for (let i = 0; i < 14; i++) {
-        if (d.getDay() === targetDayIdx) {
-          const m = d.getMonth() + 1;
-          const dt = d.getDate();
-          const dayName = daysKor[d.getDay()];
-
-          // 포맷팅
-          nextDateStr = `${String(m).padStart(2, "0")}/${String(dt).padStart(
-            2,
-            "0"
-          )}`; // 02/05
-          requestDateStr = `${m}/${dt}(${dayName})`; // 2/5(목)
-          break;
+      let targetDayIdx = -1;
+      if (student.schedules) {
+        const scheduledDays = Object.keys(student.schedules);
+        if (scheduledDays.length > 0) {
+          targetDayIdx = daysKor.indexOf(scheduledDays[0]);
         }
+      }
+      if (targetDayIdx === -1 && student.className) {
+        targetDayIdx = daysKor.indexOf(student.className);
+      }
+
+      if (targetDayIdx !== -1) {
+        let d = new Date(lastClassDateStr);
         d.setDate(d.getDate() + 1);
+        for (let i = 0; i < 14; i++) {
+          if (d.getDay() === targetDayIdx) {
+            const m = d.getMonth() + 1;
+            const dt = d.getDate();
+            const dayName = daysKor[d.getDay()];
+            nextDateStr = `${String(m).padStart(2, "0")}/${String(dt).padStart(2, "0")}`;
+            requestDateStr = `${m}/${dt}(${dayName})`;
+            break;
+          }
+          d.setDate(d.getDate() + 1);
+        }
       }
     }
 
