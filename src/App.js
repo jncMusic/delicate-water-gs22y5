@@ -3552,7 +3552,10 @@ const ClassLogView = ({ students, teachers, user, onUpdateStudent, showToast }) 
             </div>
           ))}
         </div>
-        <div className="grid grid-cols-7 flex-1 divide-x divide-y divide-slate-200 bg-white">
+        <div
+          className="grid grid-cols-7 flex-1 divide-x divide-y divide-slate-200 bg-white overflow-hidden"
+          style={{ gridTemplateRows: `repeat(${Math.ceil(days.length / 7)}, minmax(0, 1fr))` }}
+        >
           {days.map((day, i) => {
             if (!day) return <div key={i} className="bg-slate-50/30"></div>;
             const dateStr = `${year}-${String(month + 1).padStart(
@@ -3565,7 +3568,7 @@ const ClassLogView = ({ students, teachers, user, onUpdateStudent, showToast }) 
             return (
               <div
                 key={i}
-                className="min-h-[100px] p-1 relative hover:bg-slate-50 transition-colors"
+                className="p-1 relative hover:bg-slate-50 transition-colors overflow-hidden"
               >
                 <div className="flex justify-between px-1">
                   <span
