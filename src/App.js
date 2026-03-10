@@ -3394,6 +3394,7 @@ const ClassLogView = ({ students, teachers, user, onUpdateStudent, showToast }) 
   const [selectedTeacher, setSelectedTeacher] = useState(
     user.role === "teacher" ? user.name : ""
   );
+  const [logDateDetail, setLogDateDetail] = useState(null);
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
   const daysInMonth = getDaysInMonth(year, month);
@@ -3572,7 +3573,11 @@ const ClassLogView = ({ students, teachers, user, onUpdateStudent, showToast }) 
               >
                 <div className="flex justify-between px-1">
                   <span
-                    className={`text-xs font-bold ${
+                    onClick={() => {
+                      const uniq = [...new Map(items.map(it => [it.id, it.student])).values()];
+                      if (uniq.length > 0) setLogDateDetail({ date: dateStr, students: uniq });
+                    }}
+                    className={`text-xs font-bold cursor-pointer hover:underline ${
                       i % 7 === 0
                         ? "text-rose-500"
                         : i % 7 === 6
@@ -3622,6 +3627,17 @@ const ClassLogView = ({ students, teachers, user, onUpdateStudent, showToast }) 
           })}
         </div>
       </div>
+      {logDateDetail && (
+        <DateDetailModal
+          date={logDateDetail.date}
+          students={logDateDetail.students}
+          onClose={() => setLogDateDetail(null)}
+          onStudentClick={(s, date) => {
+            if (onUpdateStudent) toggleStudentAttendance(s, date);
+            setLogDateDetail(null);
+          }}
+        />
+      )}
     </div>
   );
 };
