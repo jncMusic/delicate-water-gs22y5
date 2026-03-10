@@ -7588,10 +7588,8 @@ const PaymentView = ({
     const lastPayment =
       sortedPay.length > 0 ? sortedPay[sortedPay.length - 1].date : "기록 없음";
 
-    // 결제된 마지막 수업 (미납 회차가 있으면 미납 포함 마지막 수업일이 완료일)
-    const lastCoveredIdx = sessionSlots.length > totalPaidCapacity
-      ? sessionSlots.length - 1   // 미납 있음: 미납 포함 마지막 수업일
-      : totalPaidCapacity - 1;    // 미납 없음: 결제 범위 마지막 수업일
+    // 결제된 마지막 수업 (미납 여부 관계없이 결제 범위 기준)
+    const lastCoveredIdx = totalPaidCapacity - 1;
     const lastCoveredDate = sessionSlots[lastCoveredIdx]
       ? sessionSlots[lastCoveredIdx].slice(5).replace("-", "/")
       : "없음";
@@ -7614,10 +7612,12 @@ const PaymentView = ({
     let nextDateStr = "(예정)"; // 기본값
     let requestDateStr = ""; // 결제 요청일 (3번 날짜와 동일하게 설정)
 
-    const lastClassDateStr =
-      sessionSlots.length > 0
+    // 마지막 결제된 수업일 기준으로 다음 수업 계산 (미납 포함 X)
+    const lastPaidDateStr =
+      sessionSlots[lastCoveredIdx] ||
+      (sessionSlots.length > 0
         ? sessionSlots[sessionSlots.length - 1]
-        : new Date().toISOString().split("T")[0];
+        : new Date().toISOString().split("T")[0]);
 
     // 학생의 수업 요일 찾기 (schedule 객체 사용)
     const daysKor = ["일", "월", "화", "수", "목", "금", "토"];
@@ -7637,9 +7637,14 @@ const PaymentView = ({
     }
 
     {
-      // 마지막 수업일 기준 7일 후 (주 1회 레슨: 다음 주 동일 요일)
-      const d = new Date(lastClassDateStr);
+      // 마지막 결제된 수업일 기준 7일 후 (주 1회 레슨: 다음 주 동일 요일)
+      // 명절이면 추가 7일 (+14일)
+      const d = new Date(lastPaidDateStr);
       d.setDate(d.getDate() + 7);
+      const toYMD = (date) => date.toISOString().split("T")[0];
+      if (HOLIDAYS[toYMD(d)]) {
+        d.setDate(d.getDate() + 7); // 명절 → +14일
+      }
       const m = d.getMonth() + 1;
       const dt = d.getDate();
       const dayName = daysKor[d.getDay()];
