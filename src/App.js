@@ -5699,11 +5699,25 @@ const AttendanceView = ({ students, showToast, user, teachers }) => {
       // 삭제 모드
       if (status === "delete") {
         if (existingIdx > -1) history.splice(existingIdx, 1);
+      } else if (status === "present") {
+        // 출석 토글: 없음 → 1회 → 2회(연강) → 삭제
+        if (existingIdx === -1 || history[existingIdx].status !== "present") {
+          // 없음 또는 다른 상태 → 1회 출석
+          const record = { date: dateStr, status: "present", count: 1, timestamp: new Date().toISOString() };
+          if (existingIdx > -1) history[existingIdx] = record;
+          else history.push(record);
+        } else if ((history[existingIdx].count || 1) === 1) {
+          // 1회 → 2회 연강
+          history[existingIdx] = { ...history[existingIdx], count: 2 };
+        } else {
+          // 2회 → 삭제
+          history.splice(existingIdx, 1);
+        }
       } else {
-        // 추가/수정 모드
+        // 결석/당일취소 추가/수정 모드
         const record = {
           date: dateStr,
-          status, // 'present', 'absent', 'canceled'
+          status, // 'absent', 'canceled'
           timestamp: new Date().toISOString(),
         };
 
@@ -5850,6 +5864,7 @@ const AttendanceView = ({ students, showToast, user, teachers }) => {
               (h) => h.date === formatDate(selectedDate)
             );
             const status = record?.status;
+            const isDouble = status === "present" && (record?.count || 1) === 2;
             // 상세 정보 (결석 사유 or 취소 유형)
             const detailInfo = record?.reason || record?.subType || "";
 
@@ -5892,7 +5907,7 @@ const AttendanceView = ({ students, showToast, user, teachers }) => {
                         }`}
                       >
                         {status === "present"
-                          ? "출석완료"
+                          ? isDouble ? "출석완료(연강)" : "출석완료"
                           : status === "canceled"
                           ? "당일취소"
                           : "결석"}
