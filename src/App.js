@@ -4665,13 +4665,13 @@ const FastAttendanceModal = ({ student, onClose, onSave }) => {
     }
 
     return (
-      <div key={`${year}-${month}`} className="border rounded-lg p-2 bg-white">
-        <div className="text-center font-bold text-slate-700 mb-2 bg-slate-50 rounded py-1">
+      <div key={`${year}-${month}`} className="border rounded-lg p-3 bg-white">
+        <div className="text-center font-bold text-slate-700 mb-2 bg-slate-50 rounded py-1.5 text-sm">
           {year}년 {month + 1}월
         </div>
-        <div className="grid grid-cols-7 gap-1 text-center">
+        <div className="grid grid-cols-7 gap-1.5 text-center">
           {["일", "월", "화", "수", "목", "금", "토"].map((d) => (
-            <div key={d} className="text-[10px] text-slate-400">
+            <div key={d} className="text-xs text-slate-400 font-medium">
               {d}
             </div>
           ))}
@@ -4695,7 +4695,7 @@ const FastAttendanceModal = ({ student, onClose, onSave }) => {
                 onClick={() => toggleDate(dateStr)}
                 title={cellCount === 2 ? "연강(2회) — 클릭하면 삭제" : cellCount === 1 ? "출석(1회) — 클릭하면 연강" : "클릭하면 출석"}
                 className={`
-                  aspect-square flex items-center justify-center rounded-full text-xs cursor-pointer select-none transition-all relative
+                  aspect-square flex items-center justify-center rounded-full text-sm cursor-pointer select-none transition-all relative
                   ${
                     cellCount === 2
                       ? "bg-violet-600 text-white font-bold shadow-md transform scale-110 ring-2 ring-violet-300"
@@ -4955,7 +4955,7 @@ const FastAttendanceModal = ({ student, onClose, onSave }) => {
 
   return (
     <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl p-6 flex flex-col max-h-[90vh]">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl p-6 flex flex-col max-h-[90vh]">
         <div className="flex justify-between items-center mb-4">
           <div>
             <h2 className="text-xl font-bold text-slate-800 flex items-center">
@@ -4974,7 +4974,7 @@ const FastAttendanceModal = ({ student, onClose, onSave }) => {
 
         {/* 캘린더 그리드 */}
         <div className="flex-1 overflow-y-auto bg-slate-50 p-4 rounded-xl border border-slate-200">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {calendars}
           </div>
 
