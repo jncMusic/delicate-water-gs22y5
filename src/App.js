@@ -6955,7 +6955,7 @@ const StudentManagementModal = ({
               {formData.fromConsultationId && !student?.id
                 ? "💬 상담 정보로 등록"
                 : student?.id
-                ? "👤 원생 정보 수정"
+                ? `👤 ${student.name} 정보 수정`
                 : "✨ 신규 원생 등록"}
             </h3>
             <p className="text-xs text-slate-500 mt-1">
