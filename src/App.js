@@ -6331,9 +6331,9 @@ const StudentView = ({
   };
 
   return (
-    <div className="space-y-4 animate-fade-in pb-24 relative z-0">
+    <div className="h-full flex flex-col gap-4 animate-fade-in relative z-0">
       {/* 상단 컨트롤바 */}
-      <div className="flex flex-col gap-4 bg-white p-5 rounded-2xl border shadow-sm sticky top-0 z-30">
+      <div className="flex flex-col gap-4 bg-white p-5 rounded-2xl border shadow-sm shrink-0">
         <div className="flex flex-col xl:flex-row justify-between gap-4">
           <div className="relative flex-1 max-w-2xl">
             <Search
@@ -6463,7 +6463,7 @@ const StudentView = ({
       )}
 
       {/* 테이블 영역 */}
-      <div className="bg-white rounded-2xl border shadow-sm overflow-auto max-h-[70vh] relative">
+      <div className="flex-1 min-h-0 bg-white rounded-2xl border shadow-sm overflow-auto relative">
         <table className="w-full text-left border-separate border-spacing-0">
           <thead className="sticky top-0 z-20">
             <tr className="bg-slate-50 text-slate-500 text-[11px] font-bold uppercase tracking-wider">
@@ -8946,7 +8946,6 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
         className="flex-1 overflow-auto border rounded-xl bg-slate-50/50 relative print:overflow-visible print:bg-white print:border-none"
         ref={printRef}
       >
-        <div className="inline-block min-w-full pb-20 print:pb-0">
           {/* 헤더 */}
           <div className="flex border-b bg-white sticky top-0 z-10 shadow-sm print:static print:shadow-none print:border-slate-300">
             <div className="w-[50px] md:w-[80px] p-2 md:p-4 text-center text-[10px] md:text-xs font-bold text-slate-400 border-r bg-slate-50 sticky left-0 z-20 shrink-0 flex items-center justify-center print:bg-white print:border-slate-300">
@@ -8993,7 +8992,7 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
           </div>
 
           {/* 바디 */}
-          <div className="divide-y divide-slate-200 print:divide-slate-300">
+          <div className="divide-y divide-slate-200 print:divide-slate-300 pb-20 print:pb-0">
             {HOURS.map((hour) => (
               <div
                 key={hour}
@@ -9112,7 +9111,6 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
               </div>
             ))}
           </div>
-        </div>
       </div>
     </div>
   );
