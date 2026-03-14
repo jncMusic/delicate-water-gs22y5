@@ -3540,8 +3540,8 @@ const ClassLogView = ({ students, teachers, user, onUpdateStudent, showToast }) 
           </div>
         </div>
       </div>
-      <div className="border rounded-lg overflow-hidden flex-1 flex flex-col">
-        <div className="grid grid-cols-7 bg-slate-50 border-b divide-x divide-slate-200">
+      <div className="border rounded-lg overflow-hidden flex flex-col">
+        <div className="grid grid-cols-7 bg-slate-50 border-b divide-x divide-slate-200 sticky top-0 z-10">
           {["일", "월", "화", "수", "목", "금", "토"].map((day, i) => (
             <div
               key={day}
@@ -3558,8 +3558,8 @@ const ClassLogView = ({ students, teachers, user, onUpdateStudent, showToast }) 
           ))}
         </div>
         <div
-          className="grid grid-cols-7 flex-1 divide-x divide-y divide-slate-200 bg-white overflow-hidden"
-          style={{ gridTemplateRows: `repeat(${Math.ceil(days.length / 7)}, minmax(0, 1fr))` }}
+          className="grid grid-cols-7 divide-x divide-y divide-slate-200 bg-white"
+          style={{ gridTemplateRows: `repeat(${Math.ceil(days.length / 7)}, minmax(120px, auto))` }}
         >
           {days.map((day, i) => {
             if (!day) return <div key={i} className="bg-slate-50/30"></div>;
@@ -3597,7 +3597,7 @@ const ClassLogView = ({ students, teachers, user, onUpdateStudent, showToast }) 
                     </span>
                   )}
                 </div>
-                <div className="mt-1 grid grid-cols-2 gap-x-0.5 gap-y-0.5">
+                <div className="mt-1 space-y-0.5">
                   {items.map((item, idx) => (
                     <div
                       key={idx}
@@ -3621,7 +3621,8 @@ const ClassLogView = ({ students, teachers, user, onUpdateStudent, showToast }) 
                           : "text-slate-400 line-through"
                       }`}
                     >
-                      {item.shortText ?? item.text}
+                      {item.text}
+                      {item.isDouble && <span className="ml-0.5 text-violet-500 font-bold">×2</span>}
                     </div>
                   ))}
                 </div>
