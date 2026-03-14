@@ -264,6 +264,26 @@ const getEffectiveSessions = (student) => {
   return saved;
 };
 
+// 전체 출석 이력 누적 기준으로 해당 날짜 수업의 회차 배열을 반환한다.
+// 월 관계없이 totalSessions 단위로 순환: 주1회(4회), 주2회(8회)
+// 연강(count=2)이면 [n, n+1] 두 회차를 반환, 일반은 [n] 한 개
+const getSessionNumbers = (student, targetDate) => {
+  const total = getEffectiveSessions(student);
+  const sessions = (student.attendanceHistory || [])
+    .filter((h) => h.status === "present")
+    .sort((a, b) => a.date.localeCompare(b.date));
+  let cumulative = 0;
+  for (const h of sessions) {
+    if (h.date === targetDate) {
+      const cnt = h.count || 1;
+      return Array.from({ length: cnt }, (_, i) => (cumulative + i) % total + 1);
+    }
+    if (h.date > targetDate) break;
+    cumulative += h.count || 1;
+  }
+  return [];
+};
+
 // =================================================================
 // 5. 모달 및 팝업 컴포넌트
 // =================================================================
@@ -3402,25 +3422,7 @@ const ClassLogView = ({ students, teachers, user, onUpdateStudent, showToast }) 
   const days = [];
   for (let i = 0; i < firstDay; i++) days.push(null);
   for (let i = 1; i <= daysInMonth; i++) days.push(i);
-  const getSessionNumbers = (student, targetDate) => {
-    // 전체 출석 이력 누적 기준으로 해당 날짜 수업의 회차 배열을 반환한다.
-    // 월 관계없이 totalSessions 단위로 순환: 주1회(4회), 주2회(8회)
-    // 연강(count=2)이면 [n, n+1] 두 회차를 반환, 일반은 [n] 한 개
-    const total = getEffectiveSessions(student);
-    const sessions = (student.attendanceHistory || [])
-      .filter((h) => h.status === "present")
-      .sort((a, b) => a.date.localeCompare(b.date));
-    let cumulative = 0;
-    for (const h of sessions) {
-      if (h.date === targetDate) {
-        const cnt = h.count || 1;
-        return Array.from({ length: cnt }, (_, i) => (cumulative + i) % total + 1);
-      }
-      if (h.date > targetDate) break;
-      cumulative += h.count || 1;
-    }
-    return [];
-  };
+
 
   // 강사 출석부: 학생 출석 토글 (없음 → 1회 → 2회 연강 → 삭제)
   const toggleStudentAttendance = async (student, dateStr) => {
@@ -4610,19 +4612,33 @@ const DateDetailModal = ({ date, students, onClose, onStudentClick }) => (
                   <span className="font-bold">{s.name}</span>{" "}
                   <span className="text-xs text-slate-500">({s.teacher})</span>
                 </div>
-                {record ? (
-                  <span
-                    className={`text-xs px-2 py-1 rounded font-bold ${
-                      record.status === "present"
-                        ? "bg-emerald-100 text-emerald-700"
-                        : "bg-rose-100 text-rose-700"
-                    }`}
-                  >
-                    {record.status === "present" ? "출석" : "결석"}
-                  </span>
-                ) : (
-                  <span className="text-xs text-slate-400">미처리</span>
-                )}
+                <div className="flex items-center gap-2">
+                  {record?.status === "present" && (() => {
+                    const nums = getSessionNumbers(s, date);
+                    if (nums.length === 0) return null;
+                    const label = nums.length > 1
+                      ? `${nums[0]},${nums[nums.length - 1]}회차`
+                      : `${nums[0]}회차`;
+                    return (
+                      <span className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-700 font-semibold">
+                        {label}
+                      </span>
+                    );
+                  })()}
+                  {record ? (
+                    <span
+                      className={`text-xs px-2 py-1 rounded font-bold ${
+                        record.status === "present"
+                          ? "bg-emerald-100 text-emerald-700"
+                          : "bg-rose-100 text-rose-700"
+                      }`}
+                    >
+                      {record.status === "present" ? "출석" : "결석"}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-slate-400">미처리</span>
+                  )}
+                </div>
               </div>
             );
           })
