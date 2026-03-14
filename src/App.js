@@ -3476,6 +3476,7 @@ const ClassLogView = ({ students, teachers, user, onUpdateStudent, showToast }) 
               id: s.id,
               student: s,
               text: `${time} ${s.name}(${num})`,
+              shortText: `${s.name}(${num}회)`,
               status: "present",
               isDouble,
               time,
@@ -3487,6 +3488,7 @@ const ClassLogView = ({ students, teachers, user, onUpdateStudent, showToast }) 
             id: s.id,
             student: s,
             text: `${time} ${s.name}${statusMark}`,
+            shortText: `${s.name}${statusMark}`,
             status: record?.status || "scheduled",
             isDouble: false,
             time,
@@ -3595,7 +3597,7 @@ const ClassLogView = ({ students, teachers, user, onUpdateStudent, showToast }) 
                     </span>
                   )}
                 </div>
-                <div className="mt-1 space-y-0.5">
+                <div className="mt-1 grid grid-cols-2 gap-x-0.5 gap-y-0.5">
                   {items.map((item, idx) => (
                     <div
                       key={idx}
@@ -3619,8 +3621,7 @@ const ClassLogView = ({ students, teachers, user, onUpdateStudent, showToast }) 
                           : "text-slate-400 line-through"
                       }`}
                     >
-                      {item.text}
-                      {item.isDouble && <span className="ml-0.5 text-violet-500 font-bold">×2</span>}
+                      {item.shortText ?? item.text}
                     </div>
                   ))}
                 </div>
