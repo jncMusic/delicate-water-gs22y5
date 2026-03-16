@@ -7521,10 +7521,11 @@ const PaymentView = ({
     const sessionUnit = getEffectiveSessions(s);
     const totalPaidCapacity = (s.paymentHistory || []).length * sessionUnit;
 
-    let currentUsage = totalAttended % sessionUnit;
-    if (currentUsage === 0 && totalAttended > 0) currentUsage = sessionUnit;
-
     const remainingCapacity = totalPaidCapacity - totalAttended;
+
+    let currentUsage = totalAttended % sessionUnit;
+    // 사이클 경계(나머지=0)일 때: 남은 용량이 없으면 마지막 사이클 완료(=sessionUnit), 있으면 새 사이클 시작(=0)
+    if (currentUsage === 0 && totalAttended > 0 && remainingCapacity <= 0) currentUsage = sessionUnit;
     const isOverdue = remainingCapacity < 0;
     const isCompleted = remainingCapacity === 0 && totalPaidCapacity > 0;
 
