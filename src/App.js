@@ -5307,7 +5307,7 @@ const StudentModal = ({
   const [activeTab, setActiveTab] = useState("info"); // info | attendance | payment
 
   // -- 공통 상태 --
-  const [baseDate, setBaseDate] = useState(new Date("2025-10-01"));
+  const [baseDate, setBaseDate] = useState(new Date());
 
   // -- 1. 정보 수정 상태 --
   const [formData, setFormData] = useState({});
