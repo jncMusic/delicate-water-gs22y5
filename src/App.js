@@ -322,7 +322,7 @@ const generatePaymentMessage = (student, paymentUrl = "") => {
       .join(", ") || "(출석 기록 없음)";
 
   // 다음 수업일 자동 계산
-  let nextDateStr = "(예정)";
+  let nextDateStr = "";
   let requestDateStr = "";
   const daysKor = ["일", "월", "화", "수", "목", "금", "토"];
   let targetDayIdx = -1;
@@ -374,7 +374,7 @@ ${getSeasonalGreeting()}
 - 최종 결제일 : ${lastPayment.slice(5).replace("-", "/")}
 - 수업일자 : ${recentSessions}
 - 결제하신 수업 완료일 : ${lastCoveredDate}
-- 새로운 1회차 수업 : ${nextDateStr}
+- 새로운 1회차 수업 : ${nextDateStr} (예정)
 - 미납회차 : ${unpaidDatesStr} ${unpaidSessions.length > 0 ? `(${unpaidSessions.length}회)` : ""}
 
 - 결제금액 : ${sessionUnit}회 ${tuition}원 ${unpaidSessions.length > 0 ? `(미납 ${unpaidSessions.length}회 포함)` : ""}
