@@ -7497,6 +7497,7 @@ const PaymentView = ({
   user,
 }) => {
   const [filterDue, setFilterDue] = useState(false);
+  const [filterSent, setFilterSent] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedTeacher, setSelectedTeacher] = useState("");
@@ -7555,6 +7556,7 @@ const PaymentView = ({
   }, [students]);
 
   const list = useMemo(() => {
+    const sentStudentIds = new Set(messageLogs.map((l) => l.studentId));
     return students.filter((s) => {
       const { isOverdue, isCompleted } = getStudentProgress(s);
       // 안내 발송 모드: 미납/만료만 표시
@@ -7567,9 +7569,10 @@ const PaymentView = ({
         (s.subject && s.subject.includes(searchTerm)) ||
         (s.teacher && s.teacher.includes(searchTerm));
       const matchesTeacher = !selectedTeacher || s.teacher === selectedTeacher;
-      return isReEnrolled && isDue && matchesSearch && matchesTeacher;
+      const matchesSent = !filterSent || sentStudentIds.has(s.id);
+      return isReEnrolled && isDue && matchesSearch && matchesTeacher && matchesSent;
     });
-  }, [students, filterDue, searchTerm, selectedTeacher, notifMode]);
+  }, [students, filterDue, filterSent, searchTerm, selectedTeacher, notifMode, messageLogs]);
 
   const selectedStudent = useMemo(
     () => students.find((s) => s.id === selectedStudentId) || null,
@@ -7770,6 +7773,12 @@ const PaymentView = ({
               <AlertCircle size={14} className="mr-1" /> {filterDue ? "전체 보기" : "미납/만료만"}
             </button>
           )}
+          <button
+            onClick={() => setFilterSent(!filterSent)}
+            className={`px-3 py-1.5 rounded text-sm border flex items-center transition-colors ${filterSent ? "bg-indigo-50 border-indigo-200 text-indigo-700 font-bold" : "bg-white hover:bg-slate-50"}`}
+          >
+            <MessageSquareText size={14} className="mr-1" /> {filterSent ? "발송됨 해제" : "발송됨만"}
+          </button>
         </div>
       </div>
 
