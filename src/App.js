@@ -7581,17 +7581,12 @@ const PaymentView = ({
   const handleQuickPaySave = async () => {
     if (!quickPayStudent || !quickPayDate) return;
     try {
-      const updatedHistory = [
-        ...(quickPayStudent.paymentHistory || []),
-        {
-          date: quickPayDate,
-          amount: quickPayStudent.tuitionFee || 0,
-          type: "일반",
-          createdAt: new Date().toISOString(),
-        },
-      ];
-      await onSavePayment(quickPayStudent.id, updatedHistory);
-      showToast(`${quickPayStudent.name} 결제 완료 처리되었습니다.`, "success");
+      await onSavePayment(
+        quickPayStudent.id,
+        quickPayDate,
+        parseInt(quickPayStudent.tuitionFee || 0),
+        quickPayDate
+      );
       setQuickPayStudent(null);
       setQuickPayDate("");
     } catch (e) {
