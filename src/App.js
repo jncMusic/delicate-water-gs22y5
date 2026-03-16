@@ -7505,8 +7505,9 @@ const PaymentView = ({
     let currentUsage = totalAttended % sessionUnit;
     if (currentUsage === 0 && totalAttended > 0) currentUsage = sessionUnit;
 
-    const isOverdue = totalAttended > totalPaidCapacity;
-    const isCompleted = currentUsage === sessionUnit;
+    const remainingCapacity = totalPaidCapacity - totalAttended;
+    const isOverdue = remainingCapacity < 0;
+    const isCompleted = remainingCapacity === 0 && totalPaidCapacity > 0;
 
     return {
       currentUsage,
