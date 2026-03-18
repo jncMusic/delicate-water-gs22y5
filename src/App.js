@@ -2947,27 +2947,46 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
       const existingIdx = history.findIndex((h) => h.date === date);
       if (status === "delete") {
         if (existingIdx > -1) history.splice(existingIdx, 1);
+      } else if (status === "double") {
+        // 연강 토글: 1회↔2회
+        if (existingIdx > -1 && history[existingIdx].status === "present") {
+          const cur = history[existingIdx].count || 1;
+          history[existingIdx] = { ...history[existingIdx], count: cur === 1 ? 2 : 1 };
+        }
       } else {
+        const prevCount = existingIdx > -1 ? (history[existingIdx].count || 1) : 1;
         const record = {
           date: date,
           status: status,
           reason: reason,
           timestamp: new Date().toISOString(),
         };
+        if (status === "present") record.count = prevCount;
         if (existingIdx > -1) history[existingIdx] = record;
         else history.push(record);
       }
       const lastPayment = student.lastPaymentDate || "0000-00-00";
-      const count = history.filter(
-        (h) => h.status === "present" && h.date >= lastPayment
-      ).length;
+      const sessionsCompleted = history.reduce((sum, h) => {
+        if (h.date < lastPayment) return sum;
+        if (h.status === "present") return sum + (h.count || 1);
+        if (h.status === "canceled" && h.subType !== "질병") return sum + 1;
+        return sum;
+      }, 0);
       await updateDoc(studentRef, {
         attendanceHistory: history,
-        sessionsCompleted: count,
+        sessionsCompleted,
       });
       setAttendanceMenu(null);
       setReasonModal(null);
-      showToast(status === "delete" ? "기록 삭제됨" : "저장됨", "success");
+      const doubleCount = status === "double"
+        ? ((history.find((h) => h.date === date)?.count || 1) === 2 ? 2 : 1)
+        : null;
+      showToast(
+        status === "delete" ? "기록 삭제됨"
+        : status === "double" ? `연강 ${doubleCount === 2 ? "처리(2회)" : "해제(1회)"}`
+        : "저장됨",
+        "success"
+      );
     } catch (e) {
       console.error(e);
       showToast("오류 발생", "error");
@@ -2975,7 +2994,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
   };
 
   const handleStatusSelect = (status) => {
-    if (status === "present" || status === "delete") {
+    if (status === "present" || status === "delete" || status === "double") {
       handleCalendarAttendance(
         attendanceMenu.student,
         attendanceMenu.date,
@@ -3140,6 +3159,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                         (h) => h.date === dateStr
                       );
                       const status = record ? record.status : "scheduled";
+                      const isDoubleLesson = status === "present" && (record?.count || 1) === 2;
                       const sessionNum = getSessionCount(s, dateStr);
                       const isLast = status === "present" && isLastSessionOfCycle(s, dateStr);
                       const isUnprocessed = isUnprocessedPast(s, dateStr);
@@ -3147,6 +3167,8 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                         "bg-indigo-100 text-indigo-700 border-indigo-200";
                       if (isUnprocessed)
                         bgClass = "bg-amber-50 text-amber-700 border-amber-400";
+                      else if (isDoubleLesson)
+                        bgClass = "bg-emerald-700 text-white border-emerald-800";
                       else if (status === "present")
                         bgClass =
                           "bg-emerald-100 text-emerald-700 border-emerald-200";
@@ -3164,7 +3186,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                           }}
                           className={`text-[10px] px-1 py-0.5 rounded border mb-1 cursor-pointer truncate flex items-center gap-0.5 ${bgClass}`}
                         >
-                          <span className="truncate">{s.name} {sessionNum ? `(${sessionNum})` : ""}</span>
+                          <span className="truncate">{s.name} {sessionNum ? `(${sessionNum})` : ""}{isDoubleLesson ? "×2" : ""}</span>
                           {isLast && <span className="shrink-0">💳</span>}
                           {isUnprocessed && <span className="shrink-0 text-amber-500">!</span>}
                         </div>
@@ -3252,6 +3274,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                             (h) => h.date === dateStr
                           );
                           const status = record ? record.status : "scheduled";
+                          const isDoubleLesson = status === "present" && (record?.count || 1) === 2;
                           const sessionNum = getSessionCount(s, dateStr);
                           const isLast = status === "present" && isLastSessionOfCycle(s, dateStr);
                           const isUnprocessed = isUnprocessedPast(s, dateStr);
@@ -3259,6 +3282,8 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                             "bg-white border-slate-200 text-slate-700";
                           if (isUnprocessed)
                             bgClass = "bg-amber-50 border-amber-400 text-amber-700";
+                          else if (isDoubleLesson)
+                            bgClass = "bg-emerald-700 border-emerald-800 text-white";
                           else if (status === "present")
                             bgClass =
                               "bg-emerald-100 border-emerald-200 text-emerald-800";
@@ -3274,7 +3299,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                               }}
                               className={`text-[10px] p-1 rounded border mb-1 cursor-pointer shadow-sm flex items-center gap-0.5 ${bgClass}`}
                             >
-                              <span className="truncate">{s.name} {sessionNum ? `(${sessionNum})` : ""}</span>
+                              <span className="truncate">{s.name} {sessionNum ? `(${sessionNum})` : ""}{isDoubleLesson ? "×2" : ""}</span>
                               {isLast && <span className="shrink-0">💳</span>}
                               {isUnprocessed && <span className="shrink-0 font-bold text-amber-500">!</span>}
                             </div>
@@ -3451,6 +3476,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
           date={attendanceMenu.date}
           onClose={() => setAttendanceMenu(null)}
           onSelectStatus={handleStatusSelect}
+          currentRecord={attendanceMenu.student.attendanceHistory?.find((h) => h.date === attendanceMenu.date)}
         />
       )}
       {reasonModal && (
@@ -4707,48 +4733,64 @@ const ReasonInputModal = ({ student, status, onClose, onSave }) => {
 };
 
 // [Helper: AttendanceActionModal]
-const AttendanceActionModal = ({ student, date, onClose, onSelectStatus }) => (
-  <div
-    className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
-    onClick={onClose}
-  >
+const AttendanceActionModal = ({ student, date, onClose, onSelectStatus, currentRecord }) => {
+  const isPresent = currentRecord?.status === "present";
+  const isDouble = isPresent && (currentRecord.count || 1) === 2;
+  return (
     <div
-      className="bg-white rounded-xl shadow-2xl w-full max-w-xs p-4 animate-in fade-in zoom-in-95 duration-200"
-      onClick={(e) => e.stopPropagation()}
+      className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
+      onClick={onClose}
     >
-      <h3 className="font-bold text-center mb-4">
-        {student.name} - {date}
-      </h3>
-      <div className="flex flex-col gap-2">
-        <button
-          onClick={() => onSelectStatus("present")}
-          className="w-full py-3 bg-emerald-100 text-emerald-700 rounded-lg font-bold hover:bg-emerald-200"
-        >
-          출석 처리
-        </button>
-        <button
-          onClick={() => onSelectStatus("absent")}
-          className="w-full py-3 bg-rose-100 text-rose-700 rounded-lg font-bold hover:bg-rose-200"
-        >
-          결석 처리
-        </button>
-        <button
-          onClick={() => onSelectStatus("canceled")}
-          className="w-full py-3 bg-slate-100 text-slate-700 rounded-lg font-bold hover:bg-slate-200"
-        >
-          당일 취소
-        </button>
-        <div className="border-t my-1"></div>
-        <button
-          onClick={() => onSelectStatus("delete")}
-          className="w-full py-3 text-slate-400 hover:text-rose-500 font-medium flex items-center justify-center gap-2"
-        >
-          <Trash2 size={16} /> 기록 삭제
-        </button>
+      <div
+        className="bg-white rounded-xl shadow-2xl w-full max-w-xs p-4 animate-in fade-in zoom-in-95 duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="font-bold text-center mb-4">
+          {student.name} - {date}
+        </h3>
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={() => onSelectStatus("present")}
+            className="w-full py-3 bg-emerald-100 text-emerald-700 rounded-lg font-bold hover:bg-emerald-200"
+          >
+            출석 처리
+          </button>
+          {isPresent && (
+            <button
+              onClick={() => onSelectStatus("double")}
+              className={`w-full py-3 rounded-lg font-bold transition-colors ${
+                isDouble
+                  ? "bg-violet-200 text-violet-800 hover:bg-violet-300"
+                  : "bg-violet-50 text-violet-600 hover:bg-violet-100"
+              }`}
+            >
+              {isDouble ? "✦ 연강(2회) — 클릭 시 해제" : "연강 추가 (+1회)"}
+            </button>
+          )}
+          <button
+            onClick={() => onSelectStatus("absent")}
+            className="w-full py-3 bg-rose-100 text-rose-700 rounded-lg font-bold hover:bg-rose-200"
+          >
+            결석 처리
+          </button>
+          <button
+            onClick={() => onSelectStatus("canceled")}
+            className="w-full py-3 bg-slate-100 text-slate-700 rounded-lg font-bold hover:bg-slate-200"
+          >
+            당일 취소
+          </button>
+          <div className="border-t my-1"></div>
+          <button
+            onClick={() => onSelectStatus("delete")}
+            className="w-full py-3 text-slate-400 hover:text-rose-500 font-medium flex items-center justify-center gap-2"
+          >
+            <Trash2 size={16} /> 기록 삭제
+          </button>
+        </div>
       </div>
     </div>
-  </div>
-);
+  );
+};
 
 // [Helper: DateDetailModal]
 const DateDetailModal = ({ date, students, onClose, onStudentClick }) => (
