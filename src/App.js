@@ -5958,12 +5958,16 @@ const AttendanceView = ({ students, showToast, user, teachers }) => {
       if (status === "delete") {
         if (existingIdx > -1) history.splice(existingIdx, 1);
       } else {
-        // 추가/수정 모드
+        // 추가/수정 모드 (기존 count 값 보존)
+        const prevCount = existingIdx > -1 ? (history[existingIdx].count || 1) : 1;
         const record = {
           date: dateStr,
           status, // 'present', 'absent', 'canceled'
           timestamp: new Date().toISOString(),
         };
+
+        // 출석일 때만 count 보존
+        if (status === "present") record.count = prevCount;
 
         // 상세 사유 저장
         if (status === "absent") {
@@ -5983,16 +5987,12 @@ const AttendanceView = ({ students, showToast, user, teachers }) => {
       //    - 질병(방역 등): 차감 안 함 (0)
       //    - 경조사/기타: 원칙적 차감 (+1) (학원 규정에 따라 수정 가능, 여기선 차감으로 설정)
       const lastPay = student.lastPaymentDate || "0000-00-00";
-      const count = history.filter((h) => {
-        if (h.date < lastPay) return false; // 지난 결제일 이전 기록 무시
-
-        if (h.status === "present") return true; // 출석은 무조건 차감
-        if (h.status === "canceled") {
-          // 당일취소 중 '질병'은 봐줌, 나머지는 차감 (노쇼 페널티)
-          return h.subType !== "질병";
-        }
-        return false; // absent는 차감 안함
-      }).length;
+      const count = history.reduce((sum, h) => {
+        if (h.date < lastPay) return sum; // 지난 결제일 이전 기록 무시
+        if (h.status === "present") return sum + (h.count || 1); // 연강(count:2)은 2회 차감
+        if (h.status === "canceled" && h.subType !== "질병") return sum + 1;
+        return sum; // absent는 차감 안함
+      }, 0);
 
       await updateDoc(studentRef, {
         attendanceHistory: history,
@@ -6026,6 +6026,30 @@ const AttendanceView = ({ students, showToast, user, teachers }) => {
     } else {
       // 결석(absent)이나 당일취소(canceled)는 모달 띄우기
       setModalConfig({ type: action, student });
+    }
+  };
+
+  // 연강 토글 (1회↔2회)
+  const toggleDoubleLesson = async (student) => {
+    const dateStr = formatDate(selectedDate);
+    const studentRef = doc(db, "artifacts", APP_ID, "public", "data", "students", student.id);
+    const history = [...(student.attendanceHistory || [])];
+    const idx = history.findIndex((h) => h.date === dateStr && h.status === "present");
+    if (idx === -1) return;
+    const current = history[idx].count || 1;
+    history[idx] = { ...history[idx], count: current === 1 ? 2 : 1 };
+    const lastPay = student.lastPaymentDate || "0000-00-00";
+    const sessionsCompleted = history.reduce((sum, h) => {
+      if (h.date < lastPay) return sum;
+      if (h.status === "present") return sum + (h.count || 1);
+      if (h.status === "canceled" && h.subType !== "질병") return sum + 1;
+      return sum;
+    }, 0);
+    try {
+      await updateDoc(studentRef, { attendanceHistory: history, sessionsCompleted });
+      showToast(current === 1 ? `${student.name}님 연강(2회) 처리됨` : `${student.name}님 연강 해제(1회)`, "success");
+    } catch (e) {
+      showToast("저장 실패", "error");
     }
   };
 
@@ -6164,7 +6188,7 @@ const AttendanceView = ({ students, showToast, user, teachers }) => {
                   )}
                 </div>
 
-                {/* 액션 버튼 그룹 (지각 제거됨) */}
+                {/* 액션 버튼 그룹 */}
                 <div className="grid grid-cols-4 gap-2">
                   <button
                     onClick={() => onActionClick(s, "present")}
@@ -6201,6 +6225,19 @@ const AttendanceView = ({ students, showToast, user, teachers }) => {
                     </span>
                   </button>
                 </div>
+                {/* 연강 토글 버튼 (출석 완료 시에만 표시) */}
+                {status === "present" && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); toggleDoubleLesson(s); }}
+                    className={`w-full mt-2 py-2 rounded-xl font-bold text-xs flex items-center justify-center gap-1 transition-all border ${
+                      (record?.count || 1) === 2
+                        ? "bg-violet-100 text-violet-700 border-violet-300"
+                        : "bg-slate-50 text-slate-400 hover:bg-violet-50 hover:text-violet-600 border-slate-200"
+                    }`}
+                  >
+                    {(record?.count || 1) === 2 ? "✦ 연강 (2회) — 클릭 시 해제" : "연강 추가 (+1회)"}
+                  </button>
+                )}
                 {status && (
                   <button
                     onClick={(e) => {
