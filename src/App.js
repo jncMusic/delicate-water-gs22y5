@@ -1451,12 +1451,10 @@ const DashboardView = ({
     ).length;
     const sessionUnit = getEffectiveSessions(s);
     const totalPaidCapacity = (s.paymentHistory || []).length * sessionUnit;
+    const remainingCapacity = totalPaidCapacity - totalAttended;
 
-    let currentUsage = totalAttended % sessionUnit;
-    if (currentUsage === 0 && totalAttended > 0) currentUsage = sessionUnit;
-
-    const isOverdue = totalAttended > totalPaidCapacity;
-    const isCompleted = currentUsage === sessionUnit;
+    const isOverdue = remainingCapacity < 0;
+    const isCompleted = remainingCapacity === 0 && totalPaidCapacity > 0;
 
     return isOverdue || isCompleted;
   };
