@@ -6058,7 +6058,18 @@ const AttendanceView = ({ students, showToast, user, teachers }) => {
   };
 
   // 버튼 클릭 핸들러 (분기 처리)
+  // 같은 상태 버튼을 다시 누르면 기록 삭제(취소)
   const onActionClick = (student, action) => {
+    const dateStr = formatDate(selectedDate);
+    const record = (student.attendanceHistory || []).find((h) => h.date === dateStr);
+    const currentStatus = record?.status;
+
+    // 같은 버튼 재클릭 → 기록 삭제
+    if (currentStatus === action) {
+      saveAttendanceToDB(student, "delete");
+      return;
+    }
+
     if (action === "present") {
       saveAttendanceToDB(student, "present");
     } else if (action === "delete") {
