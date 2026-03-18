@@ -2889,7 +2889,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
   );
   const timeSlots = useMemo(() => {
     const slots = [];
-    for (let i = 13; i <= 22; i++) slots.push(i);
+    for (let i = 10; i <= 22; i++) slots.push(i);
     return slots;
   }, []);
 
@@ -2992,18 +2992,59 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
   };
 
   const getSessionCount = (student, targetDate) => {
-    const history = student.attendanceHistory || [];
-    const lastPayment = student.lastPaymentDate || "0000-00-00";
-    const validSessions = history
-      .filter((h) => h.status === "present" && h.date >= lastPayment)
+    // totalSessions 단위(4 or 8)로 순환하는 회차를 반환 (1·2·3·4·1·2·3·4…)
+    const total = getEffectiveSessions(student);
+    const sessions = (student.attendanceHistory || [])
+      .filter((h) => h.status === "present")
       .sort((a, b) => a.date.localeCompare(b.date));
     let cumulative = 0;
-    for (const h of validSessions) {
-      if (h.date === targetDate) return cumulative + 1;
+    for (const h of sessions) {
+      if (h.date === targetDate) return (cumulative % total) + 1;
       if (h.date > targetDate) break;
       cumulative += h.count || 1;
     }
     return null;
+  };
+
+  // [기능1] 해당 날짜가 학생의 현재 결제 사이클 마지막 회차인지 여부
+  const isLastSessionOfCycle = (student, targetDate) => {
+    const total = getEffectiveSessions(student);
+    const sessions = (student.attendanceHistory || [])
+      .filter((h) => h.status === "present")
+      .sort((a, b) => a.date.localeCompare(b.date));
+    let cumulative = 0;
+    for (const h of sessions) {
+      if (h.date === targetDate) {
+        const cnt = h.count || 1;
+        // 마지막 회차에 도달하면 true (4회 단위면 4번째, 8회면 8번째)
+        return (cumulative + cnt) % total === 0;
+      }
+      if (h.date > targetDate) break;
+      cumulative += h.count || 1;
+    }
+    return false;
+  };
+
+  // [기능2] 오늘 이전 날짜 중 출석 미처리(scheduled) 여부
+  const todayStr = new Date().toISOString().split("T")[0];
+  const isUnprocessedPast = (student, dateStr) => {
+    if (dateStr >= todayStr) return false;
+    const record = student.attendanceHistory?.find((h) => h.date === dateStr);
+    return !record; // 기록 자체가 없으면 미처리
+  };
+
+  // [기능3] 강사 선택 시 특정 시간대에 수업이 없는지 여부 (빈 슬롯)
+  const isEmptySlot = (teacherName, hour, dayOfWeek, dateStr) => {
+    if (!selectedTeacher) return false;
+    const dayName = ["일", "월", "화", "수", "목", "금", "토"][dayOfWeek];
+    const teacherStudents = students.filter(
+      (s) => s.teacher === teacherName && s.status === "재원" &&
+        ((s.schedules && s.schedules[dayName]) || (!s.schedules && s.className === dayName))
+    );
+    return teacherStudents.every((s) => {
+      const time = getStudentScheduleTime(s, dayName);
+      return !time || !time.startsWith(`${hour}:`);
+    });
   };
 
   const getDetailModalData = (dateStr, dayOfWeek) => {
@@ -3082,20 +3123,31 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                   });
                   cellStudents = [...cellStudents, ...timeFiltered];
                 });
+                // [기능3] 강사 선택 시 빈 슬롯 표시
+                const emptySlot = selectedTeacher && cellStudents.length === 0 &&
+                  isEmptySlot(selectedTeacher, hour, dayOfWeek, dateStr) &&
+                  dateStr >= todayStr;
                 return (
                   <div
                     key={i}
-                    className="p-1 border-r last:border-r-0 relative hover:bg-slate-50 transition-colors"
+                    className={`p-1 border-r last:border-r-0 relative transition-colors ${emptySlot ? "bg-emerald-50/40" : "hover:bg-slate-50"}`}
                   >
+                    {emptySlot && (
+                      <div className="text-[9px] text-emerald-400 text-center mt-1 font-medium">빈 슬롯</div>
+                    )}
                     {cellStudents.map((s, idx) => {
                       const record = s.attendanceHistory?.find(
                         (h) => h.date === dateStr
                       );
                       const status = record ? record.status : "scheduled";
                       const sessionNum = getSessionCount(s, dateStr);
+                      const isLast = status === "present" && isLastSessionOfCycle(s, dateStr);
+                      const isUnprocessed = isUnprocessedPast(s, dateStr);
                       let bgClass =
                         "bg-indigo-100 text-indigo-700 border-indigo-200";
-                      if (status === "present")
+                      if (isUnprocessed)
+                        bgClass = "bg-amber-50 text-amber-700 border-amber-400";
+                      else if (status === "present")
                         bgClass =
                           "bg-emerald-100 text-emerald-700 border-emerald-200";
                       else if (status === "absent")
@@ -3110,9 +3162,11 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                             e.stopPropagation();
                             setAttendanceMenu({ student: s, date: dateStr });
                           }}
-                          className={`text-[10px] px-1 py-0.5 rounded border mb-1 cursor-pointer truncate ${bgClass}`}
+                          className={`text-[10px] px-1 py-0.5 rounded border mb-1 cursor-pointer truncate flex items-center gap-0.5 ${bgClass}`}
                         >
-                          {s.name} {sessionNum && `(${sessionNum})`}
+                          <span className="truncate">{s.name} {sessionNum ? `(${sessionNum})` : ""}</span>
+                          {isLast && <span className="shrink-0">💳</span>}
+                          {isUnprocessed && <span className="shrink-0 text-amber-500">!</span>}
                         </div>
                       );
                     })}
@@ -3181,20 +3235,31 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                       const time = getStudentScheduleTime(s, dayName);
                       return time && time.startsWith(`${hour}:`);
                     });
+                    // [기능3] 강사 선택 시 빈 슬롯
+                    const emptySlot = selectedTeacher && cellStudents.length === 0 &&
+                      isEmptySlot(selectedTeacher, hour, dayOfWeek, dateStr) &&
+                      dateStr >= todayStr;
                     return (
                       <div
                         key={hour}
-                        className="h-20 border-b p-1 hover:bg-slate-50 transition-colors"
+                        className={`h-20 border-b p-1 transition-colors ${emptySlot ? "bg-emerald-50/40" : "hover:bg-slate-50"}`}
                       >
+                        {emptySlot && (
+                          <div className="text-[9px] text-emerald-400 text-center mt-1 font-medium">빈 슬롯</div>
+                        )}
                         {cellStudents.map((s, idx) => {
                           const record = s.attendanceHistory?.find(
                             (h) => h.date === dateStr
                           );
                           const status = record ? record.status : "scheduled";
                           const sessionNum = getSessionCount(s, dateStr);
+                          const isLast = status === "present" && isLastSessionOfCycle(s, dateStr);
+                          const isUnprocessed = isUnprocessedPast(s, dateStr);
                           let bgClass =
                             "bg-white border-slate-200 text-slate-700";
-                          if (status === "present")
+                          if (isUnprocessed)
+                            bgClass = "bg-amber-50 border-amber-400 text-amber-700";
+                          else if (status === "present")
                             bgClass =
                               "bg-emerald-100 border-emerald-200 text-emerald-800";
                           return (
@@ -3207,9 +3272,11 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                                   date: dateStr,
                                 });
                               }}
-                              className={`text-[10px] p-1 rounded border mb-1 cursor-pointer shadow-sm ${bgClass}`}
+                              className={`text-[10px] p-1 rounded border mb-1 cursor-pointer shadow-sm flex items-center gap-0.5 ${bgClass}`}
                             >
-                              {s.name} {sessionNum && `(${sessionNum})`}
+                              <span className="truncate">{s.name} {sessionNum ? `(${sessionNum})` : ""}</span>
+                              {isLast && <span className="shrink-0">💳</span>}
+                              {isUnprocessed && <span className="shrink-0 font-bold text-amber-500">!</span>}
                             </div>
                           );
                         })}
@@ -3324,9 +3391,13 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                       );
                       const status = record ? record.status : "scheduled";
                       const sessionNum = getSessionCount(s, dateStr);
+                      const isLast = status === "present" && isLastSessionOfCycle(s, dateStr);
+                      const isUnprocessed = isUnprocessedPast(s, dateStr);
                       let bgClass =
                         "bg-slate-100 text-slate-600 border-slate-200 hover:border-indigo-300 hover:bg-indigo-50";
-                      if (status === "present")
+                      if (isUnprocessed)
+                        bgClass = "bg-amber-50 text-amber-700 border-amber-400 hover:bg-amber-100";
+                      else if (status === "present")
                         bgClass =
                           "bg-emerald-100 text-emerald-700 border-emerald-200 font-bold hover:bg-emerald-200";
                       else if (status === "absent")
@@ -3342,14 +3413,18 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                             e.stopPropagation();
                             setAttendanceMenu({ student: s, date: dateStr });
                           }}
-                          className={`text-[10px] px-1.5 py-1 rounded border ${bgClass} font-medium truncate flex justify-between items-center transition-all shadow-sm`}
+                          className={`text-[10px] px-1.5 py-1 rounded border ${bgClass} font-medium flex justify-between items-center gap-0.5 transition-all shadow-sm`}
                         >
-                          <span>
+                          <span className="truncate">
                             {s.name} {sessionNum ? `(${sessionNum})` : ""}
                           </span>
-                          {status === "present" && (
-                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 ml-1"></div>
-                          )}
+                          <span className="shrink-0 flex items-center gap-0.5">
+                            {isLast && <span>💳</span>}
+                            {isUnprocessed && <span className="font-bold text-amber-500">!</span>}
+                            {status === "present" && !isLast && (
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>
+                            )}
+                          </span>
                         </div>
                       );
                     }
@@ -3494,6 +3569,13 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
             </button>
           </div>
         </div>
+      </div>
+      {/* 범례 */}
+      <div className="flex items-center gap-3 text-[10px] text-slate-500 mb-2 flex-wrap">
+        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-emerald-100 border border-emerald-200 inline-block"></span>출석 완료</span>
+        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-amber-50 border border-amber-400 inline-block"></span>미처리 과거 수업 <b className="text-amber-500">!</b></span>
+        <span className="flex items-center gap-1"><span>💳</span>이번 수업 후 결제 필요</span>
+        {selectedTeacher && <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-emerald-50 border border-emerald-200 inline-block"></span>빈 슬롯 (신규 배치 가능)</span>}
       </div>
       {viewType === "month" && renderMonthView()}
       {viewType === "week" && renderWeeklyView()}
