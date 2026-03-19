@@ -4893,8 +4893,11 @@ const DateDetailModal = ({ date, students, onClose, onStudentClick }) => (
 );
 // [New Component] 초기 데이터 구축용: 원생별 달력 콕콕 (Fast Attendance Clicker)
 const FastAttendanceModal = ({ student, onClose, onSave }) => {
-  // 기본적으로 2025년 10월부터 현재까지 보여줌 (초기 구축용)
-  const [baseDate, setBaseDate] = useState(new Date("2025-10-01"));
+  // 현재 월 기준 3개월 전부터 표시 (4개월치 보여줌)
+  const initBase = new Date();
+  initBase.setDate(1);
+  initBase.setMonth(initBase.getMonth() - 3);
+  const [baseDate, setBaseDate] = useState(initBase);
   // 로컬 상태로 출석 기록 관리 (저장 전까지 DB 안 건드림)
   const [tempHistory, setTempHistory] = useState(
     student.attendanceHistory || []
@@ -4968,8 +4971,11 @@ const FastAttendanceModal = ({ student, onClose, onSave }) => {
   };
   // [New Component] 초기 데이터 구축용: 원생별 수납 콕콕 (Fast Payment Clicker)
   const FastPaymentModal = ({ student, onClose, onSave }) => {
-    // 기본 2025년 10월부터 표시
-    const [baseDate, setBaseDate] = useState(new Date("2025-10-01"));
+    // 현재 월 기준 3개월 전부터 표시 (4개월치 보여줌)
+    const initBaseP = new Date();
+    initBaseP.setDate(1);
+    initBaseP.setMonth(initBaseP.getMonth() - 3);
+    const [baseDate, setBaseDate] = useState(initBaseP);
     // 기본 원비 세팅
     const [defaultAmount, setDefaultAmount] = useState(student.tuitionFee || 0);
 
@@ -5270,8 +5276,11 @@ const FastAttendanceModal = ({ student, onClose, onSave }) => {
 };
 // [New Component] 초기 데이터 구축용: 원생별 수납 콕콕 (Fast Payment Clicker)
 const FastPaymentModal = ({ student, onClose, onSave }) => {
-  // 기본 2025년 10월부터 표시 (필요하면 날짜 조정 가능)
-  const [baseDate, setBaseDate] = useState(new Date("2025-10-01"));
+  // 현재 월 기준 3개월 전부터 표시 (4개월치 보여줌)
+  const initBaseP2 = new Date();
+  initBaseP2.setDate(1);
+  initBaseP2.setMonth(initBaseP2.getMonth() - 3);
+  const [baseDate, setBaseDate] = useState(initBaseP2);
   // 기본 원비 세팅
   const [defaultAmount, setDefaultAmount] = useState(student.tuitionFee || 0);
 
