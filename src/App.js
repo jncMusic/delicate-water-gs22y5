@@ -4940,28 +4940,34 @@ const FastAttendanceModal = ({ student, onClose, onSave }) => {
               2,
               "0"
             )}-${String(day).padStart(2, "0")}`;
-            const isPresent = tempHistory.some(
-              (h) => h.date === dateStr && h.status === "present"
-            );
+            const attRecord = tempHistory.find((h) => h.date === dateStr && h.status === "present");
+            const isPresent = !!attRecord;
+            const isDouble = isPresent && (attRecord.count || 1) === 2;
             const dayOfWeek = idx % 7;
-            const isClassDay = targetDays.includes(dayOfWeek); // 수업 요일인지 확인
+            const isClassDay = targetDays.includes(dayOfWeek);
 
             return (
               <div
                 key={day}
                 onClick={() => toggleDate(dateStr)}
                 className={`
-                  aspect-square flex items-center justify-center rounded-full text-xs cursor-pointer select-none transition-all
+                  aspect-square flex items-center justify-center rounded-full text-xs cursor-pointer select-none transition-all relative
                   ${
-                    isPresent
+                    isDouble
+                      ? "bg-indigo-800 text-white font-bold shadow-md transform scale-110"
+                      : isPresent
                       ? "bg-indigo-600 text-white font-bold shadow-md transform scale-110"
                       : isClassDay
-                      ? "bg-indigo-50 text-indigo-400 hover:bg-indigo-200 border border-indigo-100" // 수업 요일 힌트
-                      : "text-slate-300 hover:bg-slate-100" // 수업 없는 날
+                      ? "bg-indigo-50 text-indigo-400 hover:bg-indigo-200 border border-indigo-100"
+                      : "text-slate-300 hover:bg-slate-100"
                   }
                 `}
+                title={isDouble ? "연강(2회) — 클릭 시 제거" : isPresent ? "출석(1회) — 클릭 시 연강" : "클릭: 출석"}
               >
                 {day}
+                {isDouble && (
+                  <span className="absolute -top-1 -right-1 bg-amber-400 text-white text-[8px] font-bold rounded-full w-3.5 h-3.5 flex items-center justify-center leading-none">×2</span>
+                )}
               </div>
             );
           })}
@@ -5169,20 +5175,15 @@ const FastAttendanceModal = ({ student, onClose, onSave }) => {
 
   const toggleDate = (dateStr) => {
     const exists = tempHistory.find((h) => h.date === dateStr);
-    if (exists) {
-      // 이미 있으면 삭제 (토글)
-      setTempHistory(tempHistory.filter((h) => h.date !== dateStr));
+    if (!exists) {
+      // 없음 → 출석 1회
+      setTempHistory([...tempHistory, { date: dateStr, status: "present", count: 1, reason: "초기입력", timestamp: new Date().toISOString() }]);
+    } else if ((exists.count || 1) === 1) {
+      // 1회 → 연강 2회
+      setTempHistory(tempHistory.map((h) => h.date === dateStr ? { ...h, count: 2 } : h));
     } else {
-      // 없으면 추가 (출석)
-      setTempHistory([
-        ...tempHistory,
-        {
-          date: dateStr,
-          status: "present",
-          reason: "초기입력",
-          timestamp: new Date().toISOString(),
-        },
-      ]);
+      // 2회 → 제거
+      setTempHistory(tempHistory.filter((h) => h.date !== dateStr));
     }
   };
 
