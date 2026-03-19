@@ -3724,7 +3724,7 @@ const ClassLogView = ({ students, teachers, user, showToast }) => {
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 h-full flex flex-col animate-fade-in">
+    <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 animate-fade-in">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-xl font-bold text-slate-800 flex items-center">
           <BookOpen className="mr-2 text-indigo-600" size={24} /> 수업 일지
@@ -3763,7 +3763,7 @@ const ClassLogView = ({ students, teachers, user, showToast }) => {
           </div>
         </div>
       </div>
-      <div className="border rounded-lg overflow-hidden flex-1 flex flex-col">
+      <div className="border rounded-lg overflow-hidden">
         <div className="grid grid-cols-7 bg-slate-50 border-b divide-x divide-slate-200">
           {["일", "월", "화", "수", "목", "금", "토"].map((day, i) => (
             <div
@@ -3780,7 +3780,7 @@ const ClassLogView = ({ students, teachers, user, showToast }) => {
             </div>
           ))}
         </div>
-        <div className="grid grid-cols-7 flex-1 divide-x divide-y divide-slate-200 bg-white">
+        <div className="grid grid-cols-7 divide-x divide-y divide-slate-200 bg-white">
           {days.map((day, i) => {
             if (!day) return <div key={i} className="bg-slate-50/30"></div>;
             const dateStr = `${year}-${String(month + 1).padStart(
