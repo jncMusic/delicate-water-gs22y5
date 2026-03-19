@@ -3371,7 +3371,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                   (details.length > 0 || teachersForDay.length > 0) &&
                   !isHoliday
                 ) {
-                  setDateDetail({ date: dateStr, students: details });
+                  setDateDetail({ date: dateStr, dayOfWeek });
                 }
               }}
             >
@@ -3497,7 +3497,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
       {dateDetail && (
         <DateDetailModal
           date={dateDetail.date}
-          students={dateDetail.students}
+          students={getDetailModalData(dateDetail.date, dateDetail.dayOfWeek)}
           onClose={() => setDateDetail(null)}
           onStudentClick={(s, date) => setAttendanceMenu({ student: s, date })}
         />
@@ -3610,7 +3610,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
   );
 };
 // [ClassLogView]
-const ClassLogView = ({ students, teachers, user }) => {
+const ClassLogView = ({ students, teachers, user, showToast }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedTeacher, setSelectedTeacher] = useState(
     user.role === "teacher" ? user.name : ""
@@ -3679,6 +3679,48 @@ const ClassLogView = ({ students, teachers, user }) => {
     });
     content.sort((a, b) => a.time.localeCompare(b.time));
     return content;
+  };
+
+  // 수업일지 항목 클릭: 없음→출석1회→출석2회(연강)→제거 순환
+  const handleItemClick = async (studentId, dateStr) => {
+    const student = students.find((s) => s.id === studentId);
+    if (!student) return;
+    const studentRef = doc(db, "artifacts", APP_ID, "public", "data", "students", studentId);
+    let history = [...(student.attendanceHistory || [])];
+    const idx = history.findIndex((h) => h.date === dateStr);
+    const existing = idx > -1 ? history[idx] : null;
+
+    let msg = "";
+    if (!existing || existing.status !== "present") {
+      // 없거나 결석/취소 → 출석 1회
+      const record = { date: dateStr, status: "present", count: 1, timestamp: new Date().toISOString() };
+      if (idx > -1) history[idx] = record;
+      else history.push(record);
+      msg = `${student.name} 출석 처리(1회)`;
+    } else if ((existing.count || 1) === 1) {
+      // 1회 → 연강 2회
+      history[idx] = { ...existing, count: 2 };
+      msg = `${student.name} 연강 처리(2회)`;
+    } else {
+      // 2회 → 제거
+      history.splice(idx, 1);
+      msg = `${student.name} 출석 취소`;
+    }
+
+    const lastPay = student.lastPaymentDate || "0000-00-00";
+    const sessionsCompleted = history.reduce((sum, h) => {
+      if (h.date < lastPay) return sum;
+      if (h.status === "present") return sum + (h.count || 1);
+      if (h.status === "canceled" && h.subType !== "질병") return sum + 1;
+      return sum;
+    }, 0);
+
+    try {
+      await updateDoc(studentRef, { attendanceHistory: history, sessionsCompleted });
+      showToast(msg, "success");
+    } catch (e) {
+      showToast("저장 실패", "error");
+    }
   };
 
   return (
@@ -3775,11 +3817,13 @@ const ClassLogView = ({ students, teachers, user }) => {
                   {items.map((item, idx) => (
                     <div
                       key={idx}
-                      className={`text-[10px] px-1 py-0.5 rounded truncate ${
+                      onClick={() => handleItemClick(item.id, dateStr)}
+                      className={`text-[10px] px-1 py-0.5 rounded truncate cursor-pointer transition-colors ${
                         item.status === "present"
-                          ? "text-slate-700"
-                          : "text-slate-400 line-through"
+                          ? "text-slate-700 hover:bg-emerald-100"
+                          : "text-slate-400 line-through hover:bg-slate-100"
                       }`}
+                      title="클릭: 출석→연강→취소 순환"
                     >
                       {item.text}
                     </div>
@@ -4817,7 +4861,6 @@ const DateDetailModal = ({ date, students, onClose, onStudentClick }) => (
                 key={s.id}
                 onClick={() => {
                   onStudentClick(s, date);
-                  onClose();
                 }}
                 className="flex justify-between items-center p-3 border rounded-lg hover:bg-slate-50 cursor-pointer"
               >
@@ -8973,6 +9016,7 @@ export default function App() {
               teachers={teachers}
               user={currentUser}
               students={students}
+              showToast={showToast}
             />
           )}
           {activeTab === "students" && (
