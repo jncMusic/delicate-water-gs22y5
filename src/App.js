@@ -4922,15 +4922,21 @@ const FastAttendanceModal = ({ student, onClose, onSave }) => {
     for (let i = 0; i < firstDay; i++) days.push(null);
     for (let i = 1; i <= daysInMonth; i++) days.push(i);
 
-    // 학생의 수업 요일 인덱스 (예: 월=1, 수=3)
-    const targetDays = (student.classDays || []).map((d) =>
-      ["일", "월", "화", "수", "목", "금", "토"].indexOf(d)
-    );
-    // 구버전 호환
+    // 학생의 수업 요일 인덱스 — schedules 객체 기준 (시간표 변경 시 즉시 반영)
+    const DAY_IDX = ["일", "월", "화", "수", "목", "금", "토"];
+    const targetDays = Object.keys(student.schedules || {}).map((d) =>
+      DAY_IDX.indexOf(d)
+    ).filter((i) => i >= 0);
+    // 구버전 호환 (schedules 없는 레거시 데이터)
+    if (targetDays.length === 0 && student.classDays) {
+      (student.classDays || []).forEach((d) => {
+        const i = DAY_IDX.indexOf(d);
+        if (i >= 0) targetDays.push(i);
+      });
+    }
     if (targetDays.length === 0 && student.className) {
-      targetDays.push(
-        ["일", "월", "화", "수", "목", "금", "토"].indexOf(student.className)
-      );
+      const i = DAY_IDX.indexOf(student.className);
+      if (i >= 0) targetDays.push(i);
     }
 
     return (
@@ -6543,7 +6549,7 @@ const StudentView = ({
                 DAYS.map((d) => (
                   <th
                     key={d}
-                    className="p-2 text-center w-24 sticky top-0 bg-slate-50 border-b border-slate-200 shadow-sm"
+                    className="p-2 text-center w-24 sticky top-0 z-20 bg-slate-50 border-b border-slate-200 shadow-sm"
                   >
                     {d}
                   </th>
