@@ -6273,6 +6273,224 @@ const AttendanceDetailModal = ({ config, onClose, onConfirm }) => {
   );
 };
 
+// =================================================================
+// [KioskView] 학생 자가 출석 체크인 (전화번호 뒤 4자리)
+// =================================================================
+const KioskView = ({ students, onUpdateStudent, onLogout }) => {
+  const [input, setInput] = useState("");
+  const [matches, setMatches] = useState(null); // null=미검색
+  const [confirmed, setConfirmed] = useState(null);
+  const [isDuplicate, setIsDuplicate] = useState(false);
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  useEffect(() => {
+    const t = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const reset = () => {
+    setInput("");
+    setMatches(null);
+    setConfirmed(null);
+    setIsDuplicate(false);
+  };
+
+  const handleDigit = (d) => {
+    if (input.length >= 4) return;
+    const next = input + d;
+    setInput(next);
+    if (next.length === 4) {
+      const found = students.filter((s) => {
+        if ((s.status || "재원") === "퇴원") return false;
+        const phone = (s.phone || "").replace(/\D/g, "");
+        return phone.length >= 4 && phone.slice(-4) === next;
+      });
+      setMatches(found);
+    }
+  };
+
+  const handleDel = () => {
+    setInput((p) => p.slice(0, -1));
+    setMatches(null);
+  };
+
+  const handleCheckIn = async (student) => {
+    const alreadyToday = (student.attendanceHistory || []).some(
+      (h) => h.date === today && h.status === "present"
+    );
+    setConfirmed(student);
+    setIsDuplicate(alreadyToday);
+    if (!alreadyToday) {
+      const lastPaymentDate = student.lastPaymentDate || "0000-00-00";
+      const newRecord = {
+        date: today,
+        status: "present",
+        count: 1,
+        reason: "키오스크",
+        timestamp: new Date().toISOString(),
+      };
+      const newHistory = [...(student.attendanceHistory || []), newRecord];
+      const sessionsCompleted = newHistory.reduce((sum, h) => {
+        if (h.date < lastPaymentDate) return sum;
+        if (h.status === "present") return sum + (h.count || 1);
+        if (h.status === "canceled" && h.subType !== "질병") return sum + 1;
+        return sum;
+      }, 0);
+      await onUpdateStudent(student.id, {
+        attendanceHistory: newHistory,
+        sessionsCompleted,
+      });
+    }
+    setTimeout(reset, 4000);
+  };
+
+  const timeStr = currentTime.toLocaleTimeString("ko-KR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+  const dateStr = currentTime.toLocaleDateString("ko-KR", {
+    month: "long",
+    day: "numeric",
+    weekday: "short",
+  });
+
+  // 출석 확인 화면
+  if (confirmed) {
+    return (
+      <div
+        className={`fixed inset-0 flex flex-col items-center justify-center z-[300] ${
+          isDuplicate ? "bg-amber-500" : "bg-emerald-500"
+        }`}
+      >
+        <div className="text-white text-center px-6">
+          <div className="text-7xl mb-6">{isDuplicate ? "⚠️" : "✅"}</div>
+          <div className="text-5xl font-black mb-2">{confirmed.name}</div>
+          <div className="text-xl opacity-80 mb-8">
+            {confirmed.subject} · {confirmed.teacher} 선생님
+          </div>
+          <div className="text-3xl font-bold">
+            {isDuplicate
+              ? "오늘 이미 출석 처리되었습니다"
+              : "출석이 확인되었습니다!"}
+          </div>
+          <div className="text-base opacity-60 mt-4">
+            잠시 후 자동으로 돌아갑니다...
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const numpad = [1, 2, 3, 4, 5, 6, 7, 8, 9, null, 0, "⌫"];
+
+  return (
+    <div className="fixed inset-0 bg-slate-900 flex flex-col items-center justify-between z-[300] select-none py-8">
+      {/* 헤더: 시간 + 나가기 */}
+      <div className="w-full max-w-sm flex justify-between items-start px-4">
+        <div className="text-left">
+          <div className="text-slate-200 text-2xl font-bold">{timeStr}</div>
+          <div className="text-slate-500 text-sm">{dateStr}</div>
+        </div>
+        <button
+          onClick={onLogout}
+          className="text-slate-600 hover:text-slate-400 text-xs px-3 py-1 border border-slate-700 rounded-lg transition-colors"
+        >
+          나가기
+        </button>
+      </div>
+
+      {/* 중앙 안내 */}
+      <div className="text-center w-full max-w-sm px-4">
+        <div className="text-white text-xl font-bold mb-1">JnC Music Academy</div>
+        <div className="text-slate-400 text-sm mb-6">
+          {matches === null
+            ? "전화번호 뒤 4자리를 입력하세요"
+            : matches.length === 0
+            ? "일치하는 학생이 없습니다"
+            : matches.length === 1
+            ? "버튼을 터치해서 출석 확인"
+            : "이름을 터치해서 출석 확인"}
+        </div>
+
+        {/* 입력 표시 */}
+        <div className="flex justify-center gap-3 mb-6">
+          {[0, 1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl font-black transition-all duration-200 ${
+                i < input.length
+                  ? "bg-indigo-500 text-white shadow-lg scale-105"
+                  : "bg-slate-700 text-slate-600"
+              }`}
+            >
+              {i < input.length ? "●" : "○"}
+            </div>
+          ))}
+        </div>
+
+        {/* 학생 목록 */}
+        {matches !== null && matches.length > 0 && (
+          <div className="flex flex-col gap-3 mx-auto mb-4">
+            {matches.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => handleCheckIn(s)}
+                className="bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white rounded-2xl p-4 flex items-center justify-between shadow-lg transition-all"
+              >
+                <div className="text-left">
+                  <div className="text-xl font-black">{s.name}</div>
+                  <div className="text-indigo-200 text-xs">
+                    {s.subject} · {s.teacher} 선생님
+                  </div>
+                </div>
+                <ChevronRight size={24} className="opacity-60" />
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* 다시 입력 버튼 */}
+        {matches !== null && (
+          <button
+            onClick={reset}
+            className="text-slate-500 hover:text-slate-300 text-sm mt-2 underline transition-colors"
+          >
+            다시 입력하기
+          </button>
+        )}
+      </div>
+
+      {/* 숫자 패드 (검색 전에만 표시) */}
+      {matches === null && (
+        <div className="grid grid-cols-3 gap-3 w-72">
+          {numpad.map((d, i) => (
+            <button
+              key={i}
+              onClick={() => {
+                if (d === "⌫") handleDel();
+                else if (d !== null) handleDigit(String(d));
+              }}
+              disabled={d === null}
+              className={`h-20 rounded-2xl text-2xl font-black transition-all active:scale-95 ${
+                d === null
+                  ? "opacity-0 pointer-events-none"
+                  : d === "⌫"
+                  ? "bg-slate-700 text-slate-300 hover:bg-slate-600"
+                  : "bg-slate-700 text-white hover:bg-slate-600 shadow-md"
+              }`}
+            >
+              {d}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ==================================================================================
 // ==================================================================================
 // [1] StudentView: 원생 목록 (보안 강화: 강사는 본인 학생만 + 수납 기능 차단 + Z-Index 최적화 유지)
@@ -6406,9 +6624,9 @@ const StudentView = ({
   };
 
   return (
-    <div className="space-y-4 animate-fade-in pb-24">
+    <div className="flex flex-col h-full animate-fade-in gap-4">
       {/* 상단 컨트롤바 */}
-      <div className="flex flex-col gap-4 bg-white p-5 rounded-2xl border shadow-sm sticky top-0 z-30">
+      <div className="flex flex-col gap-4 bg-white p-5 rounded-2xl border shadow-sm shrink-0">
         <div className="flex flex-col xl:flex-row justify-between gap-4">
           <div className="relative flex-1 max-w-2xl">
             <Search
@@ -6532,13 +6750,13 @@ const StudentView = ({
 
       {/* 검색 결과 수 */}
       {searchTerm.trim() && (
-        <div className="text-sm text-slate-500 px-1">
+        <div className="text-sm text-slate-500 px-1 shrink-0">
           <span className="font-bold text-indigo-600">{filteredStudents.length}명</span> 검색됨
         </div>
       )}
 
       {/* 테이블 영역 */}
-      <div className="bg-white rounded-2xl border shadow-sm overflow-auto max-h-[70vh]">
+      <div className="bg-white rounded-2xl border shadow-sm overflow-auto flex-1 min-h-0">
         <table className="w-full text-left border-separate border-spacing-0">
           <thead>
             <tr className="bg-slate-50 text-slate-500 text-[11px] font-bold uppercase tracking-wider">
