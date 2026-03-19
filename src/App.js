@@ -5817,12 +5817,13 @@ const StudentModal = ({
 // [KioskView] - 학원 입구 셀프 출석 체크인 단말기
 // =================================================================
 const KioskView = ({ students, onExitKiosk }) => {
-  const [step, setStep] = useState("list"); // 'list' | 'verify' | 'success'
+  // 'search' → 전화번호 입력, 'results' → 일치 학생 선택, 'success' → 완료
+  const [step, setStep] = useState("search");
+  const [phoneInput, setPhoneInput] = useState(""); // 전화번호 뒤 4자리 검색어
+  const [searchResults, setSearchResults] = useState([]); // 검색 결과
   const [selectedStudent, setSelectedStudent] = useState(null);
-  const [phoneInput, setPhoneInput] = useState("");
   const [error, setError] = useState("");
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [searchQuery, setSearchQuery] = useState("");
   const [exitClickCount, setExitClickCount] = useState(0);
   const [confetti, setConfetti] = useState([]);
 
@@ -5832,11 +5833,10 @@ const KioskView = ({ students, onExitKiosk }) => {
     return () => clearInterval(timer);
   }, []);
 
-  // 기분 좋은 도-미-솔 체임 사운드 재생 (Web Audio API)
+  // 기분 좋은 도-미-솔-도 체임 사운드 (Web Audio API)
   const playSuccessSound = useCallback(() => {
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      // 도(C5)-미(E5)-솔(G5)-도(C6) 4음 순차 재생
       const notes = [523.25, 659.25, 783.99, 1046.5];
       notes.forEach((freq, i) => {
         const osc = ctx.createOscillator();
@@ -5852,15 +5852,12 @@ const KioskView = ({ students, onExitKiosk }) => {
         osc.start(start);
         osc.stop(start + 0.5);
       });
-    } catch (e) {
-      // 브라우저 정책으로 재생 불가 시 무시
-    }
+    } catch (e) {}
   }, []);
 
-  // 성공 후 3초 뒤 자동 초기화
+  // 성공 후 3.5초 뒤 자동 초기화
   useEffect(() => {
     if (step === "success") {
-      // 사운드 재생 + 컨페티 생성
       playSuccessSound();
       const colors = ["#6366f1","#f59e0b","#10b981","#ef4444","#3b82f6","#ec4899","#f97316"];
       const shapes = ["●","★","♪","♫","✦","▲","◆"];
@@ -5876,95 +5873,75 @@ const KioskView = ({ students, onExitKiosk }) => {
         }))
       );
       const timer = setTimeout(() => {
-        setStep("list");
-        setSelectedStudent(null);
+        setStep("search");
         setPhoneInput("");
+        setSearchResults([]);
+        setSelectedStudent(null);
         setError("");
-        setSearchQuery("");
         setConfetti([]);
       }, 3500);
       return () => clearTimeout(timer);
     }
   }, [step]);
 
-  const getDayKr = (date) =>
-    ["일", "월", "화", "수", "목", "금", "토"][date.getDay()];
   const toDateStr = (date) => date.toISOString().split("T")[0];
-
-  const todayDay = getDayKr(currentTime);
   const todayStr = toDateStr(currentTime);
 
-  // 오늘 수업 대상자 (재원생 & 오늘 스케줄 있는 학생, 수업 시간 순 정렬)
-  const todayStudents = useMemo(() => {
-    return students
-      .filter(
-        (s) =>
-          s.status === "재원" &&
-          s.schedules &&
-          s.schedules[todayDay]
-      )
-      .sort((a, b) =>
-        (a.schedules[todayDay] || "00:00").localeCompare(
-          b.schedules[todayDay] || "00:00"
-        )
-      );
-  }, [students, todayDay]);
-
-  // 이미 출석 처리된 학생 ID 집합
-  const checkedInSet = useMemo(() => {
-    return new Set(
-      todayStudents
-        .filter((s) =>
-          (s.attendanceHistory || []).some(
-            (h) => h.date === todayStr && h.status === "present"
-          )
-        )
-        .map((s) => s.id)
-    );
-  }, [todayStudents, todayStr]);
-
-  // 이름 검색 필터
-  const filteredStudents = useMemo(() => {
-    if (!searchQuery.trim()) return todayStudents;
-    return todayStudents.filter((s) => s.name.includes(searchQuery.trim()));
-  }, [todayStudents, searchQuery]);
-
-  const handleSelectStudent = (student) => {
-    setSelectedStudent(student);
-    setPhoneInput("");
-    setError("");
-    setStep("verify");
-  };
+  // 전화번호 뒤 4자리로 재원 학생 검색
+  const handleSearch = useCallback((digits) => {
+    if (digits.length < 4) {
+      setSearchResults([]);
+      return;
+    }
+    const matched = students.filter((s) => {
+      if (s.status !== "재원") return false;
+      const phone = (s.phone || "").replace(/[^0-9]/g, "");
+      return phone.slice(-4) === digits;
+    });
+    setSearchResults(matched);
+    setStep("results");
+  }, [students]);
 
   const handleKeypad = (val) => {
-    if (phoneInput.length < 4) setPhoneInput((prev) => prev + val);
+    if (phoneInput.length >= 4) return;
+    const next = phoneInput + val;
+    setPhoneInput(next);
+    if (next.length === 4) handleSearch(next);
   };
 
   const handleKeypadDelete = () => {
-    setPhoneInput((prev) => prev.slice(0, -1));
+    const next = phoneInput.slice(0, -1);
+    setPhoneInput(next);
+    if (step === "results") {
+      setStep("search");
+      setSearchResults([]);
+    }
   };
 
-  // 출석 체크 처리 (Firestore 저장)
-  const handleCheckIn = async () => {
-    const phone = (selectedStudent.phone || "").replace(/[^0-9]/g, "");
-    const last4 = phone.slice(-4);
-    if (phoneInput !== last4) {
-      setError("전화번호 뒤 4자리가 맞지 않습니다. 다시 입력해주세요.");
-      setPhoneInput("");
+  const handleReset = () => {
+    setStep("search");
+    setPhoneInput("");
+    setSearchResults([]);
+    setError("");
+  };
+
+  // 학생 선택 즉시 출석 처리 (전화번호로 이미 본인 확인됨)
+  const handleCheckIn = async (student) => {
+    // 이미 오늘 출석한 경우
+    const alreadyChecked = (student.attendanceHistory || []).some(
+      (h) => h.date === todayStr && h.status === "present"
+    );
+    if (alreadyChecked) {
+      setError(`${student.name} 님은 오늘 이미 출석 처리되었습니다.`);
       return;
     }
 
     try {
+      setSelectedStudent(student);
       const studentRef = doc(
-        db,
-        "artifacts",
-        APP_ID,
-        "public",
-        "data",
-        "students",
-        selectedStudent.id
+        db, "artifacts", APP_ID, "public", "data", "students", student.id
       );
-      let history = [...(selectedStudent.attendanceHistory || [])];
+      let history = [...(student.attendanceHistory || [])];
       const existingIdx = history.findIndex((h) => h.date === todayStr);
       const record = {
         date: todayStr,
@@ -5976,8 +5953,7 @@ const KioskView = ({ students, onExitKiosk }) => {
       if (existingIdx > -1) history[existingIdx] = record;
       else history.push(record);
 
-      // 횟수 재계산 (AttendanceView 동일 로직)
-      const lastPay = selectedStudent.lastPaymentDate || "0000-00-00";
+      const lastPay = student.lastPaymentDate || "0000-00-00";
       const sessionsCount = history.reduce((sum, h) => {
         if (h.date < lastPay) return sum;
         if (h.status === "present") return sum + (h.count || 1);
@@ -5989,7 +5965,6 @@ const KioskView = ({ students, onExitKiosk }) => {
         attendanceHistory: history,
         sessionsCompleted: sessionsCount,
       });
-
       setStep("success");
     } catch (e) {
       console.error(e);
@@ -6008,84 +5983,57 @@ const KioskView = ({ students, onExitKiosk }) => {
   };
 
   const timeStr = currentTime.toLocaleTimeString("ko-KR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
   });
   const dateDisplayStr = currentTime.toLocaleDateString("ko-KR", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    weekday: "long",
+    year: "numeric", month: "long", day: "numeric", weekday: "long",
   });
+
+  // 공통 CSS 키프레임
+  const kioskStyles = `
+    @keyframes confetti-fall {
+      0%   { transform: translateY(-30px) rotate(0deg);   opacity: 1; }
+      80%  { opacity: 1; }
+      100% { transform: translateY(105vh) rotate(900deg); opacity: 0; }
+    }
+    @keyframes pop-in {
+      0%   { transform: scale(0) rotate(-15deg); opacity: 0; }
+      60%  { transform: scale(1.2) rotate(5deg);  opacity: 1; }
+      100% { transform: scale(1)   rotate(0deg);  opacity: 1; }
+    }
+    @keyframes pulse-glow {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(255,255,255,0.5); }
+      50%       { box-shadow: 0 0 0 24px rgba(255,255,255,0); }
+    }
+  `;
 
   // ── 성공 화면 ──
   if (step === "success") {
     return (
       <div className="fixed inset-0 bg-gradient-to-b from-emerald-400 to-emerald-600 flex flex-col items-center justify-center z-50 overflow-hidden">
-        {/* CSS 키프레임 정의 */}
-        <style>{`
-          @keyframes confetti-fall {
-            0%   { transform: translateY(-30px) rotate(0deg);   opacity: 1; }
-            80%  { opacity: 1; }
-            100% { transform: translateY(105vh) rotate(900deg); opacity: 0; }
-          }
-          @keyframes pop-in {
-            0%   { transform: scale(0) rotate(-15deg); opacity: 0; }
-            60%  { transform: scale(1.2) rotate(5deg);  opacity: 1; }
-            100% { transform: scale(1)   rotate(0deg);  opacity: 1; }
-          }
-          @keyframes pulse-glow {
-            0%, 100% { box-shadow: 0 0 0 0 rgba(255,255,255,0.5); }
-            50%       { box-shadow: 0 0 0 24px rgba(255,255,255,0); }
-          }
-        `}</style>
-
-        {/* 컨페티 파티클 */}
+        <style>{kioskStyles}</style>
         {confetti.map((p) => (
-          <div
-            key={p.id}
-            style={{
-              position: "absolute",
-              left: `${p.left}%`,
-              top: "-30px",
-              fontSize: `${p.size}px`,
-              color: p.color,
-              animation: `confetti-fall ${p.duration}s ${p.delay}s ease-in forwards`,
-              pointerEvents: "none",
-              userSelect: "none",
-            }}
-          >
-            {p.shape}
-          </div>
+          <div key={p.id} style={{
+            position: "absolute", left: `${p.left}%`, top: "-30px",
+            fontSize: `${p.size}px`, color: p.color,
+            animation: `confetti-fall ${p.duration}s ${p.delay}s ease-in forwards`,
+            pointerEvents: "none", userSelect: "none",
+          }}>{p.shape}</div>
         ))}
-
-        {/* 메인 콘텐츠 */}
         <div className="text-white text-center relative z-10">
-          {/* 체크 아이콘 원형 */}
           <div
             className="w-36 h-36 bg-white rounded-full flex items-center justify-center mx-auto mb-8"
             style={{ animation: "pop-in 0.5s cubic-bezier(0.34,1.56,0.64,1) both, pulse-glow 1.5s 0.5s ease-in-out infinite" }}
           >
             <span style={{ fontSize: "72px", lineHeight: 1 }}>✓</span>
           </div>
-
-          <div
-            className="text-5xl font-bold mb-3"
-            style={{ animation: "pop-in 0.45s 0.15s both" }}
-          >
+          <div className="text-5xl font-bold mb-3" style={{ animation: "pop-in 0.45s 0.15s both" }}>
             {selectedStudent.name} 님
           </div>
-          <div
-            className="text-3xl font-semibold opacity-95 mb-2"
-            style={{ animation: "pop-in 0.45s 0.28s both" }}
-          >
+          <div className="text-3xl font-semibold opacity-95 mb-2" style={{ animation: "pop-in 0.45s 0.28s both" }}>
             출석이 완료되었습니다! 🎵
           </div>
-          <div
-            className="text-lg opacity-70 mt-4"
-            style={{ animation: "pop-in 0.45s 0.4s both" }}
-          >
+          <div className="text-lg opacity-70 mt-4" style={{ animation: "pop-in 0.45s 0.4s both" }}>
             잠시 후 자동으로 돌아갑니다...
           </div>
         </div>
@@ -6093,104 +6041,11 @@ const KioskView = ({ students, onExitKiosk }) => {
     );
   }
 
-  // ── 전화번호 인증 화면 ──
-  if (step === "verify") {
-    return (
-      <div className="fixed inset-0 bg-gradient-to-br from-slate-100 to-indigo-100 flex flex-col items-center justify-center p-6 z-50">
-        <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-sm">
-          <button
-            onClick={() => {
-              setStep("list");
-              setError("");
-              setPhoneInput("");
-            }}
-            className="mb-6 flex items-center gap-1 text-slate-500 hover:text-slate-700 transition-colors text-lg"
-          >
-            <ChevronLeft size={22} /> 목록으로
-          </button>
-
-          <div className="text-center mb-6">
-            <div className="w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-3">
-              <span className="text-3xl font-bold text-indigo-600">
-                {selectedStudent.name[0]}
-              </span>
-            </div>
-            <h2 className="text-3xl font-bold text-slate-800">
-              {selectedStudent.name}
-            </h2>
-            <p className="text-slate-500 mt-1 text-lg">
-              {selectedStudent.schedules[todayDay]} 수업
-            </p>
-          </div>
-
-          <p className="text-center text-slate-600 text-xl mb-5 font-medium">
-            전화번호 뒤{" "}
-            <span className="text-indigo-600 font-bold">4자리</span> 입력
-          </p>
-
-          {/* 핀 입력 표시 */}
-          <div className="flex justify-center gap-3 mb-3">
-            {[0, 1, 2, 3].map((i) => (
-              <div
-                key={i}
-                className={`w-14 h-14 rounded-xl border-2 flex items-center justify-center text-2xl font-bold transition-all ${
-                  phoneInput.length > i
-                    ? "border-indigo-500 bg-indigo-50 text-indigo-700"
-                    : "border-slate-200 bg-slate-50"
-                }`}
-              >
-                {phoneInput.length > i ? "●" : ""}
-              </div>
-            ))}
-          </div>
-
-          {error && (
-            <p className="text-center text-red-500 mb-3 font-medium text-sm">
-              {error}
-            </p>
-          )}
-
-          {/* 숫자 키패드 */}
-          <div className="grid grid-cols-3 gap-2 mb-4">
-            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
-              <button
-                key={n}
-                onClick={() => handleKeypad(String(n))}
-                className="w-full py-4 bg-white border-2 border-slate-200 rounded-2xl text-2xl font-bold text-slate-700 hover:bg-indigo-50 hover:border-indigo-300 active:bg-indigo-100 transition-all shadow-sm"
-              >
-                {n}
-              </button>
-            ))}
-            <div />
-            <button
-              onClick={() => handleKeypad("0")}
-              className="w-full py-4 bg-white border-2 border-slate-200 rounded-2xl text-2xl font-bold text-slate-700 hover:bg-indigo-50 hover:border-indigo-300 active:bg-indigo-100 transition-all shadow-sm"
-            >
-              0
-            </button>
-            <button
-              onClick={handleKeypadDelete}
-              className="w-full py-4 bg-slate-100 border-2 border-slate-200 rounded-2xl text-xl font-bold text-slate-600 hover:bg-slate-200 active:bg-slate-300 transition-all"
-            >
-              ←
-            </button>
-          </div>
-
-          <button
-            onClick={handleCheckIn}
-            disabled={phoneInput.length < 4}
-            className="w-full py-4 bg-indigo-600 text-white text-xl font-bold rounded-2xl disabled:opacity-40 disabled:cursor-not-allowed hover:bg-indigo-700 active:bg-indigo-800 transition-all shadow-lg"
-          >
-            출석 체크
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // ── 메인: 학생 목록 화면 ──
+  // ── 공통 레이아웃 래퍼 (검색 / 결과 화면 공유) ──
   return (
     <div className="fixed inset-0 bg-gradient-to-br from-slate-50 to-indigo-50 flex flex-col z-50">
+      <style>{kioskStyles}</style>
+
       {/* 상단 시간 표시 (5회 클릭 → 관리자 복귀) */}
       <div className="bg-indigo-700 text-white text-center py-5 shadow-lg shrink-0">
         <button
@@ -6202,82 +6057,128 @@ const KioskView = ({ students, onExitKiosk }) => {
         <div className="text-base opacity-75">{dateDisplayStr}</div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-5">
-        <div className="max-w-2xl mx-auto">
-          <h1 className="text-3xl font-bold text-center text-slate-800 mt-2 mb-1">
+      <div className="flex-1 overflow-y-auto flex items-start justify-center p-5">
+        <div className="w-full max-w-sm">
+          <h1 className="text-2xl font-bold text-center text-slate-800 mt-4 mb-1">
             JnC Music Academy
           </h1>
-          <p className="text-center text-slate-500 mb-5 text-lg">
-            본인 이름을 선택하세요
+          <p className="text-center text-slate-500 mb-6 text-base">
+            전화번호 뒤 4자리를 입력하세요
           </p>
 
-          {/* 이름 검색 */}
-          <div className="relative mb-5">
-            <Search
-              className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
-              size={22}
-            />
-            <input
-              type="text"
-              placeholder="이름 검색..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-12 pr-4 py-4 text-xl rounded-2xl border-2 border-slate-200 bg-white shadow-sm focus:outline-none focus:border-indigo-400"
-            />
+          {/* 핀 입력 표시 */}
+          <div className="flex justify-center gap-3 mb-2">
+            {[0, 1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className={`w-16 h-16 rounded-2xl border-2 flex items-center justify-center text-3xl font-bold transition-all ${
+                  phoneInput.length > i
+                    ? "border-indigo-500 bg-indigo-50 text-indigo-700"
+                    : "border-slate-200 bg-white"
+                }`}
+              >
+                {phoneInput.length > i ? "●" : ""}
+              </div>
+            ))}
           </div>
 
-          {/* 학생 카드 그리드 */}
-          {filteredStudents.length === 0 ? (
-            <div className="text-center text-slate-400 text-xl py-20">
-              {searchQuery.trim()
-                ? "검색 결과가 없습니다."
-                : "오늘 수업 일정이 없습니다."}
-            </div>
-          ) : (
-            <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-              {filteredStudents.map((student) => {
-                const isCheckedIn = checkedInSet.has(student.id);
-                return (
-                  <button
-                    key={student.id}
-                    onClick={() =>
-                      !isCheckedIn && handleSelectStudent(student)
-                    }
-                    disabled={isCheckedIn}
-                    className={`relative p-4 rounded-2xl border-2 text-center shadow-sm transition-all ${
-                      isCheckedIn
-                        ? "bg-emerald-50 border-emerald-200 cursor-not-allowed opacity-60"
-                        : "bg-white border-slate-200 hover:border-indigo-400 hover:shadow-md active:scale-95"
-                    }`}
-                  >
-                    {isCheckedIn && (
-                      <div className="absolute top-2 right-2 w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center text-white text-xs font-bold">
-                        ✓
-                      </div>
-                    )}
-                    <div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-2">
-                      <span className="text-lg font-bold text-indigo-600">
-                        {student.name[0]}
-                      </span>
-                    </div>
-                    <div className="font-bold text-base text-slate-800 truncate">
-                      {student.name}
-                    </div>
-                    <div className="text-xs text-slate-500 mt-0.5">
-                      {student.schedules[todayDay]}
-                    </div>
-                    {isCheckedIn && (
-                      <div className="text-xs text-emerald-600 font-medium mt-0.5">
-                        출석 완료
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
+          {/* 에러 메시지 */}
+          {error && (
+            <p className="text-center text-red-500 text-sm font-medium mb-2">{error}</p>
+          )}
+
+          {/* 검색 결과 (results 단계) */}
+          {step === "results" && (
+            <div className="mb-4">
+              {searchResults.length === 0 ? (
+                <div className="text-center py-6 bg-white rounded-2xl border-2 border-slate-200">
+                  <div className="text-3xl mb-2">😅</div>
+                  <p className="text-slate-500 font-medium">일치하는 학생이 없습니다</p>
+                  <p className="text-slate-400 text-sm mt-1">번호를 다시 확인해주세요</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-center text-slate-500 text-sm mb-3">
+                    본인 이름을 선택하세요
+                  </p>
+                  {searchResults.map((student) => {
+                    const alreadyChecked = (student.attendanceHistory || []).some(
+                      (h) => h.date === todayStr && h.status === "present"
+                    );
+                    return (
+                      <button
+                        key={student.id}
+                        onClick={() => !alreadyChecked && handleCheckIn(student)}
+                        disabled={alreadyChecked}
+                        className={`w-full flex items-center gap-4 p-4 rounded-2xl border-2 text-left transition-all shadow-sm ${
+                          alreadyChecked
+                            ? "bg-emerald-50 border-emerald-200 cursor-not-allowed opacity-70"
+                            : "bg-white border-slate-200 hover:border-indigo-400 hover:shadow-md active:scale-95"
+                        }`}
+                      >
+                        <div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center shrink-0">
+                          <span className="text-xl font-bold text-indigo-600">
+                            {student.name[0]}
+                          </span>
+                        </div>
+                        <div className="flex-1">
+                          <div className="font-bold text-lg text-slate-800">
+                            {student.name}
+                          </div>
+                          <div className="text-sm text-slate-500">
+                            {student.teacher} 선생님
+                          </div>
+                        </div>
+                        {alreadyChecked ? (
+                          <div className="flex items-center gap-1 text-emerald-600 font-bold text-sm">
+                            <span className="w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center text-white text-xs">✓</span>
+                            출석 완료
+                          </div>
+                        ) : (
+                          <div className="text-indigo-400 font-bold text-lg">→</div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 
-          <p className="text-center text-slate-300 text-sm mt-10">
+          {/* 숫자 키패드 */}
+          <div className="grid grid-cols-3 gap-3 mb-3">
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
+              <button
+                key={n}
+                onClick={() => handleKeypad(String(n))}
+                disabled={phoneInput.length >= 4}
+                className="w-full py-4 bg-white border-2 border-slate-200 rounded-2xl text-2xl font-bold text-slate-700 hover:bg-indigo-50 hover:border-indigo-300 active:bg-indigo-100 disabled:opacity-40 transition-all shadow-sm"
+              >
+                {n}
+              </button>
+            ))}
+            <button
+              onClick={handleReset}
+              className="w-full py-4 bg-slate-100 border-2 border-slate-200 rounded-2xl text-sm font-bold text-slate-500 hover:bg-slate-200 active:bg-slate-300 transition-all"
+            >
+              초기화
+            </button>
+            <button
+              onClick={() => handleKeypad("0")}
+              disabled={phoneInput.length >= 4}
+              className="w-full py-4 bg-white border-2 border-slate-200 rounded-2xl text-2xl font-bold text-slate-700 hover:bg-indigo-50 hover:border-indigo-300 active:bg-indigo-100 disabled:opacity-40 transition-all shadow-sm"
+            >
+              0
+            </button>
+            <button
+              onClick={handleKeypadDelete}
+              className="w-full py-4 bg-slate-100 border-2 border-slate-200 rounded-2xl text-xl font-bold text-slate-600 hover:bg-slate-200 active:bg-slate-300 transition-all"
+            >
+              ←
+            </button>
+          </div>
+
+          <p className="text-center text-slate-300 text-xs mt-6">
             문의: 선생님께 직접 말씀해주세요
           </p>
         </div>
