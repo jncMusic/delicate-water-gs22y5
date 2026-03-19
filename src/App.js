@@ -1049,25 +1049,33 @@ const PaymentDetailModal = ({
       a.date.localeCompare(b.date)
     );
 
-    const rows = sortedPayments.map((payment, index) => {
-      const startIndex = index * SESSION_UNIT;
-      const endIndex = startIndex + SESSION_UNIT;
+    let cumIndex = 0;
+    const rows = sortedPayments.map((payment) => {
+      const payUnit = payment.totalSessions || SESSION_UNIT;
+      const startIndex = cumIndex;
+      const endIndex = startIndex + payUnit;
       const matchedSessions = allAttendance.slice(startIndex, endIndex);
+      cumIndex = endIndex;
 
       return {
         payment: payment,
         sessions: matchedSessions,
-        isFull: matchedSessions.length === SESSION_UNIT,
+        isFull: matchedSessions.length === payUnit,
+        payUnit: payUnit,
       };
     });
 
-    const totalPaidSessions = sortedPayments.length * SESSION_UNIT;
+    const totalPaidSessions = sortedPayments.reduce(
+      (sum, p) => sum + (p.totalSessions || SESSION_UNIT),
+      0
+    );
     const totalAttended = allAttendance.length;
     const balance = totalPaidSessions - totalAttended;
-    const lastPaidIndex = Math.max(
-      0,
-      (sortedPayments.length - 1) * SESSION_UNIT
-    );
+    const lastPayUnit =
+      sortedPayments.length > 0
+        ? sortedPayments[sortedPayments.length - 1].totalSessions || SESSION_UNIT
+        : SESSION_UNIT;
+    const lastPaidIndex = Math.max(0, totalPaidSessions - lastPayUnit);
     const currentActiveSessions = allAttendance.slice(lastPaidIndex);
 
     return {
@@ -1083,11 +1091,14 @@ const PaymentDetailModal = ({
 
   // [NEW] 출석 저장 핸들러 (PaymentModal 내부용)
   const handleSaveAttendanceInside = (studentId, newHistory) => {
-    // 1. 진행도(sessionsCompleted) 재계산
+    // 1. 진행도(sessionsCompleted) 재계산 (연강 count 반영)
     const lastPayment = student.lastPaymentDate || "0000-00-00";
-    const newSessionCount = newHistory.filter(
-      (h) => h.status === "present" && h.date >= lastPayment
-    ).length;
+    const newSessionCount = newHistory.reduce((sum, h) => {
+      if (h.date < lastPayment) return sum;
+      if (h.status === "present") return sum + (h.count || 1);
+      if (h.status === "canceled" && h.subType !== "질병") return sum + 1;
+      return sum;
+    }, 0);
 
     // 2. 부모(App.js)에게 업데이트 요청
     onUpdateStudent(studentId, {
@@ -1231,7 +1242,7 @@ const PaymentDetailModal = ({
                         currentStatus.activeSessions.length +
                         idx;
                       const isUnpaid =
-                        globalIdx >= historyRows.length * SESSION_UNIT;
+                        globalIdx >= nextSessionStartIndex;
                       return (
                         <div
                           key={idx}
@@ -1354,10 +1365,10 @@ const PaymentDetailModal = ({
                                   {c.date.slice(2)}
                                 </span>
                               ))}
-                              {row.sessions.length < SESSION_UNIT &&
+                              {row.sessions.length < row.payUnit &&
                                 index === 0 && (
                                   <span className="text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 ml-1">
-                                    +{SESSION_UNIT - row.sessions.length}회 잔여
+                                    +{row.payUnit - row.sessions.length}회 잔여
                                   </span>
                                 )}
                             </div>
@@ -4975,204 +4986,6 @@ const FastAttendanceModal = ({ student, onClose, onSave }) => {
       </div>
     );
   };
-  // [New Component] 초기 데이터 구축용: 원생별 수납 콕콕 (Fast Payment Clicker)
-  const FastPaymentModal = ({ student, onClose, onSave }) => {
-    // 현재 월 기준 3개월 전부터 표시 (4개월치 보여줌)
-    const initBaseP = new Date();
-    initBaseP.setDate(1);
-    initBaseP.setMonth(initBaseP.getMonth() - 3);
-    const [baseDate, setBaseDate] = useState(initBaseP);
-    // 기본 원비 세팅
-    const [defaultAmount, setDefaultAmount] = useState(student.tuitionFee || 0);
-
-    // 로컬 상태로 결제 기록 관리 (기존 기록 + 새로 찍은 기록)
-    const [tempHistory, setTempHistory] = useState(
-      student.paymentHistory || []
-    );
-
-    const renderCalendarMonth = (year, month) => {
-      const daysInMonth = new Date(year, month + 1, 0).getDate();
-      const firstDay = new Date(year, month, 1).getDay();
-      const days = [];
-      for (let i = 0; i < firstDay; i++) days.push(null);
-      for (let i = 1; i <= daysInMonth; i++) days.push(i);
-
-      return (
-        <div
-          key={`${year}-${month}`}
-          className="border rounded-lg p-2 bg-white shadow-sm"
-        >
-          <div className="text-center font-bold text-slate-700 mb-2 bg-slate-50 rounded py-1 border border-slate-100">
-            {year}년 {month + 1}월
-          </div>
-          <div className="grid grid-cols-7 gap-1 text-center">
-            {["일", "월", "화", "수", "목", "금", "토"].map((d) => (
-              <div key={d} className="text-[10px] text-slate-400">
-                {d}
-              </div>
-            ))}
-            {days.map((day, idx) => {
-              if (!day) return <div key={`empty-${idx}`}></div>;
-
-              const dateStr = `${year}-${String(month + 1).padStart(
-                2,
-                "0"
-              )}-${String(day).padStart(2, "0")}`;
-              // 해당 날짜에 결제 내역이 있는지 확인
-              const paymentItem = tempHistory.find((h) => h.date === dateStr);
-              const isPaid = !!paymentItem;
-
-              return (
-                <div
-                  key={day}
-                  onClick={() => toggleDate(dateStr)}
-                  className={`
-                  aspect-square flex items-center justify-center rounded-lg text-xs cursor-pointer select-none transition-all border
-                  ${
-                    isPaid
-                      ? "bg-indigo-600 text-white font-bold border-indigo-700 shadow-md transform scale-105"
-                      : "bg-white text-slate-500 border-slate-100 hover:border-indigo-300 hover:bg-indigo-50"
-                  }
-                `}
-                >
-                  {day}
-                  {isPaid && (
-                    <span className="absolute -top-1 -right-1 w-2 h-2 bg-rose-500 rounded-full border border-white"></span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      );
-    };
-
-    const toggleDate = (dateStr) => {
-      const exists = tempHistory.find((h) => h.date === dateStr);
-      if (exists) {
-        // 이미 있으면 삭제 (토글)
-        if (window.confirm(`${dateStr} 결제 기록을 취소하시겠습니까?`)) {
-          setTempHistory(tempHistory.filter((h) => h.date !== dateStr));
-        }
-      } else {
-        // 없으면 추가
-        setTempHistory([
-          ...tempHistory,
-          {
-            date: dateStr,
-            amount: parseInt(defaultAmount), // 설정된 금액으로 저장
-            type: "tuition",
-            sessionStartDate: dateStr, // 초기 입력이므로 시작일=결제일로 통일 (자동정산 로직이 알아서 처리함)
-            createdAt: new Date().toISOString(),
-          },
-        ]);
-      }
-    };
-
-    const handleSave = () => {
-      if (
-        tempHistory.length === 0 &&
-        (student.paymentHistory || []).length === 0
-      ) {
-        onClose();
-        return;
-      }
-      // 날짜순 정렬 (과거 -> 미래)
-      const sorted = [...tempHistory].sort((a, b) =>
-        a.date.localeCompare(b.date)
-      );
-      onSave(student.id, sorted);
-    };
-
-    // 4개월치 렌더링
-    const calendars = [];
-    for (let i = 0; i < 4; i++) {
-      const d = new Date(baseDate);
-      d.setMonth(baseDate.getMonth() + i);
-      calendars.push(renderCalendarMonth(d.getFullYear(), d.getMonth()));
-    }
-
-    return (
-      <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
-        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl p-6 flex flex-col max-h-[90vh]">
-          <div className="flex flex-col md:flex-row justify-between items-center mb-4 gap-4">
-            <div>
-              <h2 className="text-xl font-bold text-slate-800 flex items-center">
-                <CreditCard className="text-indigo-600 mr-2" /> {student.name}{" "}
-                수납 콕콕 입력
-              </h2>
-              <p className="text-sm text-slate-500">
-                결제일(입금일)을 클릭하면 아래 금액으로 등록됩니다.
-              </p>
-            </div>
-            <div className="flex items-center gap-2 bg-indigo-50 p-2 rounded-lg border border-indigo-100">
-              <span className="text-xs font-bold text-indigo-800">
-                건당 결제액:
-              </span>
-              <input
-                type="number"
-                value={defaultAmount}
-                onChange={(e) => setDefaultAmount(e.target.value)}
-                className="w-24 p-1 text-right font-bold border rounded text-indigo-700 focus:outline-indigo-500"
-              />
-              <span className="text-xs text-indigo-800">원</span>
-            </div>
-            <button onClick={onClose}>
-              <X size={24} className="text-slate-400 hover:text-slate-600" />
-            </button>
-          </div>
-
-          {/* 캘린더 그리드 */}
-          <div className="flex-1 overflow-y-auto bg-slate-50 p-4 rounded-xl border border-slate-200">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {calendars}
-            </div>
-
-            {/* 달 이동 버튼 */}
-            <div className="flex justify-center gap-4 mt-6">
-              <button
-                onClick={() => {
-                  const d = new Date(baseDate);
-                  d.setMonth(d.getMonth() - 1);
-                  setBaseDate(d);
-                }}
-                className="px-4 py-2 bg-white border rounded-lg hover:bg-slate-50 text-sm font-bold shadow-sm"
-              >
-                ◀ 이전 달
-              </button>
-              <button
-                onClick={() => {
-                  const d = new Date(baseDate);
-                  d.setMonth(d.getMonth() + 1);
-                  setBaseDate(d);
-                }}
-                className="px-4 py-2 bg-white border rounded-lg hover:bg-slate-50 text-sm font-bold shadow-sm"
-              >
-                다음 달 ▶
-              </button>
-            </div>
-          </div>
-
-          <div className="mt-4 flex justify-end gap-3 pt-4 border-t">
-            <button
-              onClick={onClose}
-              className="px-5 py-2.5 rounded-lg text-slate-500 hover:bg-slate-100 font-bold"
-            >
-              취소
-            </button>
-            <button
-              onClick={handleSave}
-              className="px-6 py-2.5 rounded-lg bg-indigo-600 text-white font-bold hover:bg-indigo-700 shadow-md flex items-center"
-            >
-              <CheckCircle size={18} className="mr-2" />총 {tempHistory.length}
-              건 저장하기
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
   const toggleDate = (dateStr) => {
     const exists = tempHistory.find((h) => h.date === dateStr);
     if (!exists) {
@@ -7094,11 +6907,21 @@ const StudentManagementModal = ({
       }
     });
 
+    // 출석 캘린더 수정 후 sessionsCompleted 재계산 (연강 count 반영)
+    const lastPayment = formData.lastPaymentDate || "0000-00-00";
+    const recalcSessionsCompleted = attHistory.reduce((sum, h) => {
+      if (h.date < lastPayment) return sum;
+      if (h.status === "present") return sum + (h.count || 1);
+      if (h.status === "canceled" && h.subType !== "질병") return sum + 1;
+      return sum;
+    }, 0);
+
     const updatedData = {
       ...formData,
       schedules: cleanSchedules,
       attendanceHistory: attHistory,
       paymentHistory: payHistory,
+      sessionsCompleted: recalcSessionsCompleted,
       updatedAt: new Date().toISOString(),
     };
 
@@ -7743,19 +7566,33 @@ const PaymentView = ({
       (h) => h.status === "present"
     ).length;
     const sessionUnit = getEffectiveSessions(s);
-    const totalPaidCapacity = (s.paymentHistory || []).length * sessionUnit;
+    const sortedPayments = [...(s.paymentHistory || [])].sort((a, b) =>
+      a.date.localeCompare(b.date)
+    );
+    // 결제별 totalSessions 합산 (수강권 변경 이력 반영)
+    const totalPaidCapacity = sortedPayments.reduce(
+      (sum, p) => sum + (p.totalSessions || sessionUnit),
+      0
+    );
 
     const remainingCapacity = totalPaidCapacity - totalAttended;
 
-    let currentUsage = totalAttended % sessionUnit;
-    // 사이클 경계(나머지=0)일 때: 남은 용량이 없으면 마지막 사이클 완료(=sessionUnit), 있으면 새 사이클 시작(=0)
-    if (currentUsage === 0 && totalAttended > 0 && remainingCapacity <= 0) currentUsage = sessionUnit;
+    // 마지막 결제 사이클 단위 (표시용)
+    const lastPayUnit =
+      sortedPayments.length > 0
+        ? sortedPayments[sortedPayments.length - 1].totalSessions || sessionUnit
+        : sessionUnit;
+    const lastCycleStart = Math.max(0, totalPaidCapacity - lastPayUnit);
+    let currentUsage = Math.max(0, totalAttended - lastCycleStart);
+    // 사이클 경계: 용량 소진 상태에서 나머지=0이면 마지막 사이클 완료로 표시
+    if (currentUsage === 0 && totalAttended > 0 && remainingCapacity <= 0)
+      currentUsage = lastPayUnit;
     const isOverdue = remainingCapacity < 0;
     const isCompleted = remainingCapacity === 0 && totalPaidCapacity > 0;
 
     return {
       currentUsage,
-      sessionUnit,
+      sessionUnit: lastPayUnit,
       isOverdue,
       isCompleted,
       displayStatus: isOverdue
@@ -8525,6 +8362,7 @@ export default function App() {
         amount,
         type: "tuition",
         sessionStartDate: realSessionStartDate,
+        totalSessions: getEffectiveSessions(student),
         createdAt: new Date().toISOString(),
       };
       const updatedHistory = [
