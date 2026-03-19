@@ -6062,8 +6062,11 @@ const KioskView = ({ students, onExitKiosk }) => {
           <h1 className="text-2xl font-bold text-center text-slate-800 mt-4 mb-1">
             JnC Music Academy
           </h1>
-          <p className="text-center text-slate-500 mb-6 text-base">
-            보호자 전화번호 뒤 4자리를 입력하세요
+          <p className="text-center text-slate-500 mb-2 text-base font-medium">
+            전화번호 뒤 4자리를 입력하세요
+          </p>
+          <p className="text-center text-slate-400 mb-4 text-sm">
+            학생은 보호자 번호 · 성인은 본인 번호
           </p>
 
           {/* 핀 입력 표시 */}
@@ -6178,10 +6181,7 @@ const KioskView = ({ students, onExitKiosk }) => {
             </button>
           </div>
 
-          <p className="text-center text-slate-400 text-sm mt-4">
-            보호자 전화번호 뒤 4자리로 본인 확인합니다
-          </p>
-          <p className="text-center text-slate-300 text-xs mt-1">
+          <p className="text-center text-slate-300 text-xs mt-4">
             문의: 선생님께 직접 말씀해주세요
           </p>
         </div>
