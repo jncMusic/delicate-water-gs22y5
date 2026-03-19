@@ -6406,7 +6406,7 @@ const StudentView = ({
   };
 
   return (
-    <div className="space-y-4 animate-fade-in pb-24 relative z-0">
+    <div className="space-y-4 animate-fade-in pb-24">
       {/* 상단 컨트롤바 */}
       <div className="flex flex-col gap-4 bg-white p-5 rounded-2xl border shadow-sm sticky top-0 z-30">
         <div className="flex flex-col xl:flex-row justify-between gap-4">
@@ -6538,7 +6538,7 @@ const StudentView = ({
       )}
 
       {/* 테이블 영역 */}
-      <div className="bg-white rounded-2xl border shadow-sm overflow-auto max-h-[70vh] relative">
+      <div className="bg-white rounded-2xl border shadow-sm overflow-auto max-h-[70vh]">
         <table className="w-full text-left border-separate border-spacing-0">
           <thead>
             <tr className="bg-slate-50 text-slate-500 text-[11px] font-bold uppercase tracking-wider">
@@ -7237,12 +7237,13 @@ const StudentManagementModal = ({
                           onClick={() =>
                             setFormData({
                               ...formData,
+                              weeklyFrequency: v,
                               weeklyLessons: v,
                               totalSessions: v === 2 ? 8 : 4,
                             })
                           }
                           className={`flex-1 py-2 rounded-xl text-sm font-bold border transition-all ${
-                            formData.weeklyLessons === v
+                            formData.weeklyFrequency === v
                               ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
                               : "bg-slate-50 border-slate-200 text-slate-400 hover:border-indigo-300"
                           }`}
