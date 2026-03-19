@@ -69,6 +69,7 @@ import {
   Printer, // 🔥 인쇄 아이콘 추가
   Music, // 🔥 파트 아이콘 추가
   ChevronDown,
+  Tablet, // 🔥 키오스크 단말기 아이콘
 } from "lucide-react";
 import html2canvas from "html2canvas"; // 🔥 이미지 저장 라이브러리 추가
 
@@ -5812,6 +5813,377 @@ const StudentModal = ({
   );
 }; // 👈 이 괄호까지 완벽하게 있어야 합니다!
 
+// =================================================================
+// [KioskView] - 학원 입구 셀프 출석 체크인 단말기
+// =================================================================
+const KioskView = ({ students, onExitKiosk }) => {
+  const [step, setStep] = useState("list"); // 'list' | 'verify' | 'success'
+  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [phoneInput, setPhoneInput] = useState("");
+  const [error, setError] = useState("");
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const [searchQuery, setSearchQuery] = useState("");
+  const [exitClickCount, setExitClickCount] = useState(0);
+
+  // 매초 시간 갱신
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // 성공 후 3초 뒤 자동 초기화
+  useEffect(() => {
+    if (step === "success") {
+      const timer = setTimeout(() => {
+        setStep("list");
+        setSelectedStudent(null);
+        setPhoneInput("");
+        setError("");
+        setSearchQuery("");
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [step]);
+
+  const getDayKr = (date) =>
+    ["일", "월", "화", "수", "목", "금", "토"][date.getDay()];
+  const toDateStr = (date) => date.toISOString().split("T")[0];
+
+  const todayDay = getDayKr(currentTime);
+  const todayStr = toDateStr(currentTime);
+
+  // 오늘 수업 대상자 (재원생 & 오늘 스케줄 있는 학생, 수업 시간 순 정렬)
+  const todayStudents = useMemo(() => {
+    return students
+      .filter(
+        (s) =>
+          s.status === "재원" &&
+          s.schedules &&
+          s.schedules[todayDay]
+      )
+      .sort((a, b) =>
+        (a.schedules[todayDay] || "00:00").localeCompare(
+          b.schedules[todayDay] || "00:00"
+        )
+      );
+  }, [students, todayDay]);
+
+  // 이미 출석 처리된 학생 ID 집합
+  const checkedInSet = useMemo(() => {
+    return new Set(
+      todayStudents
+        .filter((s) =>
+          (s.attendanceHistory || []).some(
+            (h) => h.date === todayStr && h.status === "present"
+          )
+        )
+        .map((s) => s.id)
+    );
+  }, [todayStudents, todayStr]);
+
+  // 이름 검색 필터
+  const filteredStudents = useMemo(() => {
+    if (!searchQuery.trim()) return todayStudents;
+    return todayStudents.filter((s) => s.name.includes(searchQuery.trim()));
+  }, [todayStudents, searchQuery]);
+
+  const handleSelectStudent = (student) => {
+    setSelectedStudent(student);
+    setPhoneInput("");
+    setError("");
+    setStep("verify");
+  };
+
+  const handleKeypad = (val) => {
+    if (phoneInput.length < 4) setPhoneInput((prev) => prev + val);
+  };
+
+  const handleKeypadDelete = () => {
+    setPhoneInput((prev) => prev.slice(0, -1));
+  };
+
+  // 출석 체크 처리 (Firestore 저장)
+  const handleCheckIn = async () => {
+    const phone = (selectedStudent.phone || "").replace(/[^0-9]/g, "");
+    const last4 = phone.slice(-4);
+    if (phoneInput !== last4) {
+      setError("전화번호 뒤 4자리가 맞지 않습니다. 다시 입력해주세요.");
+      setPhoneInput("");
+      return;
+    }
+
+    try {
+      const studentRef = doc(
+        db,
+        "artifacts",
+        APP_ID,
+        "public",
+        "data",
+        "students",
+        selectedStudent.id
+      );
+      let history = [...(selectedStudent.attendanceHistory || [])];
+      const existingIdx = history.findIndex((h) => h.date === todayStr);
+      const record = {
+        date: todayStr,
+        status: "present",
+        count: 1,
+        timestamp: new Date().toISOString(),
+        checkedInByKiosk: true,
+      };
+      if (existingIdx > -1) history[existingIdx] = record;
+      else history.push(record);
+
+      // 횟수 재계산 (AttendanceView 동일 로직)
+      const lastPay = selectedStudent.lastPaymentDate || "0000-00-00";
+      const sessionsCount = history.reduce((sum, h) => {
+        if (h.date < lastPay) return sum;
+        if (h.status === "present") return sum + (h.count || 1);
+        if (h.status === "canceled" && h.subType !== "질병") return sum + 1;
+        return sum;
+      }, 0);
+
+      await updateDoc(studentRef, {
+        attendanceHistory: history,
+        sessionsCompleted: sessionsCount,
+      });
+
+      setStep("success");
+    } catch (e) {
+      console.error(e);
+      setError("저장 중 오류가 발생했습니다. 선생님께 문의해주세요.");
+    }
+  };
+
+  // 시간 표시 5회 클릭 → 관리자 모드 복귀
+  const handleTimeClick = () => {
+    const next = exitClickCount + 1;
+    setExitClickCount(next);
+    if (next >= 5) {
+      setExitClickCount(0);
+      onExitKiosk();
+    }
+  };
+
+  const timeStr = currentTime.toLocaleTimeString("ko-KR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  const dateDisplayStr = currentTime.toLocaleDateString("ko-KR", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    weekday: "long",
+  });
+
+  // ── 성공 화면 ──
+  if (step === "success") {
+    return (
+      <div className="fixed inset-0 bg-emerald-500 flex flex-col items-center justify-center z-50">
+        <div className="text-white text-center">
+          <div className="text-9xl font-bold mb-6 animate-bounce">✓</div>
+          <div className="text-5xl font-bold mb-4">{selectedStudent.name} 님</div>
+          <div className="text-3xl opacity-90 mb-3">출석이 완료되었습니다!</div>
+          <div className="text-xl opacity-70">잠시 후 자동으로 돌아갑니다...</div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── 전화번호 인증 화면 ──
+  if (step === "verify") {
+    return (
+      <div className="fixed inset-0 bg-gradient-to-br from-slate-100 to-indigo-100 flex flex-col items-center justify-center p-6 z-50">
+        <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-sm">
+          <button
+            onClick={() => {
+              setStep("list");
+              setError("");
+              setPhoneInput("");
+            }}
+            className="mb-6 flex items-center gap-1 text-slate-500 hover:text-slate-700 transition-colors text-lg"
+          >
+            <ChevronLeft size={22} /> 목록으로
+          </button>
+
+          <div className="text-center mb-6">
+            <div className="w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-3">
+              <span className="text-3xl font-bold text-indigo-600">
+                {selectedStudent.name[0]}
+              </span>
+            </div>
+            <h2 className="text-3xl font-bold text-slate-800">
+              {selectedStudent.name}
+            </h2>
+            <p className="text-slate-500 mt-1 text-lg">
+              {selectedStudent.schedules[todayDay]} 수업
+            </p>
+          </div>
+
+          <p className="text-center text-slate-600 text-xl mb-5 font-medium">
+            전화번호 뒤{" "}
+            <span className="text-indigo-600 font-bold">4자리</span> 입력
+          </p>
+
+          {/* 핀 입력 표시 */}
+          <div className="flex justify-center gap-3 mb-3">
+            {[0, 1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className={`w-14 h-14 rounded-xl border-2 flex items-center justify-center text-2xl font-bold transition-all ${
+                  phoneInput.length > i
+                    ? "border-indigo-500 bg-indigo-50 text-indigo-700"
+                    : "border-slate-200 bg-slate-50"
+                }`}
+              >
+                {phoneInput.length > i ? "●" : ""}
+              </div>
+            ))}
+          </div>
+
+          {error && (
+            <p className="text-center text-red-500 mb-3 font-medium text-sm">
+              {error}
+            </p>
+          )}
+
+          {/* 숫자 키패드 */}
+          <div className="grid grid-cols-3 gap-2 mb-4">
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
+              <button
+                key={n}
+                onClick={() => handleKeypad(String(n))}
+                className="w-full py-4 bg-white border-2 border-slate-200 rounded-2xl text-2xl font-bold text-slate-700 hover:bg-indigo-50 hover:border-indigo-300 active:bg-indigo-100 transition-all shadow-sm"
+              >
+                {n}
+              </button>
+            ))}
+            <div />
+            <button
+              onClick={() => handleKeypad("0")}
+              className="w-full py-4 bg-white border-2 border-slate-200 rounded-2xl text-2xl font-bold text-slate-700 hover:bg-indigo-50 hover:border-indigo-300 active:bg-indigo-100 transition-all shadow-sm"
+            >
+              0
+            </button>
+            <button
+              onClick={handleKeypadDelete}
+              className="w-full py-4 bg-slate-100 border-2 border-slate-200 rounded-2xl text-xl font-bold text-slate-600 hover:bg-slate-200 active:bg-slate-300 transition-all"
+            >
+              ←
+            </button>
+          </div>
+
+          <button
+            onClick={handleCheckIn}
+            disabled={phoneInput.length < 4}
+            className="w-full py-4 bg-indigo-600 text-white text-xl font-bold rounded-2xl disabled:opacity-40 disabled:cursor-not-allowed hover:bg-indigo-700 active:bg-indigo-800 transition-all shadow-lg"
+          >
+            출석 체크
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── 메인: 학생 목록 화면 ──
+  return (
+    <div className="fixed inset-0 bg-gradient-to-br from-slate-50 to-indigo-50 flex flex-col z-50">
+      {/* 상단 시간 표시 (5회 클릭 → 관리자 복귀) */}
+      <div className="bg-indigo-700 text-white text-center py-5 shadow-lg shrink-0">
+        <button
+          onClick={handleTimeClick}
+          className="text-5xl font-bold tracking-widest mb-1 w-full focus:outline-none select-none"
+        >
+          {timeStr}
+        </button>
+        <div className="text-base opacity-75">{dateDisplayStr}</div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-5">
+        <div className="max-w-2xl mx-auto">
+          <h1 className="text-3xl font-bold text-center text-slate-800 mt-2 mb-1">
+            JnC Music Academy
+          </h1>
+          <p className="text-center text-slate-500 mb-5 text-lg">
+            본인 이름을 선택하세요
+          </p>
+
+          {/* 이름 검색 */}
+          <div className="relative mb-5">
+            <Search
+              className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+              size={22}
+            />
+            <input
+              type="text"
+              placeholder="이름 검색..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-12 pr-4 py-4 text-xl rounded-2xl border-2 border-slate-200 bg-white shadow-sm focus:outline-none focus:border-indigo-400"
+            />
+          </div>
+
+          {/* 학생 카드 그리드 */}
+          {filteredStudents.length === 0 ? (
+            <div className="text-center text-slate-400 text-xl py-20">
+              {searchQuery.trim()
+                ? "검색 결과가 없습니다."
+                : "오늘 수업 일정이 없습니다."}
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+              {filteredStudents.map((student) => {
+                const isCheckedIn = checkedInSet.has(student.id);
+                return (
+                  <button
+                    key={student.id}
+                    onClick={() =>
+                      !isCheckedIn && handleSelectStudent(student)
+                    }
+                    disabled={isCheckedIn}
+                    className={`relative p-4 rounded-2xl border-2 text-center shadow-sm transition-all ${
+                      isCheckedIn
+                        ? "bg-emerald-50 border-emerald-200 cursor-not-allowed opacity-60"
+                        : "bg-white border-slate-200 hover:border-indigo-400 hover:shadow-md active:scale-95"
+                    }`}
+                  >
+                    {isCheckedIn && (
+                      <div className="absolute top-2 right-2 w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center text-white text-xs font-bold">
+                        ✓
+                      </div>
+                    )}
+                    <div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-2">
+                      <span className="text-lg font-bold text-indigo-600">
+                        {student.name[0]}
+                      </span>
+                    </div>
+                    <div className="font-bold text-base text-slate-800 truncate">
+                      {student.name}
+                    </div>
+                    <div className="text-xs text-slate-500 mt-0.5">
+                      {student.schedules[todayDay]}
+                    </div>
+                    {isCheckedIn && (
+                      <div className="text-xs text-emerald-600 font-medium mt-0.5">
+                        출석 완료
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          <p className="text-center text-slate-300 text-sm mt-10">
+            문의: 선생님께 직접 말씀해주세요
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // [AttendanceView] - 1:1 레슨 맞춤형 (지각 삭제, 결석 사유, 당일취소 유형화 + 강사필터링 유지)
 const AttendanceView = ({ students, showToast, user, teachers }) => {
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -8585,6 +8957,14 @@ export default function App() {
   // ▲▲▲▲▲ [여기까지] return ( 바로 위에 있어야 합니다 ▲▲▲▲▲
   return (
     <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
+      {/* 키오스크 모드: 전체화면 오버레이 */}
+      {activeTab === "kiosk" && (
+        <KioskView
+          students={students}
+          onExitKiosk={() => setActiveTab("dashboard")}
+        />
+      )}
+
       {/* 1. 알림 메시지 */}
       {message && (
         <div
@@ -8701,6 +9081,15 @@ export default function App() {
             active={activeTab === "attendance"}
             onClick={() => {
               setActiveTab("attendance");
+              setIsSidebarOpen(false);
+            }}
+          />
+          <SidebarItem
+            icon={Tablet}
+            label="출석 단말기"
+            active={activeTab === "kiosk"}
+            onClick={() => {
+              setActiveTab("kiosk");
               setIsSidebarOpen(false);
             }}
           />
