@@ -6540,7 +6540,7 @@ const StudentView = ({
       {/* 테이블 영역 */}
       <div className="bg-white rounded-2xl border shadow-sm overflow-auto max-h-[70vh] relative">
         <table className="w-full text-left border-separate border-spacing-0">
-          <thead className="sticky top-0 z-20">
+          <thead>
             <tr className="bg-slate-50 text-slate-500 text-[11px] font-bold uppercase tracking-wider">
               <th className="p-4 w-60 sticky left-0 top-0 bg-slate-100 z-20 border-b border-r border-slate-200 shadow-sm">
                 원생 / 강사 정보
@@ -6734,7 +6734,7 @@ const StudentView = ({
 };
 
 // ==================================================================================
-// [2] StudentManagementModal: 통합 관리 (보안 강화: 강사는 수납 탭/수강료 정보 숨김)
+/// [2] StudentManagementModal: 통합 관리 (보안 강화: 강사는 수납 탭/수강료 정보 숨김)
 // ==================================================================================
 const StudentManagementModal = ({
   isOpen,
@@ -7036,7 +7036,7 @@ const StudentManagementModal = ({
               {formData.fromConsultationId && !student?.id
                 ? "💬 상담 정보로 등록"
                 : student?.id
-                ? "👤 원생 정보 수정"
+                ? `👤 ${student.name} 정보 수정`
                 : "✨ 신규 원생 등록"}
             </h3>
             <p className="text-xs text-slate-500 mt-1">
