@@ -5824,6 +5824,7 @@ const KioskView = ({ students, onExitKiosk }) => {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [searchQuery, setSearchQuery] = useState("");
   const [exitClickCount, setExitClickCount] = useState(0);
+  const [confetti, setConfetti] = useState([]);
 
   // 매초 시간 갱신
   useEffect(() => {
@@ -5831,16 +5832,57 @@ const KioskView = ({ students, onExitKiosk }) => {
     return () => clearInterval(timer);
   }, []);
 
+  // 기분 좋은 도-미-솔 체임 사운드 재생 (Web Audio API)
+  const playSuccessSound = useCallback(() => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      // 도(C5)-미(E5)-솔(G5)-도(C6) 4음 순차 재생
+      const notes = [523.25, 659.25, 783.99, 1046.5];
+      notes.forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = "sine";
+        osc.frequency.value = freq;
+        const start = ctx.currentTime + i * 0.17;
+        gain.gain.setValueAtTime(0, start);
+        gain.gain.linearRampToValueAtTime(0.35, start + 0.04);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.45);
+        osc.start(start);
+        osc.stop(start + 0.5);
+      });
+    } catch (e) {
+      // 브라우저 정책으로 재생 불가 시 무시
+    }
+  }, []);
+
   // 성공 후 3초 뒤 자동 초기화
   useEffect(() => {
     if (step === "success") {
+      // 사운드 재생 + 컨페티 생성
+      playSuccessSound();
+      const colors = ["#6366f1","#f59e0b","#10b981","#ef4444","#3b82f6","#ec4899","#f97316"];
+      const shapes = ["●","★","♪","♫","✦","▲","◆"];
+      setConfetti(
+        Array.from({ length: 40 }, (_, idx) => ({
+          id: idx,
+          left: Math.random() * 100,
+          color: colors[idx % colors.length],
+          shape: shapes[idx % shapes.length],
+          duration: 2.2 + Math.random() * 1.5,
+          delay: Math.random() * 0.8,
+          size: 14 + Math.random() * 18,
+        }))
+      );
       const timer = setTimeout(() => {
         setStep("list");
         setSelectedStudent(null);
         setPhoneInput("");
         setError("");
         setSearchQuery("");
-      }, 3000);
+        setConfetti([]);
+      }, 3500);
       return () => clearTimeout(timer);
     }
   }, [step]);
@@ -5980,12 +6022,72 @@ const KioskView = ({ students, onExitKiosk }) => {
   // ── 성공 화면 ──
   if (step === "success") {
     return (
-      <div className="fixed inset-0 bg-emerald-500 flex flex-col items-center justify-center z-50">
-        <div className="text-white text-center">
-          <div className="text-9xl font-bold mb-6 animate-bounce">✓</div>
-          <div className="text-5xl font-bold mb-4">{selectedStudent.name} 님</div>
-          <div className="text-3xl opacity-90 mb-3">출석이 완료되었습니다!</div>
-          <div className="text-xl opacity-70">잠시 후 자동으로 돌아갑니다...</div>
+      <div className="fixed inset-0 bg-gradient-to-b from-emerald-400 to-emerald-600 flex flex-col items-center justify-center z-50 overflow-hidden">
+        {/* CSS 키프레임 정의 */}
+        <style>{`
+          @keyframes confetti-fall {
+            0%   { transform: translateY(-30px) rotate(0deg);   opacity: 1; }
+            80%  { opacity: 1; }
+            100% { transform: translateY(105vh) rotate(900deg); opacity: 0; }
+          }
+          @keyframes pop-in {
+            0%   { transform: scale(0) rotate(-15deg); opacity: 0; }
+            60%  { transform: scale(1.2) rotate(5deg);  opacity: 1; }
+            100% { transform: scale(1)   rotate(0deg);  opacity: 1; }
+          }
+          @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(255,255,255,0.5); }
+            50%       { box-shadow: 0 0 0 24px rgba(255,255,255,0); }
+          }
+        `}</style>
+
+        {/* 컨페티 파티클 */}
+        {confetti.map((p) => (
+          <div
+            key={p.id}
+            style={{
+              position: "absolute",
+              left: `${p.left}%`,
+              top: "-30px",
+              fontSize: `${p.size}px`,
+              color: p.color,
+              animation: `confetti-fall ${p.duration}s ${p.delay}s ease-in forwards`,
+              pointerEvents: "none",
+              userSelect: "none",
+            }}
+          >
+            {p.shape}
+          </div>
+        ))}
+
+        {/* 메인 콘텐츠 */}
+        <div className="text-white text-center relative z-10">
+          {/* 체크 아이콘 원형 */}
+          <div
+            className="w-36 h-36 bg-white rounded-full flex items-center justify-center mx-auto mb-8"
+            style={{ animation: "pop-in 0.5s cubic-bezier(0.34,1.56,0.64,1) both, pulse-glow 1.5s 0.5s ease-in-out infinite" }}
+          >
+            <span style={{ fontSize: "72px", lineHeight: 1 }}>✓</span>
+          </div>
+
+          <div
+            className="text-5xl font-bold mb-3"
+            style={{ animation: "pop-in 0.45s 0.15s both" }}
+          >
+            {selectedStudent.name} 님
+          </div>
+          <div
+            className="text-3xl font-semibold opacity-95 mb-2"
+            style={{ animation: "pop-in 0.45s 0.28s both" }}
+          >
+            출석이 완료되었습니다! 🎵
+          </div>
+          <div
+            className="text-lg opacity-70 mt-4"
+            style={{ animation: "pop-in 0.45s 0.4s both" }}
+          >
+            잠시 후 자동으로 돌아갑니다...
+          </div>
         </div>
       </div>
     );
