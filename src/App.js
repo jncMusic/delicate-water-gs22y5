@@ -6063,7 +6063,7 @@ const KioskView = ({ students, onExitKiosk }) => {
             JnC Music Academy
           </h1>
           <p className="text-center text-slate-500 mb-6 text-base">
-            전화번호 뒤 4자리를 입력하세요
+            보호자 전화번호 뒤 4자리를 입력하세요
           </p>
 
           {/* 핀 입력 표시 */}
@@ -6178,7 +6178,10 @@ const KioskView = ({ students, onExitKiosk }) => {
             </button>
           </div>
 
-          <p className="text-center text-slate-300 text-xs mt-6">
+          <p className="text-center text-slate-400 text-sm mt-4">
+            보호자 전화번호 뒤 4자리로 본인 확인합니다
+          </p>
+          <p className="text-center text-slate-300 text-xs mt-1">
             문의: 선생님께 직접 말씀해주세요
           </p>
         </div>
