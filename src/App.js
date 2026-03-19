@@ -6057,7 +6057,7 @@ const KioskView = ({ students, onExitKiosk }) => {
         <div className="text-base opacity-75">{dateDisplayStr}</div>
       </div>
 
-      <div className="flex-1 overflow-y-auto flex items-start justify-center p-5">
+      <div className="flex-1 overflow-y-auto flex items-center justify-center p-5">
         <div className="w-full max-w-sm">
           <h1 className="text-2xl font-bold text-center text-slate-800 mt-4 mb-1">
             JnC Music Academy
