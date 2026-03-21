@@ -8260,7 +8260,17 @@ const PaymentView = ({
         <table className="w-full text-left min-w-[640px]">
           <thead className="sticky top-0 bg-slate-50 border-b">
             <tr className="text-slate-500 text-xs uppercase">
-              {notifMode && <th className="py-3 px-3 w-8"></th>}
+              {notifMode && (
+                <th className="py-3 px-3 w-8">
+                  <input
+                    type="checkbox"
+                    checked={list.length > 0 && selectedIds.length === list.length}
+                    onChange={() => setSelectedIds(selectedIds.length === list.length ? [] : list.map((s) => s.id))}
+                    className="w-4 h-4 rounded accent-indigo-600"
+                    title="전체 선택"
+                  />
+                </th>
+              )}
               <th className="py-3 px-4">이름/과목</th>
               <th className="py-3 px-4">강사</th>
               <th className="py-3 px-4">원비</th>
