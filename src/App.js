@@ -8246,6 +8246,13 @@ const PaymentView = ({
               미납/만료 <span className="font-bold text-rose-600">{list.length}명</span> 중{" "}
               <span className="font-bold text-indigo-700">{selectedIds.length}명</span> 선택
             </span>
+            <span className="text-sm text-slate-400">|</span>
+            <span className="text-sm text-slate-500">
+              총 미납금액{" "}
+              <span className="font-bold text-rose-600">
+                {list.reduce((sum, s) => sum + (Number(s.tuitionFee) || 0), 0).toLocaleString()}원
+              </span>
+            </span>
           </div>
           <button
             onClick={() => { if (selectedIds.length > 0) setShowBulkModal(true); else showToast("학생을 선택해주세요.", "error"); }}
