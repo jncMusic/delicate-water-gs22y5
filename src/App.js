@@ -1468,12 +1468,183 @@ const PaymentDetailModal = ({
   );
 };
 
+// =================================================================
+// [수납 관리 모달] 대시보드에서 수강권 만료/미납자 확인
+// =================================================================
+const PaymentManagementModal = ({ students, messageLogs, onClose, user, onNavigate }) => {
+  const [activeTab, setActiveTab] = useState("expired");
+
+  const { expiredStudents, overdueStudents } = useMemo(() => {
+    const filtered =
+      user.role === "teacher"
+        ? students.filter((s) => s.teacher === user.name && s.status === "재원")
+        : students.filter((s) => s.status === "재원");
+    const expired = [];
+    const overdue = [];
+    for (const s of filtered) {
+      const attended = (s.attendanceHistory || [])
+        .filter((h) => h.status === "present")
+        .reduce((sum, h) => sum + (h.count || 1), 0);
+      const sessionUnit = getEffectiveSessions(s);
+      const capacity = (s.paymentHistory || []).reduce(
+        (sum, p) => sum + (p.totalSessions || sessionUnit),
+        0
+      );
+      const remaining = capacity - attended;
+      if (remaining < 0) overdue.push(s);
+      else if (remaining === 0 && capacity > 0) expired.push(s);
+    }
+    return { expiredStudents: expired, overdueStudents: overdue };
+  }, [students, user]);
+
+  const today = new Date().toISOString().slice(0, 10);
+  const sentToday = new Set(
+    messageLogs.filter((l) => l.sentAt === today).map((l) => l.studentId)
+  );
+  const lastSentMap = useMemo(() => {
+    const map = {};
+    for (const l of messageLogs) {
+      if (!map[l.studentId] || l.sentAt > map[l.studentId]) {
+        map[l.studentId] = l.sentAt;
+      }
+    }
+    return map;
+  }, [messageLogs]);
+
+  const listToShow = activeTab === "expired" ? expiredStudents : overdueStudents;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[80vh] flex flex-col">
+        {/* 헤더 */}
+        <div className="flex justify-between items-center px-6 py-5 border-b">
+          <h2 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+            <CreditCard size={20} className="text-indigo-500" /> 수납 관리
+          </h2>
+          <button
+            onClick={onClose}
+            className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* 탭 */}
+        <div className="flex border-b">
+          <button
+            onClick={() => setActiveTab("expired")}
+            className={`flex-1 py-3 text-sm font-bold transition-colors ${
+              activeTab === "expired"
+                ? "border-b-2 border-indigo-500 text-indigo-600"
+                : "text-slate-400 hover:text-slate-600"
+            }`}
+          >
+            수강권 만료
+            <span
+              className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${
+                activeTab === "expired"
+                  ? "bg-indigo-100 text-indigo-600"
+                  : "bg-slate-100 text-slate-500"
+              }`}
+            >
+              {expiredStudents.length}
+            </span>
+          </button>
+          <button
+            onClick={() => setActiveTab("overdue")}
+            className={`flex-1 py-3 text-sm font-bold transition-colors ${
+              activeTab === "overdue"
+                ? "border-b-2 border-rose-500 text-rose-600"
+                : "text-slate-400 hover:text-slate-600"
+            }`}
+          >
+            미납자 (수강권 초과)
+            <span
+              className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${
+                activeTab === "overdue"
+                  ? "bg-rose-100 text-rose-600"
+                  : "bg-slate-100 text-slate-500"
+              }`}
+            >
+              {overdueStudents.length}
+            </span>
+          </button>
+        </div>
+
+        {/* 목록 */}
+        <div className="overflow-y-auto flex-1 p-4 space-y-2">
+          {listToShow.length === 0 ? (
+            <div className="py-12 text-center text-slate-400 text-sm">
+              해당 학생이 없습니다
+            </div>
+          ) : (
+            listToShow.map((s) => {
+              const isSentToday = sentToday.has(s.id);
+              const lastSent = lastSentMap[s.id];
+              return (
+                <div
+                  key={s.id}
+                  className="flex items-center justify-between px-4 py-3 rounded-xl border border-slate-100 bg-slate-50/60 hover:bg-white hover:border-indigo-200 transition-all"
+                >
+                  <div className="flex flex-col">
+                    <span className="font-bold text-slate-800 text-sm">
+                      {s.name}
+                    </span>
+                    <span className="text-xs text-slate-400 mt-0.5">
+                      {s.teacher || "-"} · {s.subject || "과목 미정"}
+                    </span>
+                  </div>
+                  <div>
+                    {isSentToday ? (
+                      <span className="text-[10px] bg-emerald-50 text-emerald-600 border border-emerald-200 px-2 py-1 rounded-full font-bold">
+                        오늘 발송
+                      </span>
+                    ) : lastSent ? (
+                      <span className="text-[10px] bg-slate-100 text-slate-500 border border-slate-200 px-2 py-1 rounded-full">
+                        {lastSent} 발송
+                      </span>
+                    ) : (
+                      <span className="text-[10px] bg-rose-50 text-rose-500 border border-rose-200 px-2 py-1 rounded-full font-bold">
+                        미발송
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* 푸터 */}
+        <div className="p-4 border-t flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm text-slate-500 hover:bg-slate-100 rounded-lg font-bold"
+          >
+            닫기
+          </button>
+          <button
+            onClick={() => {
+              onClose();
+              onNavigate(user.role === "admin" ? "payments" : "students");
+            }}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700"
+          >
+            수납 관리 바로가기
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // [DashboardView] - 상담 통계 카드 숨김 처리 (강사 권한 분리)
 const DashboardView = ({
   students,
   consultations,
   reports,
   user,
+  messageLogs,
   onNavigateToConsultation,
   onNavigate,
 }) => {
@@ -1483,6 +1654,8 @@ const DashboardView = ({
       ? students.filter((s) => s.teacher === user.name && s.status === "재원")
       : students.filter((s) => s.status === "재원");
   }, [students, user]);
+
+  const [showPaymentMgmt, setShowPaymentMgmt] = useState(false);
 
   // 2. 수납 상태 계산
   const isPaymentDue = (s) => {
@@ -1643,13 +1816,11 @@ const DashboardView = ({
 
         <StatCard
           icon={AlertCircle}
-          label="수강권 만료 (재결제)"
+          label="수납 관리"
           value={`${stats.paymentDueCount}명`}
-          trend="확인 필요"
+          trend="만료·미납 확인"
           trendUp={false}
-          onClick={() =>
-            onNavigate(user.role === "admin" ? "payments" : "students")
-          }
+          onClick={() => setShowPaymentMgmt(true)}
         />
 
         {/* [수정] 대기 중인 상담 카드는 '관리자(admin)'에게만 표시 */}
@@ -1690,91 +1861,85 @@ const DashboardView = ({
         />
       </div>
 
-      {/* 4. 관리자 전용: 상담 대기 목록 */}
+      {/* 4. 관리자 전용: 상담 대기 목록 (컴팩트) */}
       {user.role === "admin" && (
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="font-bold text-slate-800 flex items-center text-lg">
-              <ListTodo className="mr-2 text-indigo-600" size={22} /> 진행 중인
-              상담
+        <div className="bg-white px-5 py-4 rounded-2xl shadow-sm border border-slate-100">
+          <div className="flex justify-between items-center mb-3">
+            <h3 className="font-bold text-slate-700 flex items-center text-sm">
+              <ListTodo className="mr-1.5 text-indigo-500" size={16} /> 진행 중인 상담
+              <span className="ml-2 text-xs bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded-full font-bold">
+                {stats.pendingConsults.length}건
+              </span>
             </h3>
             <button
               onClick={() => onNavigate("consultations")}
-              className="text-sm font-bold text-indigo-600 hover:bg-indigo-50 px-3 py-1.5 rounded-lg transition-colors"
+              className="text-xs font-bold text-indigo-500 hover:bg-indigo-50 px-2.5 py-1 rounded-lg transition-colors"
             >
               전체 보기
             </button>
           </div>
 
           {stats.pendingConsults.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {stats.pendingConsults.map((consult) => (
-                <div
-                  key={consult.id}
-                  onClick={() =>
-                    onNavigateToConsultation &&
-                    onNavigateToConsultation(consult)
-                  }
-                  className="border border-slate-100 rounded-xl p-5 bg-slate-50/50 hover:bg-white hover:shadow-md hover:border-indigo-200 transition-all cursor-pointer group"
-                >
-                  <div className="flex justify-between items-start mb-3">
-                    <div>
-                      <span className="font-bold text-slate-800 block text-base group-hover:text-indigo-600 transition-colors">
+            <div className="divide-y divide-slate-50">
+              {stats.pendingConsults.slice(0, 5).map((consult) => {
+                const colorMap = {
+                  purple: "bg-purple-50 text-purple-600 border-purple-100",
+                  green: "bg-green-50 text-green-600 border-green-100",
+                  blue: "bg-blue-50 text-blue-600 border-blue-100",
+                };
+                return (
+                  <div
+                    key={consult.id}
+                    onClick={() =>
+                      onNavigateToConsultation &&
+                      onNavigateToConsultation(consult)
+                    }
+                    className="flex items-center gap-3 py-2.5 hover:bg-slate-50 cursor-pointer rounded-lg px-1 -mx-1 transition-colors group"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <span className="font-bold text-slate-800 text-sm group-hover:text-indigo-600 transition-colors">
                         {consult.name}
                       </span>
-                      <span className="text-xs text-slate-500">
-                        {consult.phone}
+                      <span className="text-xs text-slate-400 ml-2">
+                        {consult.subject || "과목 미정"}
                       </span>
                     </div>
-                    <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full font-bold">
-                      {consult.date}
-                    </span>
-                  </div>
-                  <div className="text-sm text-slate-600 mb-3 font-medium line-clamp-1">
-                    {consult.subject || "과목 미정"}
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {consult.followUpActions?.length > 0 ? (
-                      consult.followUpActions.map((actionId) => {
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {consult.followUpActions?.slice(0, 2).map((actionId) => {
                         const opt = FOLLOW_UP_OPTIONS.find(
                           (o) => o.id === actionId
-                        ) || { label: "알 수 없음", color: "blue" };
-                        const colorMap = {
-                          purple:
-                            "bg-purple-50 text-purple-600 border-purple-100",
-                          green: "bg-green-50 text-green-600 border-green-100",
-                          blue: "bg-blue-50 text-blue-600 border-blue-100",
-                        };
+                        ) || { label: "?", color: "blue" };
                         return (
                           <span
                             key={actionId}
-                            className={`text-[10px] px-2 py-0.5 rounded-md border ${
+                            className={`text-[10px] px-1.5 py-0.5 rounded border hidden md:inline ${
                               colorMap[opt.color] || colorMap.blue
                             }`}
                           >
                             {opt.label}
                           </span>
                         );
-                      })
-                    ) : (
-                      <span className="text-xs text-slate-400">
-                        후속 조치 없음
+                      })}
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        {consult.date}
                       </span>
-                    )}
+                    </div>
                   </div>
+                );
+              })}
+              {stats.pendingConsults.length > 5 && (
+                <div
+                  className="text-xs text-slate-400 text-center pt-2 cursor-pointer hover:text-indigo-500"
+                  onClick={() => onNavigate("consultations")}
+                >
+                  +{stats.pendingConsults.length - 5}건 더 보기
                 </div>
-              ))}
+              )}
             </div>
           ) : (
-            <div className="py-12 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200">
-              <MessageSquareText
-                size={40}
-                className="mx-auto text-slate-300 mb-2"
-              />
-              <p className="text-slate-400 text-sm">
-                현재 대기 중인 상담이 없습니다.
-              </p>
-            </div>
+            <p className="text-xs text-slate-400 py-2 text-center">
+              현재 대기 중인 상담이 없습니다.
+            </p>
           )}
         </div>
       )}
@@ -1851,6 +2016,17 @@ const DashboardView = ({
             </p>
           </div>
         </div>
+      )}
+
+      {/* 수납 관리 모달 */}
+      {showPaymentMgmt && (
+        <PaymentManagementModal
+          students={students}
+          messageLogs={messageLogs}
+          onClose={() => setShowPaymentMgmt(false)}
+          user={user}
+          onNavigate={onNavigate}
+        />
       )}
     </div>
   );
@@ -9343,6 +9519,7 @@ export default function App() {
               consultations={consultations}
               reports={reports}
               user={currentUser}
+              messageLogs={messageLogs}
               onNavigateToConsultation={(consult) => {
                 setTargetConsultation(consult);
                 setActiveTab("consultations");
