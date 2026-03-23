@@ -4061,13 +4061,18 @@ const SettingsView = ({ teachers, students, showToast, seedData, adminPassword, 
         .slice()
         .sort((a, b) => (a.teacher || "").localeCompare(b.teacher || ""))
         .forEach((s, idx) => {
+          const sortedPay = [...(s.paymentHistory || [])].sort((a, b) =>
+            a.date.localeCompare(b.date)
+          );
+          const lastPayDate =
+            sortedPay.length > 0 ? sortedPay[sortedPay.length - 1].date : "";
           rows.push([
             s.name || "",
             s.teacher || "",
             idx + 1,
             s.totalSessions || "",
             s.tuitionFee || 0,
-            s.lastPaymentDate || "",
+            lastPayDate,
             s.status || "재원",
           ]);
         });
