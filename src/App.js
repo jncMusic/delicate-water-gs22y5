@@ -1055,18 +1055,34 @@ const PaymentDetailModal = ({
       a.date.localeCompare(b.date)
     );
 
-    let cumIndex = 0;
-    const rows = sortedPayments.map((payment) => {
+    // 연강(count=2) 포함 실제 총 출석 횟수 (잔여/미납 계산용)
+    const totalAttendedSessions = allAttendance.reduce(
+      (sum, h) => sum + (h.count || 1),
+      0
+    );
+
+    // entry 인덱스 추적: 연강 1 entry = 2 세션으로 누산
+    let entryIdx = 0;
+    let lastPayStartEntryIdx = 0;
+
+    const rows = sortedPayments.map((payment, i) => {
       const payUnit = payment.totalSessions || SESSION_UNIT;
-      const startIndex = cumIndex;
-      const endIndex = startIndex + payUnit;
-      const matchedSessions = allAttendance.slice(startIndex, endIndex);
-      cumIndex = endIndex;
+      const startEntryIdx = entryIdx;
+      if (i === sortedPayments.length - 1) lastPayStartEntryIdx = startEntryIdx;
+
+      // payUnit 세션이 채워질 때까지 entry 수집 (연강은 2 세션으로 계산)
+      let collected = 0;
+      while (entryIdx < allAttendance.length && collected < payUnit) {
+        collected += allAttendance[entryIdx].count || 1;
+        entryIdx++;
+      }
+
+      const matchedSessions = allAttendance.slice(startEntryIdx, entryIdx);
 
       return {
         payment: payment,
         sessions: matchedSessions,
-        isFull: matchedSessions.length === payUnit,
+        isFull: collected >= payUnit,
         payUnit: payUnit,
       };
     });
@@ -1075,21 +1091,15 @@ const PaymentDetailModal = ({
       (sum, p) => sum + (p.totalSessions || SESSION_UNIT),
       0
     );
-    const totalAttended = allAttendance.length;
-    const balance = totalPaidSessions - totalAttended;
-    const lastPayUnit =
-      sortedPayments.length > 0
-        ? sortedPayments[sortedPayments.length - 1].totalSessions || SESSION_UNIT
-        : SESSION_UNIT;
-    const lastPaidIndex = Math.max(0, totalPaidSessions - lastPayUnit);
-    const currentActiveSessions = allAttendance.slice(lastPaidIndex);
+    const balance = totalPaidSessions - totalAttendedSessions;
+    const currentActiveSessions = allAttendance.slice(lastPayStartEntryIdx);
 
     return {
       historyRows: rows.reverse(),
-      nextSessionStartIndex: totalPaidSessions,
+      nextSessionStartIndex: entryIdx, // 다음 결제 사이클 시작 entry 인덱스
       currentStatus: {
         balance: balance,
-        totalAttended: totalAttended,
+        totalAttended: allAttendance.length, // globalIdx 계산용 entry 개수
         activeSessions: currentActiveSessions,
       },
     };
