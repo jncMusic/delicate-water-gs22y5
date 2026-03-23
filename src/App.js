@@ -1373,20 +1373,30 @@ const PaymentDetailModal = ({
                         <td className="px-4 py-3 align-top">
                           {row.sessions.length > 0 ? (
                             <div className="flex flex-wrap gap-1">
-                              {row.sessions.map((c, i) => (
-                                <span
-                                  key={i}
-                                  className="inline-block border bg-indigo-50 text-indigo-700 border-indigo-100 px-1.5 py-0.5 rounded text-xs font-mono"
-                                >
-                                  {c.date.slice(2)}
-                                </span>
-                              ))}
-                              {row.sessions.length < row.payUnit &&
-                                index === 0 && (
-                                  <span className="text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 ml-1">
-                                    +{row.payUnit - row.sessions.length}회 잔여
+                              {row.sessions.flatMap((c, i) =>
+                                Array.from({ length: c.count || 1 }, (_, k) => (
+                                  <span
+                                    key={`${i}-${k}`}
+                                    className={`inline-block border px-1.5 py-0.5 rounded text-xs font-mono ${
+                                      (c.count || 1) >= 2
+                                        ? "bg-violet-50 text-violet-700 border-violet-200"
+                                        : "bg-indigo-50 text-indigo-700 border-indigo-100"
+                                    }`}
+                                  >
+                                    {c.date.slice(2)}{(c.count || 1) >= 2 ? " ✦" : ""}
                                   </span>
-                                )}
+                                ))
+                              )}
+                              {(() => {
+                                const usedSessions = row.sessions.reduce(
+                                  (sum, c) => sum + (c.count || 1), 0
+                                );
+                                return usedSessions < row.payUnit && index === 0 ? (
+                                  <span className="text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 ml-1">
+                                    +{row.payUnit - usedSessions}회 잔여
+                                  </span>
+                                ) : null;
+                              })()}
                             </div>
                           ) : (
                             <span className="text-xs text-slate-300">
