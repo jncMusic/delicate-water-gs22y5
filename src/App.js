@@ -4174,132 +4174,6 @@ const SettingsView = ({ teachers, students, showToast, seedData, adminPassword, 
     reader.readAsArrayBuffer(file);
   };
 
-  // --- [결제 데이터 엑셀 업로드] ---
-  // 지원 형식: 이름, 강사명, 연번, 시간당금액, 횟수, 금액(원비), 최종결제일
-  // 헤더 이름으로 컬럼을 자동 감지하므로 순서가 달라도 동작함
-  const handlePaymentExcelUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    if (typeof window.XLSX === "undefined") {
-      showToast("엑셀 라이브러리 로딩 중입니다.", "error");
-      return;
-    }
-    setUploading(true);
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      try {
-        const data = new Uint8Array(evt.target.result);
-        const workbook = window.XLSX.read(data, { type: "array" });
-        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-        const jsonData = window.XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-
-        if (jsonData.length < 2) {
-          showToast("데이터가 없습니다.", "warning");
-          setUploading(false);
-          return;
-        }
-
-        // 헤더 행에서 컬럼 인덱스 자동 감지
-        const headers = (jsonData[0] || []).map((h) => String(h || "").trim());
-        const col = (keywords) => {
-          const idx = headers.findIndex((h) =>
-            keywords.some((kw) => h.includes(kw))
-          );
-          return idx === -1 ? null : idx;
-        };
-        const idxName    = col(["이름", "원생"]);
-        const idxTeacher = col(["강사"]);
-        const idxFee     = col(["금액", "원비"]);
-        const idxDate    = col(["결제일", "최종"]);
-        const idxSessions = col(["횟수"]);
-
-        if (idxName === null || idxFee === null || idxDate === null) {
-          showToast("필수 컬럼(이름, 금액, 결제일)을 찾을 수 없습니다.", "error");
-          setUploading(false);
-          return;
-        }
-
-        const safeAppId = APP_ID || "jnc-music-v2";
-        const rows = jsonData.slice(1).filter((r) => r[idxName]);
-        let successCount = 0;
-        let skipCount = 0;
-
-        for (const row of rows) {
-          const name    = String(row[idxName] || "").trim();
-          const teacher = idxTeacher !== null ? String(row[idxTeacher] || "").trim() : "";
-          const fee     = parseInt(row[idxFee] || 0);
-          const dateRaw = row[idxDate];
-          const sessions = idxSessions !== null ? parseInt(row[idxSessions] || 0) : null;
-
-          // 날짜 정규화: 숫자형(엑셀 시리얼) 또는 문자열 모두 처리
-          let payDate;
-          if (typeof dateRaw === "number") {
-            const jsDate = window.XLSX.SSF.parse_date_code(dateRaw);
-            payDate = `${jsDate.y}-${String(jsDate.m).padStart(2, "0")}-${String(jsDate.d).padStart(2, "0")}`;
-          } else {
-            payDate = String(dateRaw || "").trim().replace(/\./g, "-").replace(/(\d{4})-(\d{1,2})-(\d{1,2})/, (_, y, m, d) =>
-              `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`
-            );
-          }
-
-          if (!payDate || !name) continue;
-
-          // 원생 매칭: 이름 일치 → 동명이인이면 강사명도 확인
-          let matched = students.filter((s) => s.name === name);
-          if (matched.length === 0) { skipCount++; continue; }
-          if (matched.length > 1 && teacher) {
-            const byTeacher = matched.filter((s) => s.teacher === teacher);
-            if (byTeacher.length > 0) matched = byTeacher;
-          }
-          const student = matched[0];
-
-          // 중복 결제 이력 방지 (같은 날짜 + 같은 금액)
-          const alreadyExists = (student.paymentHistory || []).some(
-            (h) => h.date === payDate && h.amount === fee
-          );
-
-          const newHistory = alreadyExists
-            ? student.paymentHistory || []
-            : [
-                ...(student.paymentHistory || []),
-                {
-                  date: payDate,
-                  amount: fee,
-                  type: "tuition",
-                  sessionStartDate: payDate,
-                  totalSessions: sessions || student.totalSessions || 4,
-                  createdAt: new Date().toISOString(),
-                },
-              ];
-
-          const updatePayload = {
-            tuitionFee: fee,
-            lastPaymentDate: payDate,
-            paymentHistory: newHistory,
-            ...(sessions !== null ? { totalSessions: sessions } : {}),
-          };
-
-          const studentRef = doc(db, "artifacts", safeAppId, "public", "data", "students", student.id);
-          await updateDoc(studentRef, updatePayload);
-          successCount++;
-        }
-
-        showToast(
-          `완료: ${successCount}명 업데이트${skipCount > 0 ? `, ${skipCount}명 이름 불일치(건너뜀)` : ""}`,
-          successCount > 0 ? "success" : "warning"
-        );
-      } catch (error) {
-        console.error(error);
-        showToast("업로드 실패: " + error.message, "error");
-      } finally {
-        setUploading(false);
-        const el = document.getElementById("payment-excel-upload-input");
-        if (el) el.value = "";
-      }
-    };
-    reader.readAsArrayBuffer(file);
-  };
-
   const handleBackupData = async () => {
     try {
       showToast("백업 중...", "info");
@@ -4405,7 +4279,7 @@ const SettingsView = ({ teachers, students, showToast, seedData, adminPassword, 
       )}
 
       {/* 1. 상단 유틸리티 (백업/엑셀) */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
         <div className="p-6 bg-indigo-50 rounded-xl border border-indigo-100">
           <h3 className="font-bold text-indigo-900 mb-4 flex items-center">
             <HardDrive className="mr-2" size={20} /> 데이터 백업 및 복구
@@ -4462,32 +4336,6 @@ const SettingsView = ({ teachers, students, showToast, seedData, adminPassword, 
               />
             </label>
           </div>
-        </div>
-
-        {/* 결제 데이터 업로드 카드 */}
-        <div className="p-6 bg-amber-50 rounded-xl border border-amber-100">
-          <h3 className="font-bold text-amber-900 mb-1 flex items-center">
-            <Upload className="mr-2" size={20} /> 결제 데이터 업로드
-          </h3>
-          <p className="text-xs text-amber-700 mb-3">
-            기존 원생의 원비·결제이력을 일괄 갱신합니다.<br />
-            컬럼: <span className="font-mono">이름, 강사명, 연번, 시간당금액, 횟수, 금액, 최종결제일</span>
-          </p>
-          <label
-            className={`w-full inline-flex justify-center items-center px-4 py-2 bg-amber-500 text-white rounded-lg cursor-pointer hover:bg-amber-600 font-bold shadow-sm transition-colors text-sm ${
-              uploading ? "opacity-50 pointer-events-none" : ""
-            }`}
-          >
-            {uploading ? "처리 중..." : <><Upload size={16} className="mr-2" /> 엑셀 선택</>}
-            <input
-              id="payment-excel-upload-input"
-              type="file"
-              accept=".xlsx, .xls"
-              onChange={handlePaymentExcelUpload}
-              className="hidden"
-              disabled={uploading}
-            />
-          </label>
         </div>
       </div>
 
