@@ -4047,6 +4047,44 @@ const SettingsView = ({ teachers, students, showToast, seedData, adminPassword, 
     }
   };
 
+  // --- [대시보드 데이터 엑셀 내보내기 (비교용)] ---
+  const handleExportForComparison = () => {
+    if (typeof window.XLSX === "undefined") {
+      showToast("엑셀 기능을 로딩 중입니다.", "error");
+      return;
+    }
+    try {
+      const rows = [
+        ["이름", "강사명", "연번", "횟수", "금액(원비)", "최종결제일", "상태"],
+      ];
+      students
+        .slice()
+        .sort((a, b) => (a.teacher || "").localeCompare(b.teacher || ""))
+        .forEach((s, idx) => {
+          rows.push([
+            s.name || "",
+            s.teacher || "",
+            idx + 1,
+            s.totalSessions || "",
+            s.tuitionFee || 0,
+            s.lastPaymentDate || "",
+            s.status || "재원",
+          ]);
+        });
+
+      const wb = window.XLSX.utils.book_new();
+      const ws = window.XLSX.utils.aoa_to_sheet(rows);
+      ws["!cols"] = [16, 12, 6, 6, 12, 14, 8].map((w) => ({ wch: w }));
+      window.XLSX.utils.book_append_sheet(wb, ws, "대시보드현황");
+      const today = new Date().toISOString().slice(0, 10);
+      window.XLSX.writeFile(wb, `JNC_대시보드_${today}.xlsx`);
+      showToast("내보내기 완료!", "success");
+    } catch (e) {
+      console.error(e);
+      showToast("내보내기 오류", "error");
+    }
+  };
+
   // --- [기존 유틸리티 기능: 엑셀/백업] ---
   const handleDownloadTemplate = () => {
     if (typeof window.XLSX === "undefined") {
@@ -4279,7 +4317,7 @@ const SettingsView = ({ teachers, students, showToast, seedData, adminPassword, 
       )}
 
       {/* 1. 상단 유틸리티 (백업/엑셀) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div className="p-6 bg-indigo-50 rounded-xl border border-indigo-100">
           <h3 className="font-bold text-indigo-900 mb-4 flex items-center">
             <HardDrive className="mr-2" size={20} /> 데이터 백업 및 복구
@@ -4336,6 +4374,23 @@ const SettingsView = ({ teachers, students, showToast, seedData, adminPassword, 
               />
             </label>
           </div>
+        </div>
+
+        {/* 비교용 내보내기 카드 */}
+        <div className="p-6 bg-sky-50 rounded-xl border border-sky-100">
+          <h3 className="font-bold text-sky-900 mb-1 flex items-center">
+            <Download className="mr-2" size={20} /> 데이터 비교용 내보내기
+          </h3>
+          <p className="text-xs text-sky-700 mb-3">
+            현재 대시보드 원생 데이터를 엑셀로 추출합니다.<br />
+            기존 엑셀 파일과 나란히 놓고 차이를 확인하세요.
+          </p>
+          <button
+            onClick={handleExportForComparison}
+            className="w-full inline-flex justify-center items-center px-4 py-2 bg-sky-500 text-white rounded-lg hover:bg-sky-600 font-bold shadow-sm transition-colors text-sm"
+          >
+            <Download size={16} className="mr-2" /> 엑셀로 내보내기
+          </button>
         </div>
       </div>
 
