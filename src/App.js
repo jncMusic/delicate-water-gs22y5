@@ -1252,30 +1252,33 @@ const PaymentDetailModal = ({
                 {currentStatus.activeSessions.length > 0 ? (
                   currentStatus.activeSessions
                     .slice(-SESSION_UNIT * 2)
-                    .map((session, idx) => {
+                    .flatMap((session, idx) => {
                       const globalIdx =
                         currentStatus.totalAttended -
                         currentStatus.activeSessions.length +
                         idx;
                       const isUnpaid =
                         globalIdx >= nextSessionStartIndex;
-                      return (
+                      const isDouble = (session.count || 1) >= 2;
+                      return Array.from({ length: session.count || 1 }, (_, k) => (
                         <div
-                          key={idx}
+                          key={`${idx}-${k}`}
                           className={`px-3 py-2 rounded-lg border flex flex-col items-center min-w-[80px] ${
                             isUnpaid
                               ? "bg-rose-50 border-rose-200 text-rose-700"
+                              : isDouble
+                              ? "bg-violet-50 border-violet-200 text-violet-700"
                               : "bg-slate-50 border-slate-200 text-slate-600"
                           }`}
                         >
                           <span className="text-[10px] font-bold mb-0.5 opacity-70">
-                            {isUnpaid ? "미납" : "결제됨"}
+                            {isUnpaid ? "미납" : isDouble ? "연강" : "결제됨"}
                           </span>
                           <span className="font-bold font-mono text-sm">
                             {session.date.slice(2)}
                           </span>
                         </div>
-                      );
+                      ));
                     })
                 ) : (
                   <div className="text-center w-full py-4 text-slate-300 text-sm">
@@ -1483,11 +1486,13 @@ const DashboardView = ({
 
   // 2. 수납 상태 계산
   const isPaymentDue = (s) => {
-    const totalAttended = (s.attendanceHistory || []).filter(
-      (h) => h.status === "present"
-    ).length;
+    const totalAttended = (s.attendanceHistory || [])
+      .filter((h) => h.status === "present")
+      .reduce((sum, h) => sum + (h.count || 1), 0);
     const sessionUnit = getEffectiveSessions(s);
-    const totalPaidCapacity = (s.paymentHistory || []).length * sessionUnit;
+    const totalPaidCapacity = (s.paymentHistory || []).reduce(
+      (sum, p) => sum + (p.totalSessions || sessionUnit), 0
+    );
     const remainingCapacity = totalPaidCapacity - totalAttended;
 
     const isOverdue = remainingCapacity < 0;
@@ -8032,9 +8037,9 @@ const PaymentView = ({
 
   // 수강 현황 계산 헬퍼
   const getStudentProgress = (s) => {
-    const totalAttended = (s.attendanceHistory || []).filter(
-      (h) => h.status === "present"
-    ).length;
+    const totalAttended = (s.attendanceHistory || [])
+      .filter((h) => h.status === "present")
+      .reduce((sum, h) => sum + (h.count || 1), 0);
     const sessionUnit = getEffectiveSessions(s);
     const sortedPayments = [...(s.paymentHistory || [])].sort((a, b) =>
       a.date.localeCompare(b.date)
