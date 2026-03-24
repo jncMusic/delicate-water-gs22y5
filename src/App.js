@@ -2277,6 +2277,10 @@ const ReportView = ({
       <div className="flex-1 overflow-y-auto">
         {isWriting && user.role === "teacher" && (
           <div className="mb-8 p-1 animate-in slide-in-from-top-2">
+            <div className="flex items-center gap-2 mb-4 px-1">
+              <span className="text-sm font-bold text-slate-600">담당 원생</span>
+              <span className="text-sm px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-full font-bold border border-indigo-100">{myStudents.length}명</span>
+            </div>
             <div className="grid grid-cols-1 gap-4">
               {myStudents.length > 0 ? (
                 myStudents.map((s) => {
@@ -2364,6 +2368,26 @@ const ReportView = ({
           </div>
         )}
 
+        {/* 관리자 전체 보기 시 총합 요약 */}
+        {user.role === "admin" && filteredReports.length > 0 && (
+          <div className="mb-4 px-4 py-3 bg-indigo-50 border border-indigo-100 rounded-xl flex items-center gap-4 flex-wrap">
+            <span className="text-sm font-bold text-indigo-700">
+              {selectedMonth}월 보고서 현황
+            </span>
+            <span className="text-sm text-indigo-600">
+              보고서 제출 <span className="font-bold">{filteredReports.length}명</span> 강사
+            </span>
+            <span className="text-sm text-indigo-600">
+              총 담당 원생{" "}
+              <span className="font-bold">
+                {filteredReports.reduce((sum, r) => {
+                  return sum + students.filter((s) => s.teacher === r.teacherName && s.status === "재원").length;
+                }, 0)}명
+              </span>
+            </span>
+          </div>
+        )}
+
         <div className="space-y-6">
           {filteredReports.length > 0
             ? filteredReports.map((report) => {
@@ -2381,9 +2405,14 @@ const ReportView = ({
                           {report.teacherName[0]}
                         </div>
                         <div>
-                          <h3 className="font-bold text-slate-800">
-                            {report.teacherName} 선생님
-                          </h3>
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-bold text-slate-800">
+                              {report.teacherName} 선생님
+                            </h3>
+                            <span className="text-xs px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-full font-bold border border-indigo-100">
+                              {studentList.length}명
+                            </span>
+                          </div>
                           <p className="text-xs text-slate-500">
                             작성일:{" "}
                             {report.updatedAt
