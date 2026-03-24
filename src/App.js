@@ -6113,10 +6113,8 @@ const StudentModal = ({
   );
 }; // 👈 이 괄호까지 완벽하게 있어야 합니다!
 
-// =================================================================
-// [KioskView] - 학원 입구 셀프 출석 체크인 단말기
-// =================================================================
-const KioskView = ({ students, onExitKiosk }) => {
+// [KioskView_구버전_제거됨]
+const KioskView_DELETED = ({ students, onExitKiosk }) => {
   // 'search' → 전화번호 입력, 'results' → 일치 학생 선택, 'success' → 완료
   const [step, setStep] = useState("search");
   const [phoneInput, setPhoneInput] = useState(""); // 전화번호 뒤 4자리 검색어
