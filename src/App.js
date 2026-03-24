@@ -6939,7 +6939,6 @@ const StudentView = ({
   const [searchTerm, setSearchTerm] = useState("");
   // 기본값을 '재원'으로 설정 (휴원·퇴원은 드롭다운으로 접근)
   const [filterStatus, setFilterStatus] = useState("재원");
-  const [showInactiveMenu, setShowInactiveMenu] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [modalTab, setModalTab] = useState("info");
@@ -7073,9 +7072,9 @@ const StudentView = ({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            {/* 주 필터: 재원 */}
+            {/* 재원 */}
             <button
-              onClick={() => { setFilterStatus("재원"); setShowInactiveMenu(false); }}
+              onClick={() => setFilterStatus("재원")}
               className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${
                 filterStatus === "재원"
                   ? "bg-indigo-600 text-white shadow-sm"
@@ -7088,43 +7087,35 @@ const StudentView = ({
               </span>
             </button>
 
-            {/* 보조 필터: 휴원·퇴원 드롭다운 */}
-            <div className="relative">
-              <button
-                onClick={() => setShowInactiveMenu((v) => !v)}
-                className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-1.5 ${
-                  filterStatus === "휴원" || filterStatus === "퇴원"
-                    ? "bg-slate-600 text-white shadow-sm"
-                    : "bg-slate-100 text-slate-400 hover:bg-slate-200"
-                }`}
-              >
-                {filterStatus === "휴원" || filterStatus === "퇴원"
-                  ? filterStatus
-                  : "휴원·퇴원"}
-                <span className="text-[10px]">
-                  {filterStatus === "휴원" || filterStatus === "퇴원"
-                    ? stats[filterStatus]
-                    : stats.휴원 + stats.퇴원}
-                </span>
-                <ChevronDown size={13} />
-              </button>
-              {showInactiveMenu && (
-                <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-20 overflow-hidden min-w-[120px]">
-                  {["휴원", "퇴원"].map((s) => (
-                    <button
-                      key={s}
-                      onClick={() => { setFilterStatus(s); setShowInactiveMenu(false); }}
-                      className={`w-full text-left px-4 py-3 text-sm flex justify-between items-center hover:bg-slate-50 transition-colors ${
-                        filterStatus === s ? "text-indigo-600 font-bold bg-indigo-50" : "text-slate-600"
-                      }`}
-                    >
-                      {s}
-                      <span className="text-xs text-slate-400 ml-3">{stats[s]}명</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            {/* 휴원 */}
+            <button
+              onClick={() => setFilterStatus("휴원")}
+              className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-2 ${
+                filterStatus === "휴원"
+                  ? "bg-amber-500 text-white shadow-sm"
+                  : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+              }`}
+            >
+              휴원
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${filterStatus === "휴원" ? "bg-white/25 text-white" : "bg-slate-200 text-slate-500"}`}>
+                {stats.휴원}
+              </span>
+            </button>
+
+            {/* 퇴원 */}
+            <button
+              onClick={() => setFilterStatus("퇴원")}
+              className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-2 ${
+                filterStatus === "퇴원"
+                  ? "bg-rose-500 text-white shadow-sm"
+                  : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+              }`}
+            >
+              퇴원
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${filterStatus === "퇴원" ? "bg-white/25 text-white" : "bg-slate-200 text-slate-500"}`}>
+                {stats.퇴원}
+              </span>
+            </button>
           </div>
         </div>
 
@@ -7186,7 +7177,72 @@ const StudentView = ({
         </div>
       )}
 
-      {/* 테이블 영역 */}
+      {/* 퇴원 원생 전용 테이블 */}
+      {filterStatus === "퇴원" && (
+        <div className="bg-white rounded-2xl border border-rose-100 shadow-sm overflow-auto max-h-[70vh]">
+          <div className="px-5 py-3 bg-rose-50 border-b border-rose-100 flex items-center gap-2">
+            <span className="text-rose-600 font-bold text-sm">퇴원 원생 관리</span>
+            <span className="text-xs text-rose-400">({filteredStudents.length}명)</span>
+          </div>
+          <table className="w-full text-left border-separate border-spacing-0">
+            <thead>
+              <tr className="bg-slate-50 text-slate-500 text-[11px] font-bold uppercase tracking-wider">
+                <th className="p-4 w-56 sticky left-0 top-0 bg-slate-100 z-20 border-b border-r border-slate-200">이름 / 과목 / 강사</th>
+                <th className="p-4 border-b border-slate-200">연락처</th>
+                <th className="p-4 border-b border-slate-200">퇴원일</th>
+                <th className="p-4 w-36 text-center border-b border-slate-200">관리</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredStudents.length > 0 ? filteredStudents.map((s) => (
+                <tr key={s.id} className="hover:bg-rose-50/30 transition-colors group">
+                  <td className="p-4 sticky left-0 bg-white group-hover:bg-rose-50/30 z-10 border-r border-slate-100">
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-slate-700 cursor-pointer hover:text-indigo-600 hover:underline" onClick={() => openWithTab(s, "info")}>{s.name}</span>
+                        <span className="text-[10px] px-2 py-0.5 bg-rose-50 text-rose-500 rounded-full font-bold border border-rose-100">{s.subject}</span>
+                      </div>
+                      <span className="text-xs text-slate-400">{s.teacher}</span>
+                    </div>
+                  </td>
+                  <td className="p-4 text-sm font-mono text-slate-500">{s.phone || "-"}</td>
+                  <td className="p-4 text-sm text-slate-500">{s.withdrawalDate || "-"}</td>
+                  <td className="p-4">
+                    <div className="flex items-center justify-center gap-2">
+                      <button
+                        onClick={async () => {
+                          if (window.confirm(`${s.name} 원생을 재등록(재원) 처리하시겠습니까?`)) {
+                            await onUpdateStudent(s.id, { status: "재원", withdrawalDate: null });
+                          }
+                        }}
+                        className="px-3 py-1.5 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-lg text-xs font-bold hover:bg-emerald-600 hover:text-white transition-all"
+                      >
+                        재등록
+                      </button>
+                      <button
+                        onClick={() => openWithTab(s, "info")}
+                        className="p-1.5 bg-white text-slate-400 border border-slate-200 rounded-lg hover:bg-slate-800 hover:text-white transition-all"
+                        title="정보수정"
+                      >
+                        <Settings size={15} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )) : (
+                <tr>
+                  <td colSpan={4} className="py-16 text-center text-slate-400">
+                    <p className="font-bold text-base mb-1">퇴원 원생이 없습니다.</p>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* 일반 테이블 영역 (재원·휴원·신규) */}
+      {filterStatus !== "퇴원" && (
       <div className="bg-white rounded-2xl border shadow-sm overflow-auto max-h-[70vh]">
         <table className="w-full text-left border-separate border-spacing-0">
           <thead>
@@ -7360,6 +7416,7 @@ const StudentView = ({
           </tbody>
         </table>
       </div>
+      )}
 
       <StudentManagementModal
         isOpen={isDetailModalOpen}
@@ -9109,6 +9166,18 @@ export default function App() {
   const handleUpdateStudent = async (id, updatedData) => {
     try {
       const safeAppId = APP_ID || "jnc-music-v2";
+
+      // 퇴원 처리 시 퇴원일 자동 기록 (이미 설정된 경우 덮어쓰지 않음)
+      if (updatedData.status === "퇴원" && !updatedData.withdrawalDate) {
+        const existingStudent = students.find((s) => s.id === id);
+        if (!existingStudent?.withdrawalDate) {
+          updatedData = { ...updatedData, withdrawalDate: new Date().toISOString().slice(0, 10) };
+        }
+      }
+      // 재등록 시 퇴원일 제거
+      if (updatedData.status === "재원" && updatedData.withdrawalDate === null) {
+        updatedData = { ...updatedData, withdrawalDate: "" };
+      }
 
       if (id) {
         // 1. Firebase DB 업데이트
