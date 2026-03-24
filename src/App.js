@@ -69,6 +69,7 @@ import {
   Printer, // 🔥 인쇄 아이콘 추가
   Music, // 🔥 파트 아이콘 추가
   ChevronDown,
+  Tablet, // 🔥 키오스크 단말기 아이콘
 } from "lucide-react";
 import html2canvas from "html2canvas"; // 🔥 이미지 저장 라이브러리 추가
 
@@ -390,7 +391,12 @@ ${paymentLine}
 - 이미 결제하신 경우 알려주시면 감사하겠습니다. 특히 제로페이의 경우 학생명 확인이 어려우니 꼭 알려주시면 감사하겠습니다.
 
 
-항상 감사드립니다. (마무리 인사)
+항상 감사드립니다. ${(() => {
+  const dow = new Date().getDay(); // 0=일, 1=월, 2=화, 3=수, 4=목, 5=금, 6=토
+  if (dow === 1) return "평안한 한 주의 시작 되시기 바랍니다.";
+  if (dow >= 2 && dow <= 4) return "평안한 한 주 보내시기 바랍니다.";
+  return "평안한 주말 되시기 바랍니다.";
+})()}
 
 J&C 음악학원장 올림.`;
 };
@@ -1049,18 +1055,34 @@ const PaymentDetailModal = ({
       a.date.localeCompare(b.date)
     );
 
-    let cumIndex = 0;
-    const rows = sortedPayments.map((payment) => {
+    // 연강(count=2) 포함 실제 총 출석 횟수 (잔여/미납 계산용)
+    const totalAttendedSessions = allAttendance.reduce(
+      (sum, h) => sum + (h.count || 1),
+      0
+    );
+
+    // entry 인덱스 추적: 연강 1 entry = 2 세션으로 누산
+    let entryIdx = 0;
+    let lastPayStartEntryIdx = 0;
+
+    const rows = sortedPayments.map((payment, i) => {
       const payUnit = payment.totalSessions || SESSION_UNIT;
-      const startIndex = cumIndex;
-      const endIndex = startIndex + payUnit;
-      const matchedSessions = allAttendance.slice(startIndex, endIndex);
-      cumIndex = endIndex;
+      const startEntryIdx = entryIdx;
+      if (i === sortedPayments.length - 1) lastPayStartEntryIdx = startEntryIdx;
+
+      // payUnit 세션이 채워질 때까지 entry 수집 (연강은 2 세션으로 계산)
+      let collected = 0;
+      while (entryIdx < allAttendance.length && collected < payUnit) {
+        collected += allAttendance[entryIdx].count || 1;
+        entryIdx++;
+      }
+
+      const matchedSessions = allAttendance.slice(startEntryIdx, entryIdx);
 
       return {
         payment: payment,
         sessions: matchedSessions,
-        isFull: matchedSessions.length === payUnit,
+        isFull: collected >= payUnit,
         payUnit: payUnit,
       };
     });
@@ -1069,21 +1091,15 @@ const PaymentDetailModal = ({
       (sum, p) => sum + (p.totalSessions || SESSION_UNIT),
       0
     );
-    const totalAttended = allAttendance.length;
-    const balance = totalPaidSessions - totalAttended;
-    const lastPayUnit =
-      sortedPayments.length > 0
-        ? sortedPayments[sortedPayments.length - 1].totalSessions || SESSION_UNIT
-        : SESSION_UNIT;
-    const lastPaidIndex = Math.max(0, totalPaidSessions - lastPayUnit);
-    const currentActiveSessions = allAttendance.slice(lastPaidIndex);
+    const balance = totalPaidSessions - totalAttendedSessions;
+    const currentActiveSessions = allAttendance.slice(lastPayStartEntryIdx);
 
     return {
       historyRows: rows.reverse(),
-      nextSessionStartIndex: totalPaidSessions,
+      nextSessionStartIndex: entryIdx, // 다음 결제 사이클 시작 entry 인덱스
       currentStatus: {
         balance: balance,
-        totalAttended: totalAttended,
+        totalAttended: allAttendance.length, // globalIdx 계산용 entry 개수
         activeSessions: currentActiveSessions,
       },
     };
@@ -1236,30 +1252,33 @@ const PaymentDetailModal = ({
                 {currentStatus.activeSessions.length > 0 ? (
                   currentStatus.activeSessions
                     .slice(-SESSION_UNIT * 2)
-                    .map((session, idx) => {
+                    .flatMap((session, idx) => {
                       const globalIdx =
                         currentStatus.totalAttended -
                         currentStatus.activeSessions.length +
                         idx;
                       const isUnpaid =
                         globalIdx >= nextSessionStartIndex;
-                      return (
+                      const isDouble = (session.count || 1) >= 2;
+                      return Array.from({ length: session.count || 1 }, (_, k) => (
                         <div
-                          key={idx}
+                          key={`${idx}-${k}`}
                           className={`px-3 py-2 rounded-lg border flex flex-col items-center min-w-[80px] ${
                             isUnpaid
                               ? "bg-rose-50 border-rose-200 text-rose-700"
+                              : isDouble
+                              ? "bg-violet-50 border-violet-200 text-violet-700"
                               : "bg-slate-50 border-slate-200 text-slate-600"
                           }`}
                         >
                           <span className="text-[10px] font-bold mb-0.5 opacity-70">
-                            {isUnpaid ? "미납" : "결제됨"}
+                            {isUnpaid ? "미납" : isDouble ? "연강" : "결제됨"}
                           </span>
                           <span className="font-bold font-mono text-sm">
                             {session.date.slice(2)}
                           </span>
                         </div>
-                      );
+                      ));
                     })
                 ) : (
                   <div className="text-center w-full py-4 text-slate-300 text-sm">
@@ -1357,20 +1376,30 @@ const PaymentDetailModal = ({
                         <td className="px-4 py-3 align-top">
                           {row.sessions.length > 0 ? (
                             <div className="flex flex-wrap gap-1">
-                              {row.sessions.map((c, i) => (
-                                <span
-                                  key={i}
-                                  className="inline-block border bg-indigo-50 text-indigo-700 border-indigo-100 px-1.5 py-0.5 rounded text-xs font-mono"
-                                >
-                                  {c.date.slice(2)}
-                                </span>
-                              ))}
-                              {row.sessions.length < row.payUnit &&
-                                index === 0 && (
-                                  <span className="text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 ml-1">
-                                    +{row.payUnit - row.sessions.length}회 잔여
+                              {row.sessions.flatMap((c, i) =>
+                                Array.from({ length: c.count || 1 }, (_, k) => (
+                                  <span
+                                    key={`${i}-${k}`}
+                                    className={`inline-block border px-1.5 py-0.5 rounded text-xs font-mono ${
+                                      (c.count || 1) >= 2
+                                        ? "bg-violet-50 text-violet-700 border-violet-200"
+                                        : "bg-indigo-50 text-indigo-700 border-indigo-100"
+                                    }`}
+                                  >
+                                    {c.date.slice(2)}{(c.count || 1) >= 2 ? " ✦" : ""}
                                   </span>
-                                )}
+                                ))
+                              )}
+                              {(() => {
+                                const usedSessions = row.sessions.reduce(
+                                  (sum, c) => sum + (c.count || 1), 0
+                                );
+                                return usedSessions < row.payUnit && index === 0 ? (
+                                  <span className="text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 ml-1">
+                                    +{row.payUnit - usedSessions}회 잔여
+                                  </span>
+                                ) : null;
+                              })()}
                             </div>
                           ) : (
                             <span className="text-xs text-slate-300">
@@ -1439,12 +1468,183 @@ const PaymentDetailModal = ({
   );
 };
 
+// =================================================================
+// [수납 관리 모달] 대시보드에서 수강권 만료/미납자 확인
+// =================================================================
+const PaymentManagementModal = ({ students, messageLogs, onClose, user, onNavigate }) => {
+  const [activeTab, setActiveTab] = useState("expired");
+
+  const { expiredStudents, overdueStudents } = useMemo(() => {
+    const filtered =
+      user.role === "teacher"
+        ? students.filter((s) => s.teacher === user.name && s.status === "재원")
+        : students.filter((s) => s.status === "재원");
+    const expired = [];
+    const overdue = [];
+    for (const s of filtered) {
+      const attended = (s.attendanceHistory || [])
+        .filter((h) => h.status === "present")
+        .reduce((sum, h) => sum + (h.count || 1), 0);
+      const sessionUnit = getEffectiveSessions(s);
+      const capacity = (s.paymentHistory || []).reduce(
+        (sum, p) => sum + (p.totalSessions || sessionUnit),
+        0
+      );
+      const remaining = capacity - attended;
+      if (remaining < 0) overdue.push(s);
+      else if (remaining === 0 && capacity > 0) expired.push(s);
+    }
+    return { expiredStudents: expired, overdueStudents: overdue };
+  }, [students, user]);
+
+  const today = new Date().toISOString().slice(0, 10);
+  const sentToday = new Set(
+    messageLogs.filter((l) => l.sentAt === today).map((l) => l.studentId)
+  );
+  const lastSentMap = useMemo(() => {
+    const map = {};
+    for (const l of messageLogs) {
+      if (!map[l.studentId] || l.sentAt > map[l.studentId]) {
+        map[l.studentId] = l.sentAt;
+      }
+    }
+    return map;
+  }, [messageLogs]);
+
+  const listToShow = activeTab === "expired" ? expiredStudents : overdueStudents;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[80vh] flex flex-col">
+        {/* 헤더 */}
+        <div className="flex justify-between items-center px-6 py-5 border-b">
+          <h2 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+            <CreditCard size={20} className="text-indigo-500" /> 수납 관리
+          </h2>
+          <button
+            onClick={onClose}
+            className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* 탭 */}
+        <div className="flex border-b">
+          <button
+            onClick={() => setActiveTab("expired")}
+            className={`flex-1 py-3 text-sm font-bold transition-colors ${
+              activeTab === "expired"
+                ? "border-b-2 border-indigo-500 text-indigo-600"
+                : "text-slate-400 hover:text-slate-600"
+            }`}
+          >
+            수강권 만료
+            <span
+              className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${
+                activeTab === "expired"
+                  ? "bg-indigo-100 text-indigo-600"
+                  : "bg-slate-100 text-slate-500"
+              }`}
+            >
+              {expiredStudents.length}
+            </span>
+          </button>
+          <button
+            onClick={() => setActiveTab("overdue")}
+            className={`flex-1 py-3 text-sm font-bold transition-colors ${
+              activeTab === "overdue"
+                ? "border-b-2 border-rose-500 text-rose-600"
+                : "text-slate-400 hover:text-slate-600"
+            }`}
+          >
+            미납자 (수강권 초과)
+            <span
+              className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${
+                activeTab === "overdue"
+                  ? "bg-rose-100 text-rose-600"
+                  : "bg-slate-100 text-slate-500"
+              }`}
+            >
+              {overdueStudents.length}
+            </span>
+          </button>
+        </div>
+
+        {/* 목록 */}
+        <div className="overflow-y-auto flex-1 p-4 space-y-2">
+          {listToShow.length === 0 ? (
+            <div className="py-12 text-center text-slate-400 text-sm">
+              해당 학생이 없습니다
+            </div>
+          ) : (
+            listToShow.map((s) => {
+              const isSentToday = sentToday.has(s.id);
+              const lastSent = lastSentMap[s.id];
+              return (
+                <div
+                  key={s.id}
+                  className="flex items-center justify-between px-4 py-3 rounded-xl border border-slate-100 bg-slate-50/60 hover:bg-white hover:border-indigo-200 transition-all"
+                >
+                  <div className="flex flex-col">
+                    <span className="font-bold text-slate-800 text-sm">
+                      {s.name}
+                    </span>
+                    <span className="text-xs text-slate-400 mt-0.5">
+                      {s.teacher || "-"} · {s.subject || "과목 미정"}
+                    </span>
+                  </div>
+                  <div>
+                    {isSentToday ? (
+                      <span className="text-[10px] bg-emerald-50 text-emerald-600 border border-emerald-200 px-2 py-1 rounded-full font-bold">
+                        오늘 발송
+                      </span>
+                    ) : lastSent ? (
+                      <span className="text-[10px] bg-slate-100 text-slate-500 border border-slate-200 px-2 py-1 rounded-full">
+                        {lastSent} 발송
+                      </span>
+                    ) : (
+                      <span className="text-[10px] bg-rose-50 text-rose-500 border border-rose-200 px-2 py-1 rounded-full font-bold">
+                        미발송
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* 푸터 */}
+        <div className="p-4 border-t flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm text-slate-500 hover:bg-slate-100 rounded-lg font-bold"
+          >
+            닫기
+          </button>
+          <button
+            onClick={() => {
+              onClose();
+              onNavigate(user.role === "admin" ? "payments" : "students");
+            }}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700"
+          >
+            수납 관리 바로가기
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // [DashboardView] - 상담 통계 카드 숨김 처리 (강사 권한 분리)
 const DashboardView = ({
   students,
   consultations,
   reports,
   user,
+  messageLogs,
   onNavigateToConsultation,
   onNavigate,
 }) => {
@@ -1455,13 +1655,17 @@ const DashboardView = ({
       : students.filter((s) => s.status === "재원");
   }, [students, user]);
 
+  const [showPaymentMgmt, setShowPaymentMgmt] = useState(false);
+
   // 2. 수납 상태 계산
   const isPaymentDue = (s) => {
-    const totalAttended = (s.attendanceHistory || []).filter(
-      (h) => h.status === "present"
-    ).length;
+    const totalAttended = (s.attendanceHistory || [])
+      .filter((h) => h.status === "present")
+      .reduce((sum, h) => sum + (h.count || 1), 0);
     const sessionUnit = getEffectiveSessions(s);
-    const totalPaidCapacity = (s.paymentHistory || []).length * sessionUnit;
+    const totalPaidCapacity = (s.paymentHistory || []).reduce(
+      (sum, p) => sum + (p.totalSessions || sessionUnit), 0
+    );
     const remainingCapacity = totalPaidCapacity - totalAttended;
 
     const isOverdue = remainingCapacity < 0;
@@ -1612,13 +1816,11 @@ const DashboardView = ({
 
         <StatCard
           icon={AlertCircle}
-          label="수강권 만료 (재결제)"
+          label="수납 관리"
           value={`${stats.paymentDueCount}명`}
-          trend="확인 필요"
+          trend="만료·미납 확인"
           trendUp={false}
-          onClick={() =>
-            onNavigate(user.role === "admin" ? "payments" : "students")
-          }
+          onClick={() => setShowPaymentMgmt(true)}
         />
 
         {/* [수정] 대기 중인 상담 카드는 '관리자(admin)'에게만 표시 */}
@@ -1659,91 +1861,85 @@ const DashboardView = ({
         />
       </div>
 
-      {/* 4. 관리자 전용: 상담 대기 목록 */}
+      {/* 4. 관리자 전용: 상담 대기 목록 (컴팩트) */}
       {user.role === "admin" && (
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="font-bold text-slate-800 flex items-center text-lg">
-              <ListTodo className="mr-2 text-indigo-600" size={22} /> 진행 중인
-              상담
+        <div className="bg-white px-5 py-4 rounded-2xl shadow-sm border border-slate-100">
+          <div className="flex justify-between items-center mb-3">
+            <h3 className="font-bold text-slate-700 flex items-center text-sm">
+              <ListTodo className="mr-1.5 text-indigo-500" size={16} /> 진행 중인 상담
+              <span className="ml-2 text-xs bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded-full font-bold">
+                {stats.pendingConsults.length}건
+              </span>
             </h3>
             <button
               onClick={() => onNavigate("consultations")}
-              className="text-sm font-bold text-indigo-600 hover:bg-indigo-50 px-3 py-1.5 rounded-lg transition-colors"
+              className="text-xs font-bold text-indigo-500 hover:bg-indigo-50 px-2.5 py-1 rounded-lg transition-colors"
             >
               전체 보기
             </button>
           </div>
 
           {stats.pendingConsults.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {stats.pendingConsults.map((consult) => (
-                <div
-                  key={consult.id}
-                  onClick={() =>
-                    onNavigateToConsultation &&
-                    onNavigateToConsultation(consult)
-                  }
-                  className="border border-slate-100 rounded-xl p-5 bg-slate-50/50 hover:bg-white hover:shadow-md hover:border-indigo-200 transition-all cursor-pointer group"
-                >
-                  <div className="flex justify-between items-start mb-3">
-                    <div>
-                      <span className="font-bold text-slate-800 block text-base group-hover:text-indigo-600 transition-colors">
+            <div className="divide-y divide-slate-50">
+              {stats.pendingConsults.slice(0, 5).map((consult) => {
+                const colorMap = {
+                  purple: "bg-purple-50 text-purple-600 border-purple-100",
+                  green: "bg-green-50 text-green-600 border-green-100",
+                  blue: "bg-blue-50 text-blue-600 border-blue-100",
+                };
+                return (
+                  <div
+                    key={consult.id}
+                    onClick={() =>
+                      onNavigateToConsultation &&
+                      onNavigateToConsultation(consult)
+                    }
+                    className="flex items-center gap-3 py-2.5 hover:bg-slate-50 cursor-pointer rounded-lg px-1 -mx-1 transition-colors group"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <span className="font-bold text-slate-800 text-sm group-hover:text-indigo-600 transition-colors">
                         {consult.name}
                       </span>
-                      <span className="text-xs text-slate-500">
-                        {consult.phone}
+                      <span className="text-xs text-slate-400 ml-2">
+                        {consult.subject || "과목 미정"}
                       </span>
                     </div>
-                    <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full font-bold">
-                      {consult.date}
-                    </span>
-                  </div>
-                  <div className="text-sm text-slate-600 mb-3 font-medium line-clamp-1">
-                    {consult.subject || "과목 미정"}
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {consult.followUpActions?.length > 0 ? (
-                      consult.followUpActions.map((actionId) => {
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {consult.followUpActions?.slice(0, 2).map((actionId) => {
                         const opt = FOLLOW_UP_OPTIONS.find(
                           (o) => o.id === actionId
-                        ) || { label: "알 수 없음", color: "blue" };
-                        const colorMap = {
-                          purple:
-                            "bg-purple-50 text-purple-600 border-purple-100",
-                          green: "bg-green-50 text-green-600 border-green-100",
-                          blue: "bg-blue-50 text-blue-600 border-blue-100",
-                        };
+                        ) || { label: "?", color: "blue" };
                         return (
                           <span
                             key={actionId}
-                            className={`text-[10px] px-2 py-0.5 rounded-md border ${
+                            className={`text-[10px] px-1.5 py-0.5 rounded border hidden md:inline ${
                               colorMap[opt.color] || colorMap.blue
                             }`}
                           >
                             {opt.label}
                           </span>
                         );
-                      })
-                    ) : (
-                      <span className="text-xs text-slate-400">
-                        후속 조치 없음
+                      })}
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        {consult.date}
                       </span>
-                    )}
+                    </div>
                   </div>
+                );
+              })}
+              {stats.pendingConsults.length > 5 && (
+                <div
+                  className="text-xs text-slate-400 text-center pt-2 cursor-pointer hover:text-indigo-500"
+                  onClick={() => onNavigate("consultations")}
+                >
+                  +{stats.pendingConsults.length - 5}건 더 보기
                 </div>
-              ))}
+              )}
             </div>
           ) : (
-            <div className="py-12 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200">
-              <MessageSquareText
-                size={40}
-                className="mx-auto text-slate-300 mb-2"
-              />
-              <p className="text-slate-400 text-sm">
-                현재 대기 중인 상담이 없습니다.
-              </p>
-            </div>
+            <p className="text-xs text-slate-400 py-2 text-center">
+              현재 대기 중인 상담이 없습니다.
+            </p>
           )}
         </div>
       )}
@@ -1820,6 +2016,17 @@ const DashboardView = ({
             </p>
           </div>
         </div>
+      )}
+
+      {/* 수납 관리 모달 */}
+      {showPaymentMgmt && (
+        <PaymentManagementModal
+          students={students}
+          messageLogs={messageLogs}
+          onClose={() => setShowPaymentMgmt(false)}
+          user={user}
+          onNavigate={onNavigate}
+        />
       )}
     </div>
   );
@@ -1913,18 +2120,23 @@ const ReportView = ({
     return `${parseInt(s[0])}년 ${parseInt(s[1])}월 ${parseInt(s[2])}일 ~ ${parseInt(e[0])}년 ${parseInt(e[1])}월 ${parseInt(e[2])}일`;
   };
 
-  // 수업일 추출
+  // 수업일 추출 (총 회차 포함)
   const getAttendanceDates = (student) => {
     if (!student) return "";
 
-    return (student.attendanceHistory || [])
+    const filtered = (student.attendanceHistory || [])
       .filter(
         (h) =>
           h.date >= customStart && h.date <= customEnd && h.status === "present"
       )
-      .map((h) => h.date.slice(5))
-      .sort()
-      .join(", ");
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    if (filtered.length === 0) return "";
+
+    const totalCount = filtered.reduce((sum, h) => sum + (h.count || 1), 0);
+    const dateStr = filtered.map((h) => h.date.slice(5).replace("-", "/")).join(", ");
+
+    return `${dateStr} (총 ${totalCount}회)`;
   };
 
   // 필터링
@@ -2065,6 +2277,10 @@ const ReportView = ({
       <div className="flex-1 overflow-y-auto">
         {isWriting && user.role === "teacher" && (
           <div className="mb-8 p-1 animate-in slide-in-from-top-2">
+            <div className="flex items-center gap-2 mb-4 px-1">
+              <span className="text-sm font-bold text-slate-600">담당 원생</span>
+              <span className="text-sm px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-full font-bold border border-indigo-100">{myStudents.length}명</span>
+            </div>
             <div className="grid grid-cols-1 gap-4">
               {myStudents.length > 0 ? (
                 myStudents.map((s) => {
@@ -2152,6 +2368,26 @@ const ReportView = ({
           </div>
         )}
 
+        {/* 관리자 전체 보기 시 총합 요약 */}
+        {user.role === "admin" && filteredReports.length > 0 && (
+          <div className="mb-4 px-4 py-3 bg-indigo-50 border border-indigo-100 rounded-xl flex items-center gap-4 flex-wrap">
+            <span className="text-sm font-bold text-indigo-700">
+              {selectedMonth}월 보고서 현황
+            </span>
+            <span className="text-sm text-indigo-600">
+              보고서 제출 <span className="font-bold">{filteredReports.length}명</span> 강사
+            </span>
+            <span className="text-sm text-indigo-600">
+              총 담당 원생{" "}
+              <span className="font-bold">
+                {filteredReports.reduce((sum, r) => {
+                  return sum + students.filter((s) => s.teacher === r.teacherName && s.status === "재원").length;
+                }, 0)}명
+              </span>
+            </span>
+          </div>
+        )}
+
         <div className="space-y-6">
           {filteredReports.length > 0
             ? filteredReports.map((report) => {
@@ -2169,9 +2405,14 @@ const ReportView = ({
                           {report.teacherName[0]}
                         </div>
                         <div>
-                          <h3 className="font-bold text-slate-800">
-                            {report.teacherName} 선생님
-                          </h3>
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-bold text-slate-800">
+                              {report.teacherName} 선생님
+                            </h3>
+                            <span className="text-xs px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-full font-bold border border-indigo-100">
+                              {studentList.length}명
+                            </span>
+                          </div>
                           <p className="text-xs text-slate-500">
                             작성일:{" "}
                             {report.updatedAt
@@ -4041,6 +4282,49 @@ const SettingsView = ({ teachers, students, showToast, seedData, adminPassword, 
     }
   };
 
+  // --- [대시보드 데이터 엑셀 내보내기 (비교용)] ---
+  const handleExportForComparison = () => {
+    if (typeof window.XLSX === "undefined") {
+      showToast("엑셀 기능을 로딩 중입니다.", "error");
+      return;
+    }
+    try {
+      const rows = [
+        ["이름", "강사명", "연번", "횟수", "금액(원비)", "최종결제일", "상태"],
+      ];
+      students
+        .slice()
+        .sort((a, b) => (a.teacher || "").localeCompare(b.teacher || ""))
+        .forEach((s, idx) => {
+          const sortedPay = [...(s.paymentHistory || [])].sort((a, b) =>
+            a.date.localeCompare(b.date)
+          );
+          const lastPayDate =
+            sortedPay.length > 0 ? sortedPay[sortedPay.length - 1].date : "";
+          rows.push([
+            s.name || "",
+            s.teacher || "",
+            idx + 1,
+            s.totalSessions || "",
+            s.tuitionFee || 0,
+            lastPayDate,
+            s.status || "재원",
+          ]);
+        });
+
+      const wb = window.XLSX.utils.book_new();
+      const ws = window.XLSX.utils.aoa_to_sheet(rows);
+      ws["!cols"] = [16, 12, 6, 6, 12, 14, 8].map((w) => ({ wch: w }));
+      window.XLSX.utils.book_append_sheet(wb, ws, "대시보드현황");
+      const today = new Date().toISOString().slice(0, 10);
+      window.XLSX.writeFile(wb, `JNC_대시보드_${today}.xlsx`);
+      showToast("내보내기 완료!", "success");
+    } catch (e) {
+      console.error(e);
+      showToast("내보내기 오류", "error");
+    }
+  };
+
   // --- [기존 유틸리티 기능: 엑셀/백업] ---
   const handleDownloadTemplate = () => {
     if (typeof window.XLSX === "undefined") {
@@ -4273,7 +4557,7 @@ const SettingsView = ({ teachers, students, showToast, seedData, adminPassword, 
       )}
 
       {/* 1. 상단 유틸리티 (백업/엑셀) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div className="p-6 bg-indigo-50 rounded-xl border border-indigo-100">
           <h3 className="font-bold text-indigo-900 mb-4 flex items-center">
             <HardDrive className="mr-2" size={20} /> 데이터 백업 및 복구
@@ -4330,6 +4614,23 @@ const SettingsView = ({ teachers, students, showToast, seedData, adminPassword, 
               />
             </label>
           </div>
+        </div>
+
+        {/* 비교용 내보내기 카드 */}
+        <div className="p-6 bg-sky-50 rounded-xl border border-sky-100">
+          <h3 className="font-bold text-sky-900 mb-1 flex items-center">
+            <Download className="mr-2" size={20} /> 데이터 비교용 내보내기
+          </h3>
+          <p className="text-xs text-sky-700 mb-3">
+            현재 대시보드 원생 데이터를 엑셀로 추출합니다.<br />
+            기존 엑셀 파일과 나란히 놓고 차이를 확인하세요.
+          </p>
+          <button
+            onClick={handleExportForComparison}
+            className="w-full inline-flex justify-center items-center px-4 py-2 bg-sky-500 text-white rounded-lg hover:bg-sky-600 font-bold shadow-sm transition-colors text-sm"
+          >
+            <Download size={16} className="mr-2" /> 엑셀로 내보내기
+          </button>
         </div>
       </div>
 
@@ -5812,6 +6113,383 @@ const StudentModal = ({
   );
 }; // 👈 이 괄호까지 완벽하게 있어야 합니다!
 
+// =================================================================
+// [KioskView] - 학원 입구 셀프 출석 체크인 단말기
+// =================================================================
+const KioskView = ({ students, onExitKiosk }) => {
+  // 'search' → 전화번호 입력, 'results' → 일치 학생 선택, 'success' → 완료
+  const [step, setStep] = useState("search");
+  const [phoneInput, setPhoneInput] = useState(""); // 전화번호 뒤 4자리 검색어
+  const [searchResults, setSearchResults] = useState([]); // 검색 결과
+  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [error, setError] = useState("");
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const [exitClickCount, setExitClickCount] = useState(0);
+  const [confetti, setConfetti] = useState([]);
+
+  // 매초 시간 갱신
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // 기분 좋은 도-미-솔-도 체임 사운드 (Web Audio API)
+  const playSuccessSound = useCallback(() => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const notes = [523.25, 659.25, 783.99, 1046.5];
+      notes.forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = "sine";
+        osc.frequency.value = freq;
+        const start = ctx.currentTime + i * 0.17;
+        gain.gain.setValueAtTime(0, start);
+        gain.gain.linearRampToValueAtTime(0.35, start + 0.04);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.45);
+        osc.start(start);
+        osc.stop(start + 0.5);
+      });
+    } catch (e) {}
+  }, []);
+
+  // 성공 후 3.5초 뒤 자동 초기화
+  useEffect(() => {
+    if (step === "success") {
+      playSuccessSound();
+      const colors = ["#6366f1","#f59e0b","#10b981","#ef4444","#3b82f6","#ec4899","#f97316"];
+      const shapes = ["●","★","♪","♫","✦","▲","◆"];
+      setConfetti(
+        Array.from({ length: 40 }, (_, idx) => ({
+          id: idx,
+          left: Math.random() * 100,
+          color: colors[idx % colors.length],
+          shape: shapes[idx % shapes.length],
+          duration: 2.2 + Math.random() * 1.5,
+          delay: Math.random() * 0.8,
+          size: 14 + Math.random() * 18,
+        }))
+      );
+      const timer = setTimeout(() => {
+        setStep("search");
+        setPhoneInput("");
+        setSearchResults([]);
+        setSelectedStudent(null);
+        setError("");
+        setConfetti([]);
+      }, 3500);
+      return () => clearTimeout(timer);
+    }
+  }, [step]);
+
+  const toDateStr = (date) => date.toISOString().split("T")[0];
+  const todayStr = toDateStr(currentTime);
+
+  // 전화번호 뒤 4자리로 재원 학생 검색
+  const handleSearch = useCallback((digits) => {
+    if (digits.length < 4) {
+      setSearchResults([]);
+      return;
+    }
+    const matched = students.filter((s) => {
+      if (s.status !== "재원") return false;
+      const phone = (s.phone || "").replace(/[^0-9]/g, "");
+      return phone.slice(-4) === digits;
+    });
+    setSearchResults(matched);
+    setStep("results");
+  }, [students]);
+
+  const handleKeypad = (val) => {
+    if (phoneInput.length >= 4) return;
+    const next = phoneInput + val;
+    setPhoneInput(next);
+    if (next.length === 4) handleSearch(next);
+  };
+
+  const handleKeypadDelete = () => {
+    const next = phoneInput.slice(0, -1);
+    setPhoneInput(next);
+    if (step === "results") {
+      setStep("search");
+      setSearchResults([]);
+    }
+  };
+
+  const handleReset = () => {
+    setStep("search");
+    setPhoneInput("");
+    setSearchResults([]);
+    setError("");
+  };
+
+  // 학생 선택 즉시 출석 처리 (전화번호로 이미 본인 확인됨)
+  const handleCheckIn = async (student) => {
+    // 이미 오늘 출석한 경우
+    const alreadyChecked = (student.attendanceHistory || []).some(
+      (h) => h.date === todayStr && h.status === "present"
+    );
+    if (alreadyChecked) {
+      setError(`${student.name} 님은 오늘 이미 출석 처리되었습니다.`);
+      return;
+    }
+
+    try {
+      setSelectedStudent(student);
+      const studentRef = doc(
+        db, "artifacts", APP_ID, "public", "data", "students", student.id
+      );
+      let history = [...(student.attendanceHistory || [])];
+      const existingIdx = history.findIndex((h) => h.date === todayStr);
+      const record = {
+        date: todayStr,
+        status: "present",
+        count: 1,
+        timestamp: new Date().toISOString(),
+        checkedInByKiosk: true,
+      };
+      if (existingIdx > -1) history[existingIdx] = record;
+      else history.push(record);
+
+      const lastPay = student.lastPaymentDate || "0000-00-00";
+      const sessionsCount = history.reduce((sum, h) => {
+        if (h.date < lastPay) return sum;
+        if (h.status === "present") return sum + (h.count || 1);
+        if (h.status === "canceled" && h.subType !== "질병") return sum + 1;
+        return sum;
+      }, 0);
+
+      await updateDoc(studentRef, {
+        attendanceHistory: history,
+        sessionsCompleted: sessionsCount,
+      });
+      setStep("success");
+    } catch (e) {
+      console.error(e);
+      setError("저장 중 오류가 발생했습니다. 선생님께 문의해주세요.");
+    }
+  };
+
+  // 시간 표시 5회 클릭 → 관리자 모드 복귀
+  const handleTimeClick = () => {
+    const next = exitClickCount + 1;
+    setExitClickCount(next);
+    if (next >= 5) {
+      setExitClickCount(0);
+      onExitKiosk();
+    }
+  };
+
+  const timeStr = currentTime.toLocaleTimeString("ko-KR", {
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  });
+  const dateDisplayStr = currentTime.toLocaleDateString("ko-KR", {
+    year: "numeric", month: "long", day: "numeric", weekday: "long",
+  });
+
+  // 공통 CSS 키프레임
+  const kioskStyles = `
+    @keyframes confetti-fall {
+      0%   { transform: translateY(-30px) rotate(0deg);   opacity: 1; }
+      80%  { opacity: 1; }
+      100% { transform: translateY(105vh) rotate(900deg); opacity: 0; }
+    }
+    @keyframes pop-in {
+      0%   { transform: scale(0) rotate(-15deg); opacity: 0; }
+      60%  { transform: scale(1.2) rotate(5deg);  opacity: 1; }
+      100% { transform: scale(1)   rotate(0deg);  opacity: 1; }
+    }
+    @keyframes pulse-glow {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(255,255,255,0.5); }
+      50%       { box-shadow: 0 0 0 24px rgba(255,255,255,0); }
+    }
+  `;
+
+  // ── 성공 화면 ──
+  if (step === "success") {
+    return (
+      <div className="fixed inset-0 bg-gradient-to-b from-emerald-400 to-emerald-600 flex flex-col items-center justify-center z-50 overflow-hidden">
+        <style>{kioskStyles}</style>
+        {confetti.map((p) => (
+          <div key={p.id} style={{
+            position: "absolute", left: `${p.left}%`, top: "-30px",
+            fontSize: `${p.size}px`, color: p.color,
+            animation: `confetti-fall ${p.duration}s ${p.delay}s ease-in forwards`,
+            pointerEvents: "none", userSelect: "none",
+          }}>{p.shape}</div>
+        ))}
+        <div className="text-white text-center relative z-10">
+          <div
+            className="w-36 h-36 bg-white rounded-full flex items-center justify-center mx-auto mb-8"
+            style={{ animation: "pop-in 0.5s cubic-bezier(0.34,1.56,0.64,1) both, pulse-glow 1.5s 0.5s ease-in-out infinite" }}
+          >
+            <span style={{ fontSize: "72px", lineHeight: 1 }}>✓</span>
+          </div>
+          <div className="text-5xl font-bold mb-3" style={{ animation: "pop-in 0.45s 0.15s both" }}>
+            {selectedStudent.name} 님
+          </div>
+          <div className="text-3xl font-semibold opacity-95 mb-2" style={{ animation: "pop-in 0.45s 0.28s both" }}>
+            출석이 완료되었습니다! 🎵
+          </div>
+          <div className="text-lg opacity-70 mt-4" style={{ animation: "pop-in 0.45s 0.4s both" }}>
+            잠시 후 자동으로 돌아갑니다...
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── 공통 레이아웃 래퍼 (검색 / 결과 화면 공유) ──
+  return (
+    <div className="fixed inset-0 bg-gradient-to-br from-slate-50 to-indigo-50 flex flex-col z-50">
+      <style>{kioskStyles}</style>
+
+      {/* 상단 시간 표시 (5회 클릭 → 관리자 복귀) */}
+      <div className="bg-indigo-700 text-white text-center py-5 shadow-lg shrink-0">
+        <button
+          onClick={handleTimeClick}
+          className="text-5xl font-bold tracking-widest mb-1 w-full focus:outline-none select-none"
+        >
+          {timeStr}
+        </button>
+        <div className="text-base opacity-75">{dateDisplayStr}</div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto flex items-center justify-center p-5">
+        <div className="w-full max-w-sm">
+          <h1 className="text-2xl font-bold text-center text-slate-800 mt-4 mb-1">
+            JnC Music Academy
+          </h1>
+          <p className="text-center text-slate-500 mb-2 text-base font-medium">
+            전화번호 뒤 4자리를 입력하세요
+          </p>
+          <p className="text-center text-slate-400 mb-4 text-sm">
+            학생은 보호자 번호 · 성인은 본인 번호
+          </p>
+
+          {/* 핀 입력 표시 */}
+          <div className="flex justify-center gap-3 mb-2">
+            {[0, 1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className={`w-16 h-16 rounded-2xl border-2 flex items-center justify-center text-3xl font-bold transition-all ${
+                  phoneInput.length > i
+                    ? "border-indigo-500 bg-indigo-50 text-indigo-700"
+                    : "border-slate-200 bg-white"
+                }`}
+              >
+                {phoneInput.length > i ? "●" : ""}
+              </div>
+            ))}
+          </div>
+
+          {/* 에러 메시지 */}
+          {error && (
+            <p className="text-center text-red-500 text-sm font-medium mb-2">{error}</p>
+          )}
+
+          {/* 검색 결과 (results 단계) */}
+          {step === "results" && (
+            <div className="mb-4">
+              {searchResults.length === 0 ? (
+                <div className="text-center py-6 bg-white rounded-2xl border-2 border-slate-200">
+                  <div className="text-3xl mb-2">😅</div>
+                  <p className="text-slate-500 font-medium">일치하는 학생이 없습니다</p>
+                  <p className="text-slate-400 text-sm mt-1">번호를 다시 확인해주세요</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-center text-slate-500 text-sm mb-3">
+                    본인 이름을 선택하세요
+                  </p>
+                  {searchResults.map((student) => {
+                    const alreadyChecked = (student.attendanceHistory || []).some(
+                      (h) => h.date === todayStr && h.status === "present"
+                    );
+                    return (
+                      <button
+                        key={student.id}
+                        onClick={() => !alreadyChecked && handleCheckIn(student)}
+                        disabled={alreadyChecked}
+                        className={`w-full flex items-center gap-4 p-4 rounded-2xl border-2 text-left transition-all shadow-sm ${
+                          alreadyChecked
+                            ? "bg-emerald-50 border-emerald-200 cursor-not-allowed opacity-70"
+                            : "bg-white border-slate-200 hover:border-indigo-400 hover:shadow-md active:scale-95"
+                        }`}
+                      >
+                        <div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center shrink-0">
+                          <span className="text-xl font-bold text-indigo-600">
+                            {student.name[0]}
+                          </span>
+                        </div>
+                        <div className="flex-1">
+                          <div className="font-bold text-lg text-slate-800">
+                            {student.name}
+                          </div>
+                          <div className="text-sm text-slate-500">
+                            {student.teacher} 선생님
+                          </div>
+                        </div>
+                        {alreadyChecked ? (
+                          <div className="flex items-center gap-1 text-emerald-600 font-bold text-sm">
+                            <span className="w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center text-white text-xs">✓</span>
+                            출석 완료
+                          </div>
+                        ) : (
+                          <div className="text-indigo-400 font-bold text-lg">→</div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 숫자 키패드 */}
+          <div className="grid grid-cols-3 gap-3 mb-3">
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
+              <button
+                key={n}
+                onClick={() => handleKeypad(String(n))}
+                disabled={phoneInput.length >= 4}
+                className="w-full py-4 bg-white border-2 border-slate-200 rounded-2xl text-2xl font-bold text-slate-700 hover:bg-indigo-50 hover:border-indigo-300 active:bg-indigo-100 disabled:opacity-40 transition-all shadow-sm"
+              >
+                {n}
+              </button>
+            ))}
+            <button
+              onClick={handleReset}
+              className="w-full py-4 bg-slate-100 border-2 border-slate-200 rounded-2xl text-sm font-bold text-slate-500 hover:bg-slate-200 active:bg-slate-300 transition-all"
+            >
+              초기화
+            </button>
+            <button
+              onClick={() => handleKeypad("0")}
+              disabled={phoneInput.length >= 4}
+              className="w-full py-4 bg-white border-2 border-slate-200 rounded-2xl text-2xl font-bold text-slate-700 hover:bg-indigo-50 hover:border-indigo-300 active:bg-indigo-100 disabled:opacity-40 transition-all shadow-sm"
+            >
+              0
+            </button>
+            <button
+              onClick={handleKeypadDelete}
+              className="w-full py-4 bg-slate-100 border-2 border-slate-200 rounded-2xl text-xl font-bold text-slate-600 hover:bg-slate-200 active:bg-slate-300 transition-all"
+            >
+              ←
+            </button>
+          </div>
+
+          <p className="text-center text-slate-300 text-xs mt-4">
+            문의: 선생님께 직접 말씀해주세요
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // [AttendanceView] - 1:1 레슨 맞춤형 (지각 삭제, 결석 사유, 당일취소 유형화 + 강사필터링 유지)
 const AttendanceView = ({ students, showToast, user, teachers }) => {
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -6508,7 +7186,6 @@ const StudentView = ({
   const [searchTerm, setSearchTerm] = useState("");
   // 기본값을 '재원'으로 설정 (휴원·퇴원은 드롭다운으로 접근)
   const [filterStatus, setFilterStatus] = useState("재원");
-  const [showInactiveMenu, setShowInactiveMenu] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [modalTab, setModalTab] = useState("info");
@@ -6642,9 +7319,9 @@ const StudentView = ({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            {/* 주 필터: 재원 */}
+            {/* 재원 */}
             <button
-              onClick={() => { setFilterStatus("재원"); setShowInactiveMenu(false); }}
+              onClick={() => setFilterStatus("재원")}
               className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${
                 filterStatus === "재원"
                   ? "bg-indigo-600 text-white shadow-sm"
@@ -6657,43 +7334,35 @@ const StudentView = ({
               </span>
             </button>
 
-            {/* 보조 필터: 휴원·퇴원 드롭다운 */}
-            <div className="relative">
-              <button
-                onClick={() => setShowInactiveMenu((v) => !v)}
-                className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-1.5 ${
-                  filterStatus === "휴원" || filterStatus === "퇴원"
-                    ? "bg-slate-600 text-white shadow-sm"
-                    : "bg-slate-100 text-slate-400 hover:bg-slate-200"
-                }`}
-              >
-                {filterStatus === "휴원" || filterStatus === "퇴원"
-                  ? filterStatus
-                  : "휴원·퇴원"}
-                <span className="text-[10px]">
-                  {filterStatus === "휴원" || filterStatus === "퇴원"
-                    ? stats[filterStatus]
-                    : stats.휴원 + stats.퇴원}
-                </span>
-                <ChevronDown size={13} />
-              </button>
-              {showInactiveMenu && (
-                <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-20 overflow-hidden min-w-[120px]">
-                  {["휴원", "퇴원"].map((s) => (
-                    <button
-                      key={s}
-                      onClick={() => { setFilterStatus(s); setShowInactiveMenu(false); }}
-                      className={`w-full text-left px-4 py-3 text-sm flex justify-between items-center hover:bg-slate-50 transition-colors ${
-                        filterStatus === s ? "text-indigo-600 font-bold bg-indigo-50" : "text-slate-600"
-                      }`}
-                    >
-                      {s}
-                      <span className="text-xs text-slate-400 ml-3">{stats[s]}명</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            {/* 휴원 */}
+            <button
+              onClick={() => setFilterStatus("휴원")}
+              className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-2 ${
+                filterStatus === "휴원"
+                  ? "bg-amber-500 text-white shadow-sm"
+                  : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+              }`}
+            >
+              휴원
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${filterStatus === "휴원" ? "bg-white/25 text-white" : "bg-slate-200 text-slate-500"}`}>
+                {stats.휴원}
+              </span>
+            </button>
+
+            {/* 퇴원 */}
+            <button
+              onClick={() => setFilterStatus("퇴원")}
+              className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-2 ${
+                filterStatus === "퇴원"
+                  ? "bg-rose-500 text-white shadow-sm"
+                  : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+              }`}
+            >
+              퇴원
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${filterStatus === "퇴원" ? "bg-white/25 text-white" : "bg-slate-200 text-slate-500"}`}>
+                {stats.퇴원}
+              </span>
+            </button>
           </div>
         </div>
 
@@ -6755,8 +7424,73 @@ const StudentView = ({
         </div>
       )}
 
-      {/* 테이블 영역 */}
-      <div className="bg-white rounded-2xl border shadow-sm overflow-auto flex-1 min-h-0">
+      {/* 퇴원 원생 전용 테이블 */}
+      {filterStatus === "퇴원" && (
+        <div className="bg-white rounded-2xl border border-rose-100 shadow-sm overflow-auto max-h-[70vh]">
+          <div className="px-5 py-3 bg-rose-50 border-b border-rose-100 flex items-center gap-2">
+            <span className="text-rose-600 font-bold text-sm">퇴원 원생 관리</span>
+            <span className="text-xs text-rose-400">({filteredStudents.length}명)</span>
+          </div>
+          <table className="w-full text-left border-separate border-spacing-0">
+            <thead>
+              <tr className="bg-slate-50 text-slate-500 text-[11px] font-bold uppercase tracking-wider">
+                <th className="p-4 w-56 sticky left-0 top-0 bg-slate-100 z-20 border-b border-r border-slate-200">이름 / 과목 / 강사</th>
+                <th className="p-4 border-b border-slate-200">연락처</th>
+                <th className="p-4 border-b border-slate-200">퇴원일</th>
+                <th className="p-4 w-36 text-center border-b border-slate-200">관리</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredStudents.length > 0 ? filteredStudents.map((s) => (
+                <tr key={s.id} className="hover:bg-rose-50/30 transition-colors group">
+                  <td className="p-4 sticky left-0 bg-white group-hover:bg-rose-50/30 z-10 border-r border-slate-100">
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-slate-700 cursor-pointer hover:text-indigo-600 hover:underline" onClick={() => openWithTab(s, "info")}>{s.name}</span>
+                        <span className="text-[10px] px-2 py-0.5 bg-rose-50 text-rose-500 rounded-full font-bold border border-rose-100">{s.subject}</span>
+                      </div>
+                      <span className="text-xs text-slate-400">{s.teacher}</span>
+                    </div>
+                  </td>
+                  <td className="p-4 text-sm font-mono text-slate-500">{s.phone || "-"}</td>
+                  <td className="p-4 text-sm text-slate-500">{s.withdrawalDate || "-"}</td>
+                  <td className="p-4">
+                    <div className="flex items-center justify-center gap-2">
+                      <button
+                        onClick={async () => {
+                          if (window.confirm(`${s.name} 원생을 재등록(재원) 처리하시겠습니까?`)) {
+                            await onUpdateStudent(s.id, { status: "재원", withdrawalDate: null });
+                          }
+                        }}
+                        className="px-3 py-1.5 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-lg text-xs font-bold hover:bg-emerald-600 hover:text-white transition-all"
+                      >
+                        재등록
+                      </button>
+                      <button
+                        onClick={() => openWithTab(s, "info")}
+                        className="p-1.5 bg-white text-slate-400 border border-slate-200 rounded-lg hover:bg-slate-800 hover:text-white transition-all"
+                        title="정보수정"
+                      >
+                        <Settings size={15} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )) : (
+                <tr>
+                  <td colSpan={4} className="py-16 text-center text-slate-400">
+                    <p className="font-bold text-base mb-1">퇴원 원생이 없습니다.</p>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* 일반 테이블 영역 (재원·휴원·신규) */}
+      {filterStatus !== "퇴원" && (
+      <div className="bg-white rounded-2xl border shadow-sm overflow-auto max-h-[70vh]">
         <table className="w-full text-left border-separate border-spacing-0">
           <thead>
             <tr className="bg-slate-50 text-slate-500 text-[11px] font-bold uppercase tracking-wider">
@@ -6929,6 +7663,7 @@ const StudentView = ({
           </tbody>
         </table>
       </div>
+      )}
 
       <StudentManagementModal
         isOpen={isDetailModalOpen}
@@ -7787,9 +8522,9 @@ const PaymentView = ({
 
   // 수강 현황 계산 헬퍼
   const getStudentProgress = (s) => {
-    const totalAttended = (s.attendanceHistory || []).filter(
-      (h) => h.status === "present"
-    ).length;
+    const totalAttended = (s.attendanceHistory || [])
+      .filter((h) => h.status === "present")
+      .reduce((sum, h) => sum + (h.count || 1), 0);
     const sessionUnit = getEffectiveSessions(s);
     const sortedPayments = [...(s.paymentHistory || [])].sort((a, b) =>
       a.date.localeCompare(b.date)
@@ -8081,6 +8816,13 @@ const PaymentView = ({
               미납/만료 <span className="font-bold text-rose-600">{list.length}명</span> 중{" "}
               <span className="font-bold text-indigo-700">{selectedIds.length}명</span> 선택
             </span>
+            <span className="text-sm text-slate-400">|</span>
+            <span className="text-sm text-slate-500">
+              총 미납금액{" "}
+              <span className="font-bold text-rose-600">
+                {list.reduce((sum, s) => sum + (Number(s.tuitionFee) || 0), 0).toLocaleString()}원
+              </span>
+            </span>
           </div>
           <button
             onClick={() => { if (selectedIds.length > 0) setShowBulkModal(true); else showToast("학생을 선택해주세요.", "error"); }}
@@ -8095,7 +8837,17 @@ const PaymentView = ({
         <table className="w-full text-left min-w-[640px]">
           <thead className="sticky top-0 bg-slate-50 border-b">
             <tr className="text-slate-500 text-xs uppercase">
-              {notifMode && <th className="py-3 px-3 w-8"></th>}
+              {notifMode && (
+                <th className="py-3 px-3 w-8">
+                  <input
+                    type="checkbox"
+                    checked={list.length > 0 && selectedIds.length === list.length}
+                    onChange={() => setSelectedIds(selectedIds.length === list.length ? [] : list.map((s) => s.id))}
+                    className="w-4 h-4 rounded accent-indigo-600"
+                    title="전체 선택"
+                  />
+                </th>
+              )}
               <th className="py-3 px-4">이름/과목</th>
               <th className="py-3 px-4">강사</th>
               <th className="py-3 px-4">원비</th>
@@ -8662,6 +9414,18 @@ export default function App() {
     try {
       const safeAppId = APP_ID || "jnc-music-v2";
 
+      // 퇴원 처리 시 퇴원일 자동 기록 (이미 설정된 경우 덮어쓰지 않음)
+      if (updatedData.status === "퇴원" && !updatedData.withdrawalDate) {
+        const existingStudent = students.find((s) => s.id === id);
+        if (!existingStudent?.withdrawalDate) {
+          updatedData = { ...updatedData, withdrawalDate: new Date().toISOString().slice(0, 10) };
+        }
+      }
+      // 재등록 시 퇴원일 제거
+      if (updatedData.status === "재원" && updatedData.withdrawalDate === null) {
+        updatedData = { ...updatedData, withdrawalDate: "" };
+      }
+
       if (id) {
         // 1. Firebase DB 업데이트
         const studentRef = doc(
@@ -8803,6 +9567,14 @@ export default function App() {
   // ▲▲▲▲▲ [여기까지] return ( 바로 위에 있어야 합니다 ▲▲▲▲▲
   return (
     <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
+      {/* 키오스크 모드: 전체화면 오버레이 */}
+      {activeTab === "kiosk" && (
+        <KioskView
+          students={students}
+          onExitKiosk={() => setActiveTab("dashboard")}
+        />
+      )}
+
       {/* 1. 알림 메시지 */}
       {message && (
         <div
@@ -8919,6 +9691,15 @@ export default function App() {
             active={activeTab === "attendance"}
             onClick={() => {
               setActiveTab("attendance");
+              setIsSidebarOpen(false);
+            }}
+          />
+          <SidebarItem
+            icon={Tablet}
+            label="출석 단말기"
+            active={activeTab === "kiosk"}
+            onClick={() => {
+              setActiveTab("kiosk");
               setIsSidebarOpen(false);
             }}
           />
@@ -9059,6 +9840,7 @@ export default function App() {
               consultations={consultations}
               reports={reports}
               user={currentUser}
+              messageLogs={messageLogs}
               onNavigateToConsultation={(consult) => {
                 setTargetConsultation(consult);
                 setActiveTab("consultations");
