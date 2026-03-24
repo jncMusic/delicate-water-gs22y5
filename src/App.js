@@ -2120,18 +2120,36 @@ const ReportView = ({
     return `${parseInt(s[0])}년 ${parseInt(s[1])}월 ${parseInt(s[2])}일 ~ ${parseInt(e[0])}년 ${parseInt(e[1])}월 ${parseInt(e[2])}일`;
   };
 
-  // 수업일 추출
+  // 수업일 추출 (회차 포함)
   const getAttendanceDates = (student) => {
     if (!student) return "";
 
-    return (student.attendanceHistory || [])
-      .filter(
-        (h) =>
-          h.date >= customStart && h.date <= customEnd && h.status === "present"
-      )
-      .map((h) => h.date.slice(5))
-      .sort()
-      .join(", ");
+    const total = getEffectiveSessions(student);
+    // 전체 출석 이력을 날짜순 정렬하여 누적 회차 계산
+    const allPresent = (student.attendanceHistory || [])
+      .filter((h) => h.status === "present")
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    let cumulative = 0;
+    const results = [];
+
+    for (const h of allPresent) {
+      const cnt = h.count || 1;
+      const startNum = (cumulative % total) + 1;
+      const endNum = ((cumulative + cnt - 1) % total) + 1;
+
+      if (h.date >= customStart && h.date <= customEnd) {
+        const dateLabel = h.date.slice(5).replace("-", "/");
+        const sessionLabel =
+          cnt >= 2
+            ? `(${startNum}~${endNum}회차)`
+            : `(${startNum}회차)`;
+        results.push(`${dateLabel}${sessionLabel}`);
+      }
+      cumulative += cnt;
+    }
+
+    return results.join(", ");
   };
 
   // 필터링
@@ -2316,7 +2334,7 @@ const ReportView = ({
                         <span className="text-xs font-bold text-slate-500 block mb-1">
                           📅 수업 진행 일자 (자동)
                         </span>
-                        <div className="text-sm font-mono text-indigo-700 bg-white px-2 py-1 rounded border border-indigo-100 min-h-[30px] flex items-center">
+                        <div className="text-sm font-mono text-indigo-700 bg-white px-2 py-1 rounded border border-indigo-100 min-h-[30px] flex flex-wrap items-center gap-x-1">
                           {dates || "기간 내 출석 없음"}
                         </div>
                       </div>
