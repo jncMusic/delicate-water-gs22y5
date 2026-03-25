@@ -72,7 +72,9 @@ export const metadata = {
   },
   verification: {
     google: 'kD5yHt67QkPAjJTl5aAcoEb6nlOXZAF3q2TnBgYFOw0',
-    naver: 'db7fcca47bbb3561cf224a430b7a6c9f849c62c3',
+    other: {
+      'naver-site-verification': 'db7fcca47bbb3561cf224a430b7a6c9f849c62c3',
+    },
   },
   alternates: {
     canonical: 'https://jncmusic.kr',
