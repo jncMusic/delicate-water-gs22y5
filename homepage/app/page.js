@@ -75,9 +75,9 @@ const COURSES = [
 ];
 
 const STATS = [
-  { icon: Users, value: '500+', label: '누적 수강생' },
+  { icon: Users, value: '1500+', label: '누적 수강생' },
   { icon: Award, value: '10+', label: '전문 강사진' },
-  { icon: BookOpen, value: '4개', label: '수강 과목' },
+  { icon: BookOpen, value: '10+', label: '수강 과목' },
   { icon: Star, value: '15년+', label: '음악 교육 경력' },
 ];
 
