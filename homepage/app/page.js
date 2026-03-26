@@ -81,6 +81,24 @@ const STATS = [
   { icon: Star, value: '15년+', label: '음악 교육 경력' },
 ];
 
+const INSTRUCTORS = [
+  { name: "강열혁", role: "원장", instrument: "플루트", desc: "연세대 석사 / 현) JnC Music Lab 대표", icon: "🎶" },
+  { name: "조국화", instrument: "피아노", icon: "🎹" },
+  { name: "김소형", instrument: "피아노", icon: "🎹" },
+  { name: "최지영", instrument: "피아노", icon: "🎹" },
+  { name: "김맑음", instrument: "오보에", icon: "🎷" },
+  { name: "이윤석", instrument: "베이스", icon: "🎸" },
+  { name: "남선오", instrument: "베이스", icon: "🎸" },
+  { name: "문세영", instrument: "보컬", icon: "🎤" },
+  { name: "권시문", instrument: "드럼", icon: "🥁" },
+  { name: "천가희", instrument: "드럼", icon: "🥁" },
+  { name: "태유민", instrument: "드럼", icon: "🥁" },
+  { name: "김여빈", instrument: "기타", icon: "🎸" },
+  { name: "이상현", instrument: "기타", icon: "🎸" },
+  { name: "공성윤", instrument: "기타", icon: "🎸" },
+  { name: "한수정", instrument: "트럼펫", icon: "🎺" },
+];
+
 const HOURS = [
   { day: '월 – 금', time: '10:30 – 22:00' },
   { day: '토 · 일', time: '09:00 – 22:00' },
@@ -431,37 +449,81 @@ export default function HomePage() {
         </section>
 
         {/* ── 강사 소개 ── */}
-        <section id="teachers" className="py-24 px-4 sm:px-6 lg:px-8 bg-slate-50">
-          <div className="max-w-7xl mx-auto">
-            <div className="text-center mb-16">
-              <p className="text-[#d4a843] text-sm font-bold tracking-widest uppercase mb-3">Teachers</p>
-              <h2 className="text-4xl sm:text-5xl font-extrabold text-[#0d1b3e] leading-tight">
-                강사 소개
-              </h2>
-              <p className="text-slate-500 mt-4 text-lg max-w-xl mx-auto">
-                각 분야 최고의 전문 강사진이 함께합니다
-              </p>
+<section id="teachers" className="py-24 px-4 sm:px-6 lg:px-8 bg-slate-50">
+  <div className="max-w-7xl mx-auto">
+    <div className="text-center mb-16">
+      <p className="text-[#d4a843] text-sm font-bold tracking-widest uppercase mb-3">Instructors</p>
+      <h2 className="text-4xl sm:text-5xl font-extrabold text-[#0d1b3e] leading-tight">
+        최고의 강사진
+      </h2>
+      <p className="text-slate-500 mt-4 text-lg max-w-xl mx-auto">
+        각 분야에서 활발히 활동 중인 전문 아티스트들이<br className="hidden sm:block" />
+        열정적으로 지도를 도와드립니다.
+      </p>
+    </div>
+
+    {/* 강사 카드 그리드 */}
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 md:gap-6">
+      {INSTRUCTORS.map((teacher, index) => (
+        <div 
+          key={index} 
+          className={`group relative bg-white border border-slate-200 rounded-2xl p-6 transition-all duration-300 hover:shadow-xl hover:-translate-y-1 ${
+            teacher.role === "원장" ? "border-[#d4a843] ring-1 ring-[#d4a843]/20" : ""
+          }`}
+        >
+          {/* 원장님 강조 표시 */}
+          {teacher.role === "원장" && (
+            <div className="absolute top-3 right-3 bg-[#d4a843] text-[#0d1b3e] text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
+              Director
+            </div>
+          )}
+
+          <div className="flex flex-col items-center text-center">
+            {/* 악기 아이콘 */}
+            <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
+              {teacher.icon}
             </div>
 
-            {/* 강사 소개 준비 중 안내 */}
-            <div className="bg-white border-2 border-dashed border-[#d4a843]/30 rounded-3xl p-16 text-center">
-              <div className="w-16 h-16 bg-[#d4a843]/10 rounded-full flex items-center justify-center mx-auto mb-5">
-                <Users size={28} className="text-[#d4a843]" />
-              </div>
-              <h3 className="text-xl font-bold text-[#0d1b3e] mb-2">강사 소개 준비 중</h3>
-              <p className="text-slate-500 text-sm">
-                강사진 소개 페이지를 준비 중입니다. 자세한 문의는 전화 또는 네이버 톡톡으로 연락 주세요.
+            {/* 이름 및 정보 */}
+            <h3 className="text-[#0d1b3e] font-bold text-lg mb-1">
+              {teacher.name}
+            </h3>
+            <p className="text-[#d4a843] text-xs font-semibold mb-3">
+              {teacher.instrument}
+            </p>
+            
+            {/* 설명 (원장님 등 특수 정보가 있을 때만 출력) */}
+            {teacher.desc && (
+              <p className="text-slate-400 text-[11px] leading-relaxed break-keep">
+                {teacher.desc}
               </p>
-              <a
-                href="tel:02-2655-0520"
-                className="inline-flex items-center gap-2 mt-6 bg-[#0d1b3e] text-white font-semibold px-6 py-3 rounded-xl text-sm hover:bg-[#142c58] transition-colors"
-              >
-                <Phone size={16} />
-                02-2655-0520 문의하기
-              </a>
-            </div>
+            )}
+            
+            {!teacher.desc && (
+              <div className="w-8 h-0.5 bg-slate-100 rounded-full mt-2" />
+            )}
           </div>
-        </section>
+        </div>
+      ))}
+    </div>
+
+    {/* 하단 안내 */}
+    <div className="mt-16 text-center">
+      <div className="inline-flex items-center gap-3 bg-white border border-slate-200 px-6 py-4 rounded-2xl shadow-sm">
+        <div className="flex -space-x-2">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="w-8 h-8 rounded-full bg-slate-200 border-2 border-white flex items-center justify-center text-[10px]">
+              👤
+            </div>
+          ))}
+        </div>
+        <p className="text-slate-600 text-sm font-medium">
+          총 <span className="text-[#0d1b3e] font-bold">15명</span>의 전문 강사진이 함께합니다.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
 
         {/* ── 수강 신청 ── */}
         <section id="enroll" className="py-24 px-4 sm:px-6 lg:px-8 bg-[#0d1b3e]">
