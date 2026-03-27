@@ -37,47 +37,37 @@ const COURSES = [
     title: '피아노',
     titleEn: 'Piano',
     icon: '🎹',
-    color: 'from-blue-900 to-navy-900',
-    accent: 'bg-blue-500',
-    description: '클래식 피아노부터 재즈·팝 피아노까지, 기초 입문자부터 입시·전공자까지 체계적인 커리큘럼으로 지도합니다.',
-    tags: ['클래식', '재즈', '팝', '입시', '취미'],
+    color: 'from-blue-900 to-[#0d1b3e]',
+    borderHover: 'hover:border-blue-400/40',
+    description: '클래식의 기초부터 재즈의 자유로운 표현까지. 입문자부터 입시·전공자까지 1:1 맞춤 지도합니다.',
+    instruments: ['클래식 피아노', '재즈 피아노'],
   },
   {
     id: 'orchestral',
     title: '관현악',
     titleEn: 'Orchestral',
     icon: '🎻',
-    color: 'from-emerald-900 to-navy-900',
-    accent: 'bg-emerald-500',
-    description: '바이올린, 비올라, 첼로, 플루트, 클라리넷 등 다양한 관현악기를 전문 강사진과 함께 배울 수 있습니다.',
-    tags: ['바이올린', '첼로', '비올라', '플루트', '클라리넷'],
+    color: 'from-emerald-900 to-[#0d1b3e]',
+    borderHover: 'hover:border-emerald-400/40',
+    description: '현악·목관·금관 악기를 전문 강사진과 함께. 취미부터 입시·오케스트라 활동까지 지원합니다.',
+    instruments: ['플루트', '클라리넷', '트럼펫', '첼로'],
   },
   {
     id: 'practical',
     title: '실용음악',
     titleEn: 'Practical Music',
     icon: '🎸',
-    color: 'from-orange-900 to-navy-900',
-    accent: 'bg-orange-500',
-    description: '기타, 베이스, 드럼, 키보드, 작편곡까지. 실용음악 전공 준비부터 취미까지 원하는 방향으로 배울 수 있습니다.',
-    tags: ['기타', '베이스', '드럼', '키보드', '작편곡'],
-  },
-  {
-    id: 'vocal',
-    title: '성악',
-    titleEn: 'Vocal',
-    icon: '🎤',
-    color: 'from-purple-900 to-navy-900',
-    accent: 'bg-purple-500',
-    description: '클래식 성악부터 뮤지컬, 팝 보컬까지. 발성 교정에서 무대 퍼포먼스까지 전문적으로 지도합니다.',
-    tags: ['클래식', '뮤지컬', '팝 보컬', '발성', '입시'],
+    color: 'from-orange-900 to-[#0d1b3e]',
+    borderHover: 'hover:border-orange-400/40',
+    description: '밴드·보컬·작편곡까지 현장 중심의 커리큘럼. 전공 준비부터 취미 연주까지 모든 레벨을 지도합니다.',
+    instruments: ['기타', '베이스', '드럼', '보컬', '건반', 'MIDI'],
   },
 ];
 
 const STATS = [
   { icon: Users, value: '500+', label: '누적 수강생' },
   { icon: Award, value: '10+', label: '전문 강사진' },
-  { icon: BookOpen, value: '4개', label: '수강 과목' },
+  { icon: BookOpen, value: '3개', label: '수강 과목' },
   { icon: Star, value: '15년+', label: '음악 교육 경력' },
 ];
 
@@ -323,7 +313,7 @@ export default function HomePage() {
 
             {/* 서브 텍스트 */}
             <p className="text-white/60 text-lg sm:text-xl max-w-xl mx-auto mt-6 mb-10 leading-relaxed">
-              피아노 · 관현악 · 실용음악 · 성악
+              피아노 · 관현악 · 실용음악
               <br className="hidden sm:block" />
               <span className="text-white/80"> 유아부터 성인까지, 수준에 맞는 1:1 맞춤 지도</span>
             </p>
@@ -367,7 +357,7 @@ export default function HomePage() {
                   성장하는 공간
                 </h2>
                 <p className="text-slate-600 text-lg leading-relaxed mb-5">
-                  JNC 음악학원은 목동 지역에서 피아노, 관현악, 실용음악, 성악을 전문으로 가르치는 음악 교육 기관입니다.
+                  JNC 음악학원은 목동 지역에서 피아노, 관현악, 실용음악을 전문으로 가르치는 음악 교육 기관입니다.
                 </p>
                 <p className="text-slate-600 leading-relaxed mb-8">
                   단순한 연주 기술 습득을 넘어, 음악을 통해 창의성과 표현력을 키울 수 있도록 학생 개개인의 성향과 목표에 맞는 1:1 맞춤 커리큘럼을 제공합니다. 유아·초등부터 입시·성인반까지, 음악을 사랑하는 모든 분들을 환영합니다.
@@ -411,40 +401,68 @@ export default function HomePage() {
                 수강 과목
               </h2>
               <p className="text-white/50 mt-4 text-lg max-w-xl mx-auto">
-                4개 전공 과목, 각 분야 전문 강사진이 직접 지도합니다
+                각 분야 전문 강사진이 직접 1:1로 지도합니다
               </p>
             </div>
 
-            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            {/* 과목 카드 3열 */}
+            <div className="grid sm:grid-cols-3 gap-6 mb-6">
               {COURSES.map((course) => (
                 <div
                   key={course.id}
-                  className="group relative bg-[#0d1b3e] border border-white/10 rounded-2xl p-6 overflow-hidden hover:-translate-y-2 hover:border-[#d4a843]/40 transition-all duration-300"
+                  className={`group relative bg-[#0d1b3e] border border-white/10 rounded-2xl p-7 overflow-hidden hover:-translate-y-2 ${course.borderHover} transition-all duration-300`}
                 >
-                  {/* 배경 그라디언트 */}
                   <div className={`absolute inset-0 bg-gradient-to-br ${course.color} opacity-0 group-hover:opacity-100 transition-opacity duration-300`} />
-
                   <div className="relative z-10">
-                    <div className="text-4xl mb-4">{course.icon}</div>
-                    <h3 className="text-white font-extrabold text-xl mb-1">{course.title}</h3>
-                    <p className="text-[#d4a843]/70 text-xs font-medium tracking-wider mb-4">{course.titleEn}</p>
-                    <p className="text-white/60 text-sm leading-relaxed mb-5">
-                      {course.description}
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {course.tags.map((tag) => (
-                        <span
-                          key={tag}
-                          className="text-[10px] font-semibold bg-white/10 text-white/70 px-2.5 py-1 rounded-full group-hover:bg-[#d4a843]/20 group-hover:text-[#d4a843] transition-colors"
-                        >
-                          {tag}
-                        </span>
-                      ))}
+                    <div className="text-4xl mb-5">{course.icon}</div>
+                    <h3 className="text-white font-extrabold text-2xl mb-0.5">{course.title}</h3>
+                    <p className="text-[#d4a843]/60 text-xs font-semibold tracking-widest uppercase mb-4">{course.titleEn}</p>
+                    <p className="text-white/55 text-sm leading-relaxed mb-6">{course.description}</p>
+                    {/* 악기 목록 */}
+                    <div className="border-t border-white/10 pt-5">
+                      <p className="text-white/30 text-[10px] font-bold tracking-widest uppercase mb-3">개설 악기</p>
+                      <div className="flex flex-wrap gap-2">
+                        {course.instruments.map((inst) => (
+                          <span
+                            key={inst}
+                            className="text-xs font-semibold bg-white/8 text-white/75 border border-white/10 px-3 py-1.5 rounded-lg group-hover:bg-[#d4a843]/15 group-hover:text-[#d4a843] group-hover:border-[#d4a843]/30 transition-colors"
+                          >
+                            {inst}
+                          </span>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </div>
               ))}
             </div>
+
+            {/* 연습실 대여 — 가로 전체 배너 */}
+            <a
+              href="https://booking.naver.com/booking/10/bizes/187641?tr=bnm"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group flex items-center justify-between bg-[#0d1b3e] border border-white/10 hover:border-[#d4a843]/50 rounded-2xl px-8 py-6 transition-all duration-300 hover:-translate-y-1 overflow-hidden relative"
+            >
+              {/* 배경 글로우 */}
+              <div className="absolute inset-0 bg-gradient-to-r from-[#d4a843]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+              <div className="relative z-10 flex items-center gap-5">
+                <div className="w-14 h-14 bg-[#d4a843]/15 group-hover:bg-[#d4a843]/25 rounded-xl flex items-center justify-center text-2xl shrink-0 transition-colors">
+                  🎵
+                </div>
+                <div>
+                  <div className="flex items-center gap-3 mb-1">
+                    <h3 className="text-white font-extrabold text-xl">연습실 대여</h3>
+                    <span className="text-[10px] font-bold bg-[#d4a843]/20 text-[#d4a843] px-2.5 py-1 rounded-full border border-[#d4a843]/30 tracking-wider">RENTAL</span>
+                  </div>
+                  <p className="text-white/50 text-sm">네이버 예약을 통해 간편하게 연습실을 대여하세요</p>
+                </div>
+              </div>
+              <div className="relative z-10 flex items-center gap-2 bg-[#d4a843] group-hover:bg-[#e8b33a] text-[#0d1b3e] font-bold text-sm px-5 py-2.5 rounded-xl transition-colors shrink-0 ml-4">
+                예약하기
+                <ArrowRight size={16} />
+              </div>
+            </a>
           </div>
         </section>
 
