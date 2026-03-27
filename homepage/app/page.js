@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { db, GALLERY_COLLECTION, GALLERY_CATEGORIES } from './lib/firebase';
+import { COURSES } from './lib/courses';
 import {
   Music,
   Phone,
@@ -33,30 +34,7 @@ const NAV_ITEMS = [
   { label: '오시는 길', href: '#location' },
 ];
 
-const COURSES = [
-  {
-    id: 'classic',
-    title: '클래식',
-    titleEn: 'Classical',
-    icon: '🎼',
-    color: 'from-blue-950 to-[#0d1b3e]',
-    instruments: ['피아노', '플루트', '클라리넷', '색소폰', '오보에', '트럼펫', '첼로'],
-    description: '클래식 음악의 정통 교육을 제공합니다. 기초 입문부터 콩쿠르·음대 입시까지 각 악기 전담 강사가 1:1로 지도합니다.',
-    curriculum: ['기초 자세·호흡·음정 훈련', '스케일·에튀드 단계별 훈련', '소나타·협주곡 레퍼토리', '앙상블·합주 참여', '콩쿠르·음대 입시 집중 지도'],
-    outcomes: ['콩쿠르 입상', '음대 입시', '앙상블·오케스트라 활동'],
-  },
-  {
-    id: 'practical',
-    title: '실용음악',
-    titleEn: 'Practical Music',
-    icon: '🎸',
-    color: 'from-orange-950 to-[#0d1b3e]',
-    instruments: ['보컬', '작곡', '미디', '기타', '드럼', '베이스'],
-    description: '팝·록·재즈·R&B부터 작편곡·미디 프로덕션까지. 취미반부터 실용음악과 입시·직업 뮤지션을 목표로 하는 분까지 환영합니다.',
-    curriculum: ['기초 리듬·코드·스케일 이론', '장르별 스타일 트레이닝', '밴드 합주·세션 실전', 'DAW 활용·작편곡·미디 실습', '실용음악과 입시 오디션 준비'],
-    outcomes: ['실용음악과 입시', '밴드·세션 활동', '작편곡·미디 프로덕션'],
-  },
-];
+// COURSES는 lib/courses.js에서 import
 
 const STATS = [
   { icon: Users, value: '2000+', label: '누적 수강생' },
@@ -457,13 +435,22 @@ export default function HomePage() {
                   </div>
 
                   {/* 결과물 */}
-                  <div className="flex flex-wrap gap-2 pt-4 border-t border-white/10">
+                  <div className="flex flex-wrap gap-2 pt-4 border-t border-white/10 mb-5">
                     {course.outcomes.map((out) => (
                       <span key={out} className="text-[11px] font-semibold text-[#d4a843] bg-[#d4a843]/10 border border-[#d4a843]/20 px-2.5 py-1 rounded-full">
                         {out}
                       </span>
                     ))}
                   </div>
+
+                  {/* 상세 페이지 링크 */}
+                  <a
+                    href={`/courses/${course.id}`}
+                    className="flex items-center justify-center gap-2 w-full bg-white/10 hover:bg-[#d4a843] hover:text-[#0d1b3e] text-white text-sm font-semibold py-2.5 rounded-xl transition-all duration-200 group"
+                  >
+                    자세히 보기
+                    <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
+                  </a>
                 </div>
               ))}
             </div>
