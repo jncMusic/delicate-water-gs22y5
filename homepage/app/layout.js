@@ -3,26 +3,22 @@ import './globals.css';
 export const metadata = {
   metadataBase: new URL('https://jncmusic.kr'),
   title: {
-    default: 'JNC 음악학원 | 피아노·관현악·실용음악·성악 전문',
+    default: 'JNC 음악학원 | 목동 · 양천구 클래식 · 실용음악 전문',
     template: '%s | JNC 음악학원',
   },
   description:
-    'JNC 음악학원은 피아노, 관현악, 실용음악, 성악을 전문으로 하는 음악학원입니다. 최고의 강사진과 체계적인 1:1 맞춤 커리큘럼으로 음악의 꿈을 이루어 드립니다. 유아부터 성인까지 전 연령 수강 가능.',
+    '서울 목동 · 양천구 JNC 음악학원. 2013년 개원, 누적 수강생 2000명+. 피아노·플루트·클라리넷·색소폰·오보에·트럼펫·첼로·보컬·기타·드럼·베이스·작곡·미디 전문. 취미부터 음대 입시·실용음악과 입시까지 1:1 맞춤 레슨.',
   keywords: [
-    'JNC 음악학원',
-    'JNC음악학원',
-    '음악학원',
-    '피아노학원',
-    '관현악',
-    '실용음악',
-    '성악',
-    '바이올린',
-    '첼로',
-    '플루트',
-    '기타',
-    '드럼',
-    '보컬',
-    '음악교육',
+    'JNC 음악학원', 'JNC음악학원',
+    '목동 음악학원', '양천구 음악학원', '목동 피아노학원',
+    '목동 기타학원', '목동 드럼학원', '목동 보컬학원',
+    '목동 플루트', '목동 색소폰', '목동 첼로',
+    '목동 실용음악', '목동 클래식',
+    '양천구 피아노', '양천구 기타', '양천구 드럼',
+    '음악학원', '피아노학원', '기타학원', '드럼학원', '보컬학원',
+    '클라리넷', '오보에', '트럼펫', '베이스', '작곡', '미디',
+    '음대 입시', '실용음악과 입시', '취미 음악', '성인 피아노',
+    '취미 기타', '취미 드럼', '지역 아티스트',
   ],
   authors: [{ name: 'JNC 음악학원' }],
   creator: 'JNC 음악학원',
@@ -30,44 +26,25 @@ export const metadata = {
   robots: {
     index: true,
     follow: true,
-    googleBot: {
-      index: true,
-      follow: true,
-      'max-video-preview': -1,
-      'max-image-preview': 'large',
-      'max-snippet': -1,
-    },
+    googleBot: { index: true, follow: true, 'max-image-preview': 'large', 'max-snippet': -1 },
   },
   openGraph: {
     type: 'website',
     locale: 'ko_KR',
     url: 'https://jncmusic.kr',
     siteName: 'JNC 음악학원',
-    title: 'JNC 음악학원 | 피아노·관현악·실용음악·성악 전문',
-    description:
-      '최고의 강사진과 체계적인 1:1 맞춤 커리큘럼. 피아노, 관현악, 실용음악, 성악 전 과목 수강 가능.',
-    images: [
-      {
-        url: '/og-image.png',
-        width: 1200,
-        height: 630,
-        alt: 'JNC 음악학원',
-      },
-    ],
+    title: 'JNC 음악학원 | 목동 · 양천구 클래식 · 실용음악 전문',
+    description: '2013년 개원, 누적 수강생 2000명+. 목동·양천구 음악학원. 취미부터 입시까지 1:1 맞춤 레슨.',
+    images: [{ url: '/og-image.png', width: 1200, height: 630, alt: 'JNC 음악학원' }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'JNC 음악학원 | 피아노·관현악·실용음악·성악 전문',
-    description: '최고의 강사진과 체계적인 1:1 맞춤 커리큘럼.',
+    title: 'JNC 음악학원 | 목동 · 양천구 클래식 · 실용음악 전문',
+    description: '2013년 개원, 누적 수강생 2000명+. 취미부터 입시까지 1:1 맞춤 레슨.',
     images: ['/og-image.png'],
   },
-  verification: {
-    google: '',
-    naver: '',
-  },
-  alternates: {
-    canonical: 'https://jncmusic.kr',
-  },
+  verification: { google: '', naver: '' },
+  alternates: { canonical: 'https://jncmusic.kr' },
 };
 
 export default function RootLayout({ children }) {
@@ -86,26 +63,34 @@ export default function RootLayout({ children }) {
               '@context': 'https://schema.org',
               '@type': 'MusicSchool',
               name: 'JNC 음악학원',
-              alternateName: ['JNC음악학원', 'JNC Music Academy'],
-              description:
-                '피아노, 관현악, 실용음악, 성악을 전문으로 하는 음악학원',
+              alternateName: ['JNC음악학원', 'JNC Music Academy', '목동 JNC 음악학원'],
+              description: '2013년 개원. 목동·양천구 클래식·실용음악 전문 음악학원. 취미부터 음대 입시까지.',
               url: 'https://jncmusic.kr',
-              telephone: '',
+              telephone: '02-2655-0520',
+              foundingDate: '2013',
               address: {
                 '@type': 'PostalAddress',
+                streetAddress: '목동서로 35, 목동프라자 3층 303호',
+                addressLocality: '양천구',
+                addressRegion: '서울특별시',
+                postalCode: '07999',
                 addressCountry: 'KR',
-                addressLocality: '',
+              },
+              geo: {
+                '@type': 'GeoCoordinates',
+                latitude: '37.527',
+                longitude: '126.865',
               },
               openingHoursSpecification: [
                 {
                   '@type': 'OpeningHoursSpecification',
-                  dayOfWeek: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
+                  dayOfWeek: ['Monday','Tuesday','Wednesday','Thursday','Friday'],
                   opens: '10:30',
                   closes: '22:00',
                 },
                 {
                   '@type': 'OpeningHoursSpecification',
-                  dayOfWeek: ['Saturday', 'Sunday'],
+                  dayOfWeek: ['Saturday','Sunday'],
                   opens: '09:00',
                   closes: '22:00',
                 },
@@ -114,12 +99,14 @@ export default function RootLayout({ children }) {
                 '@type': 'OfferCatalog',
                 name: '수강 과목',
                 itemListElement: [
-                  { '@type': 'Offer', itemOffered: { '@type': 'Course', name: '피아노' } },
-                  { '@type': 'Offer', itemOffered: { '@type': 'Course', name: '관현악' } },
-                  { '@type': 'Offer', itemOffered: { '@type': 'Course', name: '실용음악' } },
-                  { '@type': 'Offer', itemOffered: { '@type': 'Course', name: '성악' } },
-                ],
+                  '피아노','플루트','클라리넷','색소폰','오보에','트럼펫','첼로',
+                  '보컬','작곡','미디','기타','드럼','베이스',
+                ].map((name) => ({
+                  '@type': 'Offer',
+                  itemOffered: { '@type': 'Course', name },
+                })),
               },
+              sameAs: ['https://www.instagram.com/jnc_music_academy/'],
             }),
           }}
         />
