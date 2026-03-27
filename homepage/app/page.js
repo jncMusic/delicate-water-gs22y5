@@ -1,6 +1,8 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { db, GALLERY_COLLECTION, GALLERY_CATEGORIES } from './lib/firebase';
 import {
   Music,
   Phone,
@@ -81,15 +83,6 @@ const INSTRUCTORS = [
   { name: "한수정", instrument: "트럼펫", icon: "🎺" },
 ];
 
-// 학원 사진 갤러리
-// 사진 추가 방법: homepage/public/images/gallery/ 폴더에 이미지 파일을 넣고 아래 배열에 추가
-// 예: { src: '/images/gallery/exterior1.jpg', alt: '학원 외관', category: 'exterior' }
-const GALLERY_IMAGES = [
-  // { src: '/images/gallery/exterior1.jpg', alt: '학원 외관', category: 'exterior' },
-  // { src: '/images/gallery/interior1.jpg', alt: '레슨실 내부', category: 'interior' },
-  // { src: '/images/gallery/interior2.jpg', alt: '그랜드피아노 레슨실', category: 'interior' },
-  // { src: '/images/gallery/concert1.jpg', alt: '정기연주회', category: 'concert' },
-];
 
 const HOURS = [
   { day: '월 – 금', time: '10:30 – 22:00' },
@@ -107,6 +100,20 @@ export default function HomePage() {
   const [scrolled, setScrolled] = useState(false);
   const [activeSection, setActiveSection] = useState('');
   const iframeRef = useRef(null);
+
+  // 갤러리
+  const [galleryImages, setGalleryImages] = useState([]);
+  const [galleryTab, setGalleryTab] = useState('all');
+  const [galleryLoaded, setGalleryLoaded] = useState(false);
+
+  useEffect(() => {
+    const q = query(collection(db, GALLERY_COLLECTION), orderBy('createdAt', 'desc'));
+    const unsub = onSnapshot(q, (snap) => {
+      setGalleryImages(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      setGalleryLoaded(true);
+    }, () => setGalleryLoaded(true));
+    return unsub;
+  }, []);
 
   // 스크롤 감지 → 헤더 스타일 변경
   useEffect(() => {
@@ -464,37 +471,61 @@ export default function HomePage() {
         </section>
 
         {/* ── 학원 갤러리 ── */}
-        {GALLERY_IMAGES.length > 0 && (
-          <section className="py-24 px-4 sm:px-6 lg:px-8 bg-white">
-            <div className="max-w-7xl mx-auto">
-              <div className="text-center mb-16">
-                <p className="text-[#d4a843] text-sm font-bold tracking-widest uppercase mb-3">Gallery</p>
-                <h2 className="text-4xl sm:text-5xl font-extrabold text-[#0d1b3e] leading-tight">
-                  학원 소개
-                </h2>
-                <p className="text-slate-500 mt-4 text-lg max-w-xl mx-auto">
-                  JNC 음악학원의 공간을 소개합니다
-                </p>
-              </div>
+        {(galleryLoaded && galleryImages.length > 0) && (() => {
+          const filtered = galleryTab === 'all'
+            ? galleryImages
+            : galleryImages.filter((img) => img.category === galleryTab);
+          return (
+            <section className="py-24 px-4 sm:px-6 lg:px-8 bg-white">
+              <div className="max-w-7xl mx-auto">
+                <div className="text-center mb-12">
+                  <p className="text-[#d4a843] text-sm font-bold tracking-widest uppercase mb-3">Gallery</p>
+                  <h2 className="text-4xl sm:text-5xl font-extrabold text-[#0d1b3e] leading-tight">
+                    갤러리
+                  </h2>
+                </div>
 
-              <div className="columns-2 md:columns-3 lg:columns-4 gap-4 space-y-4">
-                {GALLERY_IMAGES.map((img, i) => (
-                  <div
-                    key={i}
-                    className="break-inside-avoid rounded-2xl overflow-hidden shadow-md hover:shadow-xl transition-shadow duration-300"
-                  >
-                    <img
-                      src={img.src}
-                      alt={img.alt}
-                      className="w-full object-cover hover:scale-105 transition-transform duration-500"
-                      loading="lazy"
-                    />
-                  </div>
-                ))}
+                {/* 카테고리 탭 */}
+                <div className="flex flex-wrap justify-center gap-2 mb-10">
+                  {[{ id: 'all', label: '전체' }, ...GALLERY_CATEGORIES].map((cat) => {
+                    const cnt = cat.id === 'all' ? galleryImages.length : galleryImages.filter((i) => i.category === cat.id).length;
+                    if (cat.id !== 'all' && cnt === 0) return null;
+                    return (
+                      <button
+                        key={cat.id}
+                        onClick={() => setGalleryTab(cat.id)}
+                        className={`px-5 py-2 rounded-full text-sm font-semibold transition-all ${
+                          galleryTab === cat.id
+                            ? 'bg-[#0d1b3e] text-white shadow-md'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        {cat.label} <span className="opacity-60">({cnt})</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* 사진 그리드 */}
+                <div className="columns-2 md:columns-3 lg:columns-4 gap-4 [column-gap:1rem]">
+                  {filtered.map((img) => (
+                    <div
+                      key={img.id}
+                      className="break-inside-avoid mb-4 rounded-2xl overflow-hidden shadow-md hover:shadow-xl transition-all duration-300 hover:-translate-y-1"
+                    >
+                      <img
+                        src={img.src}
+                        alt={img.alt}
+                        className="w-full object-cover"
+                        loading="lazy"
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          </section>
-        )}
+            </section>
+          );
+        })()}
 
         {/* ── 강사 소개 ── */}
 <section id="teachers" className="py-24 px-4 sm:px-6 lg:px-8 bg-slate-50">
