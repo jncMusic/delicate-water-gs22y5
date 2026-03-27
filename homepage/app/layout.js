@@ -43,7 +43,7 @@ export const metadata = {
     description: '2013년 개원, 누적 수강생 2000명+. 취미부터 입시까지 1:1 맞춤 레슨.',
     images: ['/og-image.png'],
   },
-  verification: { google: '', naver: '' },
+  verification: { google: '', naver: 'db7fcca47bbb3561cf224a430b7a6c9f849c62c3' },
   alternates: { canonical: 'https://jncmusic.kr' },
 };
 
