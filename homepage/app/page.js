@@ -33,51 +33,33 @@ const NAV_ITEMS = [
 
 const COURSES = [
   {
-    id: 'piano',
-    title: '피아노',
-    titleEn: 'Piano',
-    icon: '🎹',
-    color: 'from-blue-900 to-navy-900',
-    accent: 'bg-blue-500',
-    description: '클래식 피아노부터 재즈·팝 피아노까지, 기초 입문자부터 입시·전공자까지 체계적인 커리큘럼으로 지도합니다.',
-    tags: ['클래식', '재즈', '팝', '입시', '취미'],
-  },
-  {
-    id: 'orchestral',
-    title: '관현악',
-    titleEn: 'Orchestral',
-    icon: '🎻',
-    color: 'from-emerald-900 to-navy-900',
-    accent: 'bg-emerald-500',
-    description: '바이올린, 비올라, 첼로, 플루트, 클라리넷 등 다양한 관현악기를 전문 강사진과 함께 배울 수 있습니다.',
-    tags: ['바이올린', '첼로', '비올라', '플루트', '클라리넷'],
+    id: 'classic',
+    title: '클래식',
+    titleEn: 'Classical',
+    icon: '🎼',
+    color: 'from-blue-950 to-[#0d1b3e]',
+    instruments: ['피아노', '플루트', '클라리넷', '색소폰', '오보에', '트럼펫', '첼로'],
+    description: '클래식 음악의 정통 교육을 제공합니다. 기초 입문부터 콩쿠르·음대 입시까지 각 악기 전담 강사가 1:1로 지도합니다.',
+    curriculum: ['기초 자세·호흡·음정 훈련', '스케일·에튀드 단계별 훈련', '소나타·협주곡 레퍼토리', '앙상블·합주 참여', '콩쿠르·음대 입시 집중 지도'],
+    outcomes: ['콩쿠르 입상', '음대 입시', '앙상블·오케스트라 활동'],
   },
   {
     id: 'practical',
     title: '실용음악',
     titleEn: 'Practical Music',
     icon: '🎸',
-    color: 'from-orange-900 to-navy-900',
-    accent: 'bg-orange-500',
-    description: '기타, 베이스, 드럼, 키보드, 작편곡까지. 실용음악 전공 준비부터 취미까지 원하는 방향으로 배울 수 있습니다.',
-    tags: ['기타', '베이스', '드럼', '키보드', '작편곡'],
-  },
-  {
-    id: 'vocal',
-    title: '성악',
-    titleEn: 'Vocal',
-    icon: '🎤',
-    color: 'from-purple-900 to-navy-900',
-    accent: 'bg-purple-500',
-    description: '클래식 성악부터 뮤지컬, 팝 보컬까지. 발성 교정에서 무대 퍼포먼스까지 전문적으로 지도합니다.',
-    tags: ['클래식', '뮤지컬', '팝 보컬', '발성', '입시'],
+    color: 'from-orange-950 to-[#0d1b3e]',
+    instruments: ['보컬', '작곡', '미디', '기타', '드럼', '베이스'],
+    description: '팝·록·재즈·R&B부터 작편곡·미디 프로덕션까지. 취미반부터 실용음악과 입시·직업 뮤지션을 목표로 하는 분까지 환영합니다.',
+    curriculum: ['기초 리듬·코드·스케일 이론', '장르별 스타일 트레이닝', '밴드 합주·세션 실전', 'DAW 활용·작편곡·미디 실습', '실용음악과 입시 오디션 준비'],
+    outcomes: ['실용음악과 입시', '밴드·세션 활동', '작편곡·미디 프로덕션'],
   },
 ];
 
 const STATS = [
   { icon: Users, value: '500+', label: '누적 수강생' },
   { icon: Award, value: '10+', label: '전문 강사진' },
-  { icon: BookOpen, value: '4개', label: '수강 과목' },
+  { icon: BookOpen, value: '13개', label: '수강 과목' },
   { icon: Star, value: '15년+', label: '음악 교육 경력' },
 ];
 
@@ -323,7 +305,7 @@ export default function HomePage() {
 
             {/* 서브 텍스트 */}
             <p className="text-white/60 text-lg sm:text-xl max-w-xl mx-auto mt-6 mb-10 leading-relaxed">
-              피아노 · 관현악 · 실용음악 · 성악
+              클래식 · 실용음악
               <br className="hidden sm:block" />
               <span className="text-white/80"> 유아부터 성인까지, 수준에 맞는 1:1 맞춤 지도</span>
             </p>
@@ -367,7 +349,7 @@ export default function HomePage() {
                   성장하는 공간
                 </h2>
                 <p className="text-slate-600 text-lg leading-relaxed mb-5">
-                  JNC 음악학원은 목동 지역에서 피아노, 관현악, 실용음악, 성악을 전문으로 가르치는 음악 교육 기관입니다.
+                  JNC 음악학원은 목동 지역에서 클래식(피아노·플루트·클라리넷·색소폰·오보에·트럼펫·첼로)과 실용음악(보컬·작곡·미디·기타·드럼·베이스)을 전문으로 가르치는 음악 교육 기관입니다.
                 </p>
                 <p className="text-slate-600 leading-relaxed mb-8">
                   단순한 연주 기술 습득을 넘어, 음악을 통해 창의성과 표현력을 키울 수 있도록 학생 개개인의 성향과 목표에 맞는 1:1 맞춤 커리큘럼을 제공합니다. 유아·초등부터 입시·성인반까지, 음악을 사랑하는 모든 분들을 환영합니다.
@@ -411,36 +393,59 @@ export default function HomePage() {
                 수강 과목
               </h2>
               <p className="text-white/50 mt-4 text-lg max-w-xl mx-auto">
-                4개 전공 과목, 각 분야 전문 강사진이 직접 지도합니다
+                총 13개 악기·과목, 각 분야 전담 강사가 1:1로 지도합니다
               </p>
             </div>
 
-            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            <div className="grid lg:grid-cols-2 gap-6">
               {COURSES.map((course) => (
                 <div
                   key={course.id}
-                  className="group relative bg-[#0d1b3e] border border-white/10 rounded-2xl p-6 overflow-hidden hover:-translate-y-2 hover:border-[#d4a843]/40 transition-all duration-300"
+                  className={`group relative bg-gradient-to-br ${course.color} border border-white/10 rounded-2xl p-8 overflow-hidden hover:border-[#d4a843]/40 transition-all duration-300`}
                 >
-                  {/* 배경 그라디언트 */}
-                  <div className={`absolute inset-0 bg-gradient-to-br ${course.color} opacity-0 group-hover:opacity-100 transition-opacity duration-300`} />
-
-                  <div className="relative z-10">
-                    <div className="text-4xl mb-4">{course.icon}</div>
-                    <h3 className="text-white font-extrabold text-xl mb-1">{course.title}</h3>
-                    <p className="text-[#d4a843]/70 text-xs font-medium tracking-wider mb-4">{course.titleEn}</p>
-                    <p className="text-white/60 text-sm leading-relaxed mb-5">
-                      {course.description}
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {course.tags.map((tag) => (
-                        <span
-                          key={tag}
-                          className="text-[10px] font-semibold bg-white/10 text-white/70 px-2.5 py-1 rounded-full group-hover:bg-[#d4a843]/20 group-hover:text-[#d4a843] transition-colors"
-                        >
-                          {tag}
-                        </span>
-                      ))}
+                  {/* 카테고리 헤더 */}
+                  <div className="flex items-center gap-4 mb-6">
+                    <div className="text-4xl">{course.icon}</div>
+                    <div>
+                      <h3 className="text-white font-extrabold text-2xl">{course.title}</h3>
+                      <p className="text-[#d4a843]/70 text-xs font-medium tracking-wider">{course.titleEn}</p>
                     </div>
+                  </div>
+
+                  {/* 악기 목록 */}
+                  <div className="flex flex-wrap gap-2 mb-6">
+                    {course.instruments.map((inst) => (
+                      <span
+                        key={inst}
+                        className="text-sm font-semibold bg-white/10 text-white px-3 py-1.5 rounded-full border border-white/10 group-hover:bg-[#d4a843]/20 group-hover:border-[#d4a843]/30 group-hover:text-[#d4a843] transition-colors"
+                      >
+                        {inst}
+                      </span>
+                    ))}
+                  </div>
+
+                  {/* 설명 */}
+                  <p className="text-white/60 text-sm leading-relaxed mb-6">
+                    {course.description}
+                  </p>
+
+                  {/* 커리큘럼 */}
+                  <div className="space-y-2 mb-6">
+                    {course.curriculum.map((item, i) => (
+                      <div key={i} className="flex items-start gap-2 text-sm text-white/70">
+                        <span className="text-[#d4a843] mt-0.5 shrink-0">✓</span>
+                        {item}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* 결과물 */}
+                  <div className="flex flex-wrap gap-2 pt-4 border-t border-white/10">
+                    {course.outcomes.map((out) => (
+                      <span key={out} className="text-[11px] font-semibold text-[#d4a843] bg-[#d4a843]/10 border border-[#d4a843]/20 px-2.5 py-1 rounded-full">
+                        {out}
+                      </span>
+                    ))}
                   </div>
                 </div>
               ))}
@@ -553,7 +558,7 @@ export default function HomePage() {
 
               {/* 네이버 톡톡 */}
               <a
-                href="https://talk.naver.com/jncmusic"
+                href="https://talk.naver.com/profile/w4xhyc"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="group bg-white/5 hover:bg-[#03c75a] border border-white/10 hover:border-[#03c75a] rounded-2xl p-7 flex flex-col items-center gap-4 transition-all duration-300 hover:-translate-y-1"
