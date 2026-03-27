@@ -81,6 +81,16 @@ const INSTRUCTORS = [
   { name: "한수정", instrument: "트럼펫", icon: "🎺" },
 ];
 
+// 학원 사진 갤러리
+// 사진 추가 방법: homepage/public/images/gallery/ 폴더에 이미지 파일을 넣고 아래 배열에 추가
+// 예: { src: '/images/gallery/exterior1.jpg', alt: '학원 외관', category: 'exterior' }
+const GALLERY_IMAGES = [
+  // { src: '/images/gallery/exterior1.jpg', alt: '학원 외관', category: 'exterior' },
+  // { src: '/images/gallery/interior1.jpg', alt: '레슨실 내부', category: 'interior' },
+  // { src: '/images/gallery/interior2.jpg', alt: '그랜드피아노 레슨실', category: 'interior' },
+  // { src: '/images/gallery/concert1.jpg', alt: '정기연주회', category: 'concert' },
+];
+
 const HOURS = [
   { day: '월 – 금', time: '10:30 – 22:00' },
   { day: '토 · 일', time: '09:00 – 22:00' },
@@ -453,6 +463,39 @@ export default function HomePage() {
           </div>
         </section>
 
+        {/* ── 학원 갤러리 ── */}
+        {GALLERY_IMAGES.length > 0 && (
+          <section className="py-24 px-4 sm:px-6 lg:px-8 bg-white">
+            <div className="max-w-7xl mx-auto">
+              <div className="text-center mb-16">
+                <p className="text-[#d4a843] text-sm font-bold tracking-widest uppercase mb-3">Gallery</p>
+                <h2 className="text-4xl sm:text-5xl font-extrabold text-[#0d1b3e] leading-tight">
+                  학원 소개
+                </h2>
+                <p className="text-slate-500 mt-4 text-lg max-w-xl mx-auto">
+                  JNC 음악학원의 공간을 소개합니다
+                </p>
+              </div>
+
+              <div className="columns-2 md:columns-3 lg:columns-4 gap-4 space-y-4">
+                {GALLERY_IMAGES.map((img, i) => (
+                  <div
+                    key={i}
+                    className="break-inside-avoid rounded-2xl overflow-hidden shadow-md hover:shadow-xl transition-shadow duration-300"
+                  >
+                    <img
+                      src={img.src}
+                      alt={img.alt}
+                      className="w-full object-cover hover:scale-105 transition-transform duration-500"
+                      loading="lazy"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+        )}
+
         {/* ── 강사 소개 ── */}
 <section id="teachers" className="py-24 px-4 sm:px-6 lg:px-8 bg-slate-50">
   <div className="max-w-7xl mx-auto">
@@ -609,7 +652,7 @@ export default function HomePage() {
               {/* 지도 */}
               <div className="rounded-2xl overflow-hidden shadow-xl aspect-video lg:aspect-auto lg:h-80">
                 <iframe
-                  src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3163.5!2d126.865!3d37.527!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2z7ISc7Jq47Yq567OE7IucIOyYgeynhOq1rCDrpr_rlJTshLjroZwgMzU!5e0!3m2!1sko!2skr!4v1234567890"
+                  src="https://maps.google.com/maps?q=서울특별시+양천구+목동서로+35+목동프라자&output=embed&z=17&hl=ko"
                   width="100%"
                   height="100%"
                   style={{ border: 0, minHeight: '320px' }}
