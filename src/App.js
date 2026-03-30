@@ -7868,11 +7868,19 @@ const StudentManagementModal = ({
       return sum;
     }, 0);
 
+    // 결제 이력 totalSessions 보존:
+    // totalSessions 없이 저장된 기존 결제 항목은 변경 전 원생의 수강 단위로 채워 보존
+    const originalEffectiveSessions = student ? getEffectiveSessions(student) : 4;
+    const correctedPayHistory = payHistory.map((p) => ({
+      ...p,
+      totalSessions: p.totalSessions || originalEffectiveSessions,
+    }));
+
     const updatedData = {
       ...formData,
       schedules: cleanSchedules,
       attendanceHistory: attHistory,
-      paymentHistory: payHistory,
+      paymentHistory: correctedPayHistory,
       sessionsCompleted: recalcSessionsCompleted,
       updatedAt: new Date().toISOString(),
     };
