@@ -8496,6 +8496,8 @@ const PaymentView = ({
   const [filterDue, setFilterDue] = useState(false);
   // sentFilter: "" = 전체, "sent" = 발송됨만, "unsent" = 미발송만
   const [sentFilter, setSentFilter] = useState("");
+  // filterWeek: 이번 주 만료/미납자만 표시
+  const [filterWeek, setFilterWeek] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedTeacher, setSelectedTeacher] = useState("");
@@ -8571,7 +8573,15 @@ const PaymentView = ({
 
   const list = useMemo(() => {
     const sentStudentIds = new Set(messageLogs.map((l) => l.studentId));
-    return students.filter((s) => {
+    // 이번 주 시작(월요일) 계산
+    const today = new Date();
+    const dayOfWeek = (today.getDay() + 6) % 7; // 0=월 … 6=일
+    const weekStart = new Date(today);
+    weekStart.setDate(today.getDate() - dayOfWeek);
+    weekStart.setHours(0, 0, 0, 0);
+    const weekStartStr = formatDate(weekStart);
+
+    const filtered = students.filter((s) => {
       const { isOverdue, isCompleted } = getStudentProgress(s);
       // 안내 발송 모드: 미납/만료만 표시
       const isDue = notifMode
@@ -8589,9 +8599,26 @@ const PaymentView = ({
         sentFilter === "sent" ? isSent :
         sentFilter === "unsent" ? !isSent :
         true;
-      return isReEnrolled && isDue && matchesSearch && matchesTeacher && matchesSent;
+      // 주간 필터: 이번 주 이후 안내 발송 기록이 없는 미납/만료자
+      const lastNotif = messageLogs
+        .filter((l) => l.studentId === s.id)
+        .sort((a, b) => b.sentAt.localeCompare(a.sentAt))[0]?.sentAt || null;
+      const matchesWeek = !filterWeek || ((isCompleted || isOverdue) && (!lastNotif || lastNotif < weekStartStr));
+      return isReEnrolled && isDue && matchesSearch && matchesTeacher && matchesSent && matchesWeek;
     });
-  }, [students, filterDue, sentFilter, searchTerm, selectedTeacher, notifMode, messageLogs]);
+
+    // 결제 안내일 기준 정렬: 미발송 → 오래된 순
+    filtered.sort((a, b) => {
+      const da = messageLogs
+        .filter((l) => l.studentId === a.id)
+        .sort((x, y) => y.sentAt.localeCompare(x.sentAt))[0]?.sentAt || "";
+      const db = messageLogs
+        .filter((l) => l.studentId === b.id)
+        .sort((x, y) => y.sentAt.localeCompare(x.sentAt))[0]?.sentAt || "";
+      return da.localeCompare(db); // 미발송("") → 오래된 것 먼저
+    });
+    return filtered;
+  }, [students, filterDue, filterWeek, sentFilter, searchTerm, selectedTeacher, notifMode, messageLogs]);
 
   const selectedStudent = useMemo(
     () => students.find((s) => s.id === selectedStudentId) || null,
@@ -8814,6 +8841,12 @@ const PaymentView = ({
             </button>
           )}
           <button
+            onClick={() => setFilterWeek(!filterWeek)}
+            className={`px-3 py-1.5 rounded text-sm border flex items-center transition-colors ${filterWeek ? "bg-violet-50 border-violet-300 text-violet-700 font-bold" : "bg-white hover:bg-slate-50"}`}
+          >
+            <AlertCircle size={14} className="mr-1" /> {filterWeek ? "주간 해제" : "주간 미발송"}
+          </button>
+          <button
             onClick={() => setSentFilter(sentFilter === "" ? "unsent" : sentFilter === "unsent" ? "sent" : "")}
             className={`px-3 py-1.5 rounded text-sm border flex items-center transition-colors ${
               sentFilter === "unsent"
@@ -8847,8 +8880,14 @@ const PaymentView = ({
             <span className="text-sm text-slate-500">
               총 미납금액{" "}
               <span className="font-bold text-rose-600">
-                {list.reduce((sum, s) => sum + (Number(s.tuitionFee) || 0), 0).toLocaleString()}원
+                {(selectedIds.length > 0
+                  ? list.filter((s) => selectedIds.includes(s.id))
+                  : list
+                ).reduce((sum, s) => sum + (Number(s.tuitionFee) || 0), 0).toLocaleString()}원
               </span>
+              {selectedIds.length > 0 && (
+                <span className="text-xs text-indigo-500 ml-1">(선택된 {selectedIds.length}명)</span>
+              )}
             </span>
           </div>
           <button
