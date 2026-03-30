@@ -416,8 +416,7 @@ ${getSeasonalGreeting()}
 - 새로운 1회차 수업 : ${nextDateStr} (예정)
 - 미납회차 : ${unpaidDatesStr} ${unpaidCount > 0 ? `(${unpaidCount}회)` : ""}
 
-- ${student.subject || "음악"} 1:1 개인레슨
-- 결제금액 : ${sessionUnit}회 ${tuition}원 ${unpaidCount > 0 ? `(미납 ${unpaidCount}회 포함)` : ""}
+- 결제금액 : ${student.subject || "음악"} 1:1 개인레슨 ${sessionUnit}회 ${tuition}원 ${unpaidCount > 0 ? `(미납 ${unpaidCount}회 포함)` : ""}
 - 결제요청일 : ${requestDateStr} 까지 결제 부탁드립니다.
 (현장결제는 수업 당일까지, 온라인결제는 수업 전일까지 부탁드립니다)
 
@@ -6632,6 +6631,9 @@ const AttendanceView = ({ students, showToast, user, teachers }) => {
 
   // 모달 상태 (결석 사유 or 당일취소 사유 입력용)
   const [modalConfig, setModalConfig] = useState(null); // { type: 'absent' | 'canceled', student: ... }
+  // 메모 편집 상태
+  const [memoEditId, setMemoEditId] = useState(null);
+  const [memoInput, setMemoInput] = useState("");
 
   const getDayOfWeek = (date) =>
     ["일", "월", "화", "수", "목", "금", "토"][date.getDay()];
@@ -6699,6 +6701,9 @@ const AttendanceView = ({ students, showToast, user, teachers }) => {
           record.subType = detail; // 당일취소 유형 (질병, 경조사, 기타)
         }
 
+        // 기존 메모 보존
+        if (existingIdx > -1 && history[existingIdx].memo) record.memo = history[existingIdx].memo;
+
         if (existingIdx > -1) history[existingIdx] = record;
         else history.push(record);
       }
@@ -6734,6 +6739,23 @@ const AttendanceView = ({ students, showToast, user, teachers }) => {
       setModalConfig(null); // 모달 닫기
     } catch (e) {
       console.error(e);
+      showToast("저장 실패", "error");
+    }
+  };
+
+  // 메모 저장 (출석 기록에 memo 필드 업데이트)
+  const saveMemo = async (student, memo) => {
+    const dateStr = formatDate(selectedDate);
+    const studentRef = doc(db, "artifacts", APP_ID, "public", "data", "students", student.id);
+    const history = [...(student.attendanceHistory || [])];
+    const idx = history.findIndex((h) => h.date === dateStr);
+    if (idx === -1) return;
+    history[idx] = { ...history[idx], memo };
+    try {
+      await updateDoc(studentRef, { attendanceHistory: history });
+      showToast(`${student.name}님 메모 저장됨`);
+      setMemoEditId(null);
+    } catch (e) {
       showToast("저장 실패", "error");
     }
   };
@@ -6972,13 +6994,69 @@ const AttendanceView = ({ students, showToast, user, teachers }) => {
                     {(record?.count || 1) === 2 ? "✦ 연강 (2회) — 클릭 시 해제" : "연강 추가 (+1회)"}
                   </button>
                 )}
+                {/* 메모 영역 */}
+                <div className="mt-2 border-t pt-2">
+                  {memoEditId === s.id ? (
+                    <div className="space-y-1.5">
+                      <div className="flex flex-wrap gap-1">
+                        {MEMO_PRESETS.map((p) => (
+                          <button
+                            key={p}
+                            onClick={() => setMemoInput(memoInput === p ? "" : p)}
+                            className={`text-xs px-2 py-0.5 rounded border transition-colors ${
+                              memoInput === p
+                                ? "bg-amber-100 border-amber-300 text-amber-800 font-bold"
+                                : "bg-slate-50 border-slate-200 text-slate-500 hover:bg-amber-50"
+                            }`}
+                          >
+                            {p}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex gap-1">
+                        <input
+                          value={memoInput}
+                          onChange={(e) => setMemoInput(e.target.value)}
+                          placeholder="직접 입력..."
+                          className="flex-1 border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-amber-400"
+                        />
+                        <button
+                          onClick={() => saveMemo(s, memoInput)}
+                          className="text-xs bg-amber-500 text-white px-2 py-1 rounded font-bold"
+                        >
+                          저장
+                        </button>
+                        <button
+                          onClick={() => setMemoEditId(null)}
+                          className="text-xs text-slate-400 px-1"
+                        >
+                          취소
+                        </button>
+                      </div>
+                    </div>
+                  ) : record?.memo ? (
+                    <button
+                      onClick={() => { setMemoEditId(s.id); setMemoInput(record.memo); }}
+                      className="w-full text-left text-xs text-amber-700 bg-amber-50 px-2 py-1 rounded border border-amber-200 hover:bg-amber-100 truncate"
+                    >
+                      📝 {record.memo}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => { setMemoEditId(s.id); setMemoInput(""); }}
+                      className="w-full text-[10px] text-slate-300 hover:text-amber-400 flex items-center justify-center gap-1 py-0.5"
+                    >
+                      + 메모 추가
+                    </button>
+                  )}
+                </div>
                 {status && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       onActionClick(s, "delete");
                     }}
-                    className="w-full mt-2 text-[10px] text-slate-300 hover:text-rose-400 flex items-center justify-center gap-1 py-1"
+                    className="w-full mt-1 text-[10px] text-slate-300 hover:text-rose-400 flex items-center justify-center gap-1 py-1"
                   >
                     <Trash2 size={10} /> 기록 삭제/초기화
                   </button>
