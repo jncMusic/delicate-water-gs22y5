@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import Header from './components/Header';
 import GallerySection from './components/GallerySection';
+import PracticeRoomSection from './components/PracticeRoomSection';
 import { COURSES } from './lib/courses';
 
 // =================================================================
@@ -223,6 +224,9 @@ export default function HomePage() {
             </div>
           </div>
         </section>
+
+        {/* ── 연습실 안내 (클라이언트 컴포넌트) ── */}
+        <PracticeRoomSection />
 
         {/* ── 갤러리 (클라이언트 컴포넌트) ── */}
         <GallerySection />

@@ -6,6 +6,7 @@ import { Music, X, Menu, ExternalLink } from 'lucide-react';
 const NAV_ITEMS = [
   { label: '학원 소개', href: '#about' },
   { label: '수강 과목', href: '#courses' },
+  { label: '연습실', href: '#practice' },
   { label: '강사 소개', href: '#teachers' },
   { label: '수강 신청', href: '#enroll' },
   { label: '오시는 길', href: '#location' },
@@ -19,7 +20,7 @@ export default function Header() {
   const iframeRef = useRef(null);
 
   useEffect(() => {
-    const sections = ['about', 'courses', 'teachers', 'enroll', 'location'];
+    const sections = ['about', 'courses', 'practice', 'teachers', 'enroll', 'location'];
     const handleScroll = () => {
       setScrolled(window.scrollY > 60);
       const reversed = [...sections].reverse();

@@ -26,3 +26,5 @@ export const GALLERY_CATEGORIES = [
   { id: 'exterior', label: '외관' },
   { id: 'class',    label: '수업사진' },
 ];
+
+export const PRACTICE_ROOMS_COLLECTION = `artifacts/${APP_ID}/public/data/practiceRooms`;
