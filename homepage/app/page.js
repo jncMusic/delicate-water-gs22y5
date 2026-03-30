@@ -291,7 +291,7 @@ export default function HomePage() {
               전화, 네이버 톡톡, 방문 상담을 통해 편하게 문의해 주세요
             </p>
 
-            <div className="grid sm:grid-cols-3 gap-5 mb-12">
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-12">
               <a
                 href="tel:02-2655-0520"
                 className="group bg-white/5 hover:bg-[#d4a843] border border-white/10 hover:border-[#d4a843] rounded-2xl p-7 flex flex-col items-center gap-4 transition-all duration-300 hover:-translate-y-1"
@@ -317,6 +317,21 @@ export default function HomePage() {
                 <div>
                   <div className="text-white font-bold text-base mb-1">네이버 톡톡</div>
                   <div className="text-[#03c75a] group-hover:text-white text-sm transition-colors">바로 메시지 보내기</div>
+                </div>
+              </a>
+
+              <a
+                href="https://blog.naver.com/jncmusicacademy"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="group bg-white/5 hover:bg-[#03c75a] border border-white/10 hover:border-[#03c75a] rounded-2xl p-7 flex flex-col items-center gap-4 transition-all duration-300 hover:-translate-y-1"
+              >
+                <div className="w-12 h-12 bg-[#03c75a]/15 group-hover:bg-white/20 rounded-xl flex items-center justify-center transition-colors">
+                  <BookOpen size={24} className="text-[#03c75a] group-hover:text-white" />
+                </div>
+                <div>
+                  <div className="text-white font-bold text-base mb-1">네이버 블로그</div>
+                  <div className="text-[#03c75a] group-hover:text-white text-sm transition-colors">학원 소식 보기</div>
                 </div>
               </a>
 
@@ -371,7 +386,7 @@ export default function HomePage() {
                   <div>
                     <div className="text-xs font-bold text-[#d4a843] uppercase tracking-widest mb-1">주소</div>
                     <div className="text-[#0d1b3e] font-semibold leading-snug">
-                      서울시 양천구 목동서로 35<br />목동프라자 3층 303호
+                      서울시 양천구 목동서로 35<br />목동프라자 3층
                     </div>
                     <a
                       href="https://map.naver.com/v5/search/서울시+양천구+목동서로+35+목동프라자"
@@ -430,11 +445,20 @@ export default function HomePage() {
                 <span className="text-white font-extrabold text-base">JNC 음악학원</span>
               </div>
               <p className="text-white/40 text-xs leading-relaxed">
-                서울시 양천구 목동서로 35, 목동프라자 3층 303호<br />
+                서울시 양천구 목동서로 35, 목동프라자 3층<br />
                 Tel. 02-2655-0520
               </p>
             </div>
             <div className="flex items-center gap-4">
+              <a
+                href="https://blog.naver.com/jncmusicacademy"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="JNC 음악학원 네이버 블로그"
+                className="w-9 h-9 bg-white/10 hover:bg-[#03c75a] rounded-lg flex items-center justify-center transition-colors group"
+              >
+                <BookOpen size={16} className="text-white/70 group-hover:text-white" />
+              </a>
               <a
                 href="https://www.instagram.com/jnc_music_academy/"
                 target="_blank"

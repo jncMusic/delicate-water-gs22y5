@@ -71,7 +71,7 @@ export default function RootLayout({ children }) {
               foundingDate: '2013',
               address: {
                 '@type': 'PostalAddress',
-                streetAddress: '목동서로 35, 목동프라자 3층 303호',
+                streetAddress: '목동서로 35, 목동프라자 3층',
                 addressLocality: '양천구',
                 addressRegion: '서울특별시',
                 postalCode: '07999',
