@@ -7837,6 +7837,8 @@ const StudentManagementModal = ({
           amount: parseInt(payAmount) || 0,
           type: "tuition",
           sessionStartDate: dateStr,
+          // 결제 당시의 회차 단위를 보존 (나중에 주1회/주2회 변경 시에도 유지되도록)
+          totalSessions: formData.totalSessions || 4,
           createdAt: new Date().toISOString(),
         },
       ]);
