@@ -8579,7 +8579,7 @@ const PaymentView = ({
     const weekStart = new Date(today);
     weekStart.setDate(today.getDate() - dayOfWeek);
     weekStart.setHours(0, 0, 0, 0);
-    const weekStartStr = formatDate(weekStart);
+    const weekStartStr = weekStart.toISOString().split("T")[0];
 
     const filtered = students.filter((s) => {
       const { isOverdue, isCompleted } = getStudentProgress(s);
