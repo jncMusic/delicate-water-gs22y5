@@ -1731,7 +1731,51 @@ const DashboardView = ({
     return { paymentDueCount, totalRevenue, newStudentsCount, pendingConsults };
   }, [myStudents, consultations, user]);
 
-  // 4. 원생 추이 (관리자 전용, 최근 12개월)
+  // 4. 주간 결산 (관리자 전용)
+  const weeklyStats = useMemo(() => {
+    if (user.role !== "admin") return null;
+    const today = new Date();
+    const dayOfWeek = (today.getDay() + 6) % 7; // 0=월 … 6=일
+    const weekStart = new Date(today);
+    weekStart.setDate(today.getDate() - dayOfWeek);
+    weekStart.setHours(0, 0, 0, 0);
+    const weekStartStr = weekStart.toISOString().split("T")[0];
+    const todayStr = today.toISOString().split("T")[0];
+
+    // 주간 결제액 & 건수
+    let weeklyPaymentTotal = 0;
+    let weeklyPaymentCount = 0;
+    students.forEach((s) => {
+      (s.paymentHistory || []).forEach((p) => {
+        if (p.date >= weekStartStr && p.date <= todayStr) {
+          weeklyPaymentTotal += Number(p.amount) || 0;
+          weeklyPaymentCount++;
+        }
+      });
+    });
+
+    // 주간 신규 등록수
+    const weeklyNewStudents = students.filter((s) => {
+      const regDate = (s.registrationDate || s.createdAt || "").slice(0, 10);
+      return regDate >= weekStartStr && regDate <= todayStr;
+    }).length;
+
+    // 주간 상담 접수수
+    const weeklyConsultations = consultations.filter((c) => {
+      const cDate = (c.createdAt || c.date || "").slice(0, 10);
+      return cDate >= weekStartStr && cDate <= todayStr;
+    }).length;
+
+    // 주간 범위 레이블
+    const fmt = (d) => `${d.getMonth() + 1}/${d.getDate()}`;
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+    const weekLabel = `${fmt(weekStart)}(월) ~ ${fmt(weekEnd)}(일)`;
+
+    return { weeklyPaymentTotal, weeklyPaymentCount, weeklyNewStudents, weeklyConsultations, weekLabel };
+  }, [students, consultations, user]);
+
+  // 5. 원생 추이 (관리자 전용, 최근 12개월)
   const trendData = useMemo(() => {
     if (user.role !== "admin") return [];
     const now = new Date();
@@ -1873,7 +1917,36 @@ const DashboardView = ({
         )}
       </div>
 
-      {/* 3. 빠른 메뉴 이동 */}
+      {/* 3. 주간 결산 (관리자 전용) */}
+      {user.role === "admin" && weeklyStats && (
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-bold text-slate-700 flex items-center gap-2">
+              <TrendingUp size={18} className="text-indigo-500" /> 이번 주 결산
+            </h3>
+            <span className="text-xs text-slate-400 bg-slate-50 px-2 py-1 rounded-lg">{weeklyStats.weekLabel}</span>
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="bg-indigo-50 rounded-xl p-4">
+              <p className="text-xs text-indigo-500 font-bold mb-1">결제액</p>
+              <p className="text-xl font-bold text-indigo-700">₩{weeklyStats.weeklyPaymentTotal.toLocaleString()}</p>
+              <p className="text-xs text-slate-400 mt-1">{weeklyStats.weeklyPaymentCount}건 결제</p>
+            </div>
+            <div className="bg-emerald-50 rounded-xl p-4">
+              <p className="text-xs text-emerald-600 font-bold mb-1">신규 등록</p>
+              <p className="text-xl font-bold text-emerald-700">{weeklyStats.weeklyNewStudents}명</p>
+              <p className="text-xs text-slate-400 mt-1">이번 주 신규</p>
+            </div>
+            <div className="bg-amber-50 rounded-xl p-4">
+              <p className="text-xs text-amber-600 font-bold mb-1">상담 접수</p>
+              <p className="text-xl font-bold text-amber-700">{weeklyStats.weeklyConsultations}건</p>
+              <p className="text-xs text-slate-400 mt-1">이번 주 상담</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 4. 빠른 메뉴 이동 */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <QuickMenuBtn
           icon={CheckCircle}
