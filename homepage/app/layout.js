@@ -51,6 +51,7 @@ export default function RootLayout({ children }) {
   return (
     <html lang="ko">
       <head>
+        <meta name="naver-site-verification" content="db7fcca47bbb3561cf224a430b7a6c9f849c62c3" />
         <link rel="preconnect" href="https://cdn.jsdelivr.net" />
         <link
           rel="stylesheet"
