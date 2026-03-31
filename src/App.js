@@ -70,6 +70,7 @@ import {
   Music, // 🔥 파트 아이콘 추가
   ChevronDown,
   Tablet, // 🔥 키오스크 단말기 아이콘
+  Send,
 } from "lucide-react";
 import html2canvas from "html2canvas"; // 🔥 이미지 저장 라이브러리 추가
 
@@ -8564,6 +8565,242 @@ const StudentManagementModal = ({
   );
 };
 
+// =================================================================
+// [BulkSmsView] - 공지 / 안내 문자 일괄 발송 (관리자 전용)
+// =================================================================
+const BULK_SMS_TEMPLATES = [
+  { id: "custom",   label: "직접 입력",   text: "" },
+  { id: "holiday",  label: "휴원 안내",   text: "안녕하세요, JnC 음악학원입니다.\n[날짜]에 휴원합니다.\n수업 일정에 참고해 주세요. 감사합니다." },
+  { id: "change",   label: "수업 변경",   text: "안녕하세요, JnC 음악학원입니다.\n수업 일정이 변경되었습니다.\n변경 일시: [날짜/시간]\n문의: 02-2655-0220" },
+  { id: "recital",  label: "발표회 안내", text: "안녕하세요, JnC 음악학원입니다.\n발표회를 안내드립니다.\n일시: [날짜]\n장소: [장소]\n많은 참석 바랍니다!" },
+  { id: "fee",      label: "수강료 안내", text: "안녕하세요, JnC 음악학원입니다.\n이번 달 수강료 납부를 안내드립니다.\n납부 계좌: [계좌번호]\n감사합니다." },
+];
+
+const BulkSmsView = ({ students, teachers, showToast }) => {
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [filterTeacher, setFilterTeacher] = useState("");
+  const [filterPart, setFilterPart] = useState("");
+  const [templateId, setTemplateId] = useState("custom");
+  const [message, setMessage] = useState("");
+  const [sending, setSending] = useState(false);
+  const [results, setResults] = useState(null); // null = 미발송, [] = 결과
+
+  const PARTS = ["피아노", "관현악", "실용음악", "성악"];
+
+  const filteredStudents = useMemo(() => {
+    return students.filter((s) => {
+      if (filterTeacher && s.teacher !== filterTeacher) return false;
+      if (filterPart && s.part !== filterPart) return false;
+      return true;
+    });
+  }, [students, filterTeacher, filterPart]);
+
+  const toggleAll = () => {
+    if (selectedIds.length === filteredStudents.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(filteredStudents.map((s) => s.id));
+    }
+  };
+
+  const toggleOne = (id) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const handleTemplateChange = (tid) => {
+    setTemplateId(tid);
+    const t = BULK_SMS_TEMPLATES.find((t) => t.id === tid);
+    if (t && t.text) setMessage(t.text);
+    else setMessage("");
+  };
+
+  const handleSend = async () => {
+    if (!message.trim()) {
+      showToast("발송할 내용을 입력해주세요.", "warning");
+      return;
+    }
+    const targets = students.filter(
+      (s) => selectedIds.includes(s.id) && s.phone
+    );
+    if (targets.length === 0) {
+      showToast("연락처가 있는 발송 대상을 선택해주세요.", "warning");
+      return;
+    }
+    if (!window.confirm(`${targets.length}명에게 문자를 발송합니까?`)) return;
+
+    setSending(true);
+    setResults([]);
+    const newResults = [];
+    for (const s of targets) {
+      try {
+        await sendAligoSms(s.phone, message);
+        newResults.push({ name: s.name, phone: s.phone, success: true });
+      } catch (e) {
+        newResults.push({ name: s.name, phone: s.phone, success: false, error: e.message });
+      }
+      setResults([...newResults]);
+    }
+    setSending(false);
+    const ok = newResults.filter((r) => r.success).length;
+    showToast(
+      `발송 완료: ${ok}명 성공 / ${newResults.length - ok}명 실패`,
+      ok === newResults.length ? "success" : "warning"
+    );
+  };
+
+  const selectedWithPhone = students.filter(
+    (s) => selectedIds.includes(s.id) && s.phone
+  ).length;
+
+  return (
+    <div className="p-4 md:p-6 space-y-5">
+      <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+        <Send size={22} className="text-indigo-600" />
+        공지 / 안내 문자 발송
+      </h2>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        {/* 왼쪽: 원생 선택 */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+          <div className="p-4 border-b bg-slate-50 flex flex-wrap gap-2 items-center">
+            <select
+              value={filterTeacher}
+              onChange={(e) => setFilterTeacher(e.target.value)}
+              className="text-sm border rounded-lg px-2 py-1.5 bg-white"
+            >
+              <option value="">전체 선생님</option>
+              {teachers.map((t) => (
+                <option key={t.id} value={t.name}>{t.name}</option>
+              ))}
+            </select>
+            <select
+              value={filterPart}
+              onChange={(e) => setFilterPart(e.target.value)}
+              className="text-sm border rounded-lg px-2 py-1.5 bg-white"
+            >
+              <option value="">전체 파트</option>
+              {PARTS.map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+            <button
+              onClick={toggleAll}
+              className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-700 font-bold hover:bg-indigo-100"
+            >
+              {selectedIds.length === filteredStudents.length ? "전체 해제" : "전체 선택"}
+            </button>
+          </div>
+
+          <div className="overflow-y-auto" style={{ maxHeight: "380px" }}>
+            {filteredStudents.length === 0 ? (
+              <p className="text-center text-slate-400 py-10 text-sm">원생이 없습니다.</p>
+            ) : (
+              filteredStudents.map((s) => (
+                <label
+                  key={s.id}
+                  className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 cursor-pointer border-b border-slate-50"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(s.id)}
+                    onChange={() => toggleOne(s.id)}
+                    className="w-4 h-4 accent-indigo-600"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <span className="font-medium text-slate-800 text-sm">{s.name}</span>
+                    <span className="text-xs text-slate-400 ml-2">{s.teacher}</span>
+                  </div>
+                  {s.phone ? (
+                    <span className="text-xs text-slate-400">{s.phone}</span>
+                  ) : (
+                    <span className="text-xs text-red-300">연락처 없음</span>
+                  )}
+                </label>
+              ))
+            )}
+          </div>
+
+          <div className="px-4 py-2.5 bg-slate-50 border-t text-xs text-slate-500">
+            선택: <span className="font-bold text-indigo-600">{selectedIds.length}명</span>
+            {selectedIds.length > 0 && (
+              <span className="ml-2">(연락처 있음: <span className="font-bold">{selectedWithPhone}명</span>)</span>
+            )}
+          </div>
+        </div>
+
+        {/* 오른쪽: 메시지 작성 */}
+        <div className="space-y-4">
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 space-y-3">
+            <p className="text-sm font-bold text-slate-700">템플릿 선택</p>
+            <div className="flex flex-wrap gap-2">
+              {BULK_SMS_TEMPLATES.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => handleTemplateChange(t.id)}
+                  className={`text-xs px-3 py-1.5 rounded-full font-medium border transition-all ${
+                    templateId === t.id
+                      ? "bg-indigo-600 text-white border-indigo-600"
+                      : "bg-white text-slate-600 border-slate-200 hover:border-indigo-300"
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <p className="text-sm font-bold text-slate-700">내용</p>
+                <span className={`text-xs ${message.length > 90 ? "text-orange-500 font-bold" : "text-slate-400"}`}>
+                  {message.length}자 {message.length > 90 ? "(장문 LMS)" : "(단문 SMS)"}
+                </span>
+              </div>
+              <textarea
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                rows={7}
+                placeholder="발송할 내용을 입력하세요."
+                className="w-full border border-slate-200 rounded-xl p-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-indigo-300"
+              />
+            </div>
+
+            <button
+              onClick={handleSend}
+              disabled={sending || selectedWithPhone === 0 || !message.trim()}
+              className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+            >
+              <Send size={16} />
+              {sending
+                ? `발송 중... (${results?.length || 0}/${selectedWithPhone}명)`
+                : `${selectedWithPhone}명에게 발송`}
+            </button>
+          </div>
+
+          {/* 발송 결과 */}
+          {results !== null && results.length > 0 && (
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
+              <p className="text-sm font-bold text-slate-700 mb-2">발송 결과</p>
+              <div className="space-y-1 overflow-y-auto" style={{ maxHeight: "200px" }}>
+                {results.map((r, i) => (
+                  <div key={i} className="flex items-center gap-2 text-sm">
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${r.success ? "bg-green-400" : "bg-red-400"}`} />
+                    <span className="font-medium">{r.name}</span>
+                    <span className="text-slate-400 text-xs">{r.phone}</span>
+                    {!r.success && <span className="text-red-400 text-xs ml-auto">{r.error}</span>}
+                    {r.success && <span className="text-green-500 text-xs ml-auto">완료</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // [PaymentView] - 결제 안내 발송 시스템 통합 (메시지 일괄 생성, 발송 이력, 결제 완료 간편 입력)
 const PaymentView = ({
   students,
@@ -9929,6 +10166,15 @@ export default function App() {
                 }}
               />
               <SidebarItem
+                icon={Send}
+                label="공지 발송"
+                active={activeTab === "bulkSms"}
+                onClick={() => {
+                  setActiveTab("bulkSms");
+                  setIsSidebarOpen(false);
+                }}
+              />
+              <SidebarItem
                 icon={Settings}
                 label="환경 설정"
                 active={activeTab === "settings"}
@@ -10108,6 +10354,13 @@ export default function App() {
               onRegisterStudent={handleRegisterFromConsultation} // 👈 이 연결이 핵심입니다!
               targetConsultation={targetConsultation}
               onClearTargetConsultation={() => setTargetConsultation(null)}
+            />
+          )}
+          {activeTab === "bulkSms" && currentUser.role === "admin" && (
+            <BulkSmsView
+              students={students}
+              teachers={teachers}
+              showToast={showToast}
             />
           )}
           {activeTab === "settings" && currentUser.role === "admin" && (
