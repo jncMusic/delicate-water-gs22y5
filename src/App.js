@@ -4347,6 +4347,40 @@ const SettingsView = ({ teachers, students, showToast, seedData, adminPassword, 
   // 결제 링크 URL 설정
   const [paymentUrlInput, setPaymentUrlInput] = useState(paymentUrl);
 
+  // 강사 메모 전달 상태
+  const [memoTarget, setMemoTarget] = useState("");
+  const [memoText, setMemoText] = useState("");
+  const [memoSending, setMemoSending] = useState(false);
+
+  // 강사 메모 전달 핸들러
+  const handleSendMemoToTeacher = async () => {
+    if (!memoTarget || !memoText.trim()) {
+      showToast("강사와 메모 내용을 입력해주세요.", "warning");
+      return;
+    }
+    const targetTeacher = teachers.find((t) => t.name === memoTarget);
+    if (!targetTeacher) return;
+    setMemoSending(true);
+    try {
+      const teacherRef = doc(db, "artifacts", APP_ID, "public", "data", "teachers", targetTeacher.id);
+      const newNotice = {
+        id: Date.now(),
+        studentName: "",
+        date: new Date().toISOString().slice(0, 10),
+        memo: memoText.trim(),
+        createdAt: new Date().toISOString(),
+      };
+      const existing = targetTeacher.pendingMemos || [];
+      await updateDoc(teacherRef, { pendingMemos: [...existing, newNotice] });
+      showToast(`${memoTarget} 강사에게 메모 전달 완료`);
+      setMemoText("");
+    } catch (e) {
+      showToast("전달 실패: " + e.message, "error");
+    } finally {
+      setMemoSending(false);
+    }
+  };
+
   // 1. 신규 강사 등록용 상태
   const [newTeacherName, setNewTeacherName] = useState("");
   const [newTeacherPassword, setNewTeacherPassword] = useState("");
@@ -5087,6 +5121,62 @@ const SettingsView = ({ teachers, students, showToast, seedData, adminPassword, 
       </div>
 
       {/* 결제 링크 설정 (결제선생 등 외부 결제 URL) */}
+      {/* 강사 메모 직접 전달 */}
+      <div className="mt-8 p-6 bg-amber-50 rounded-xl border border-amber-200">
+        <h3 className="font-bold text-amber-900 mb-1 flex items-center">
+          📝 강사에게 메모 전달
+        </h3>
+        <p className="text-xs text-amber-700 mb-4">
+          출석부 없이 강사에게 직접 메모를 전달합니다. 강사가 로그인 시 팝업으로 확인할 수 있습니다.
+        </p>
+        <div className="flex gap-2 mb-3">
+          <select
+            value={memoTarget}
+            onChange={(e) => setMemoTarget(e.target.value)}
+            className="p-2.5 border rounded-xl bg-white focus:outline-amber-500 text-sm min-w-[120px]"
+          >
+            <option value="">강사 선택</option>
+            {teachers.filter((t) => t.name).map((t) => (
+              <option key={t.id} value={t.name}>{t.name}</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex gap-2">
+          <textarea
+            value={memoText}
+            onChange={(e) => setMemoText(e.target.value)}
+            placeholder="전달할 메모 내용을 입력하세요..."
+            rows={2}
+            className="flex-1 p-3 border rounded-xl bg-white focus:outline-amber-500 text-sm resize-none"
+          />
+          <button
+            onClick={handleSendMemoToTeacher}
+            disabled={memoSending || !memoTarget || !memoText.trim()}
+            className="px-5 py-2.5 bg-amber-500 text-white rounded-xl font-bold hover:bg-amber-600 shadow-sm text-sm disabled:opacity-40 disabled:cursor-not-allowed self-end"
+          >
+            {memoSending ? "전달 중..." : "전달"}
+          </button>
+        </div>
+        {/* 강사별 미확인 메모 현황 */}
+        {teachers.some((t) => (t.pendingMemos || []).length > 0) && (
+          <div className="mt-4 pt-4 border-t border-amber-200">
+            <p className="text-xs font-bold text-amber-800 mb-2">미확인 메모 현황</p>
+            <div className="space-y-1">
+              {teachers
+                .filter((t) => (t.pendingMemos || []).length > 0)
+                .map((t) => (
+                  <div key={t.id} className="flex items-center gap-2 text-xs text-amber-700">
+                    <span className="font-bold">{t.name}</span>
+                    <span className="bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded-full font-bold">
+                      {t.pendingMemos.length}건
+                    </span>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className="mt-8 p-6 bg-emerald-50 rounded-xl border border-emerald-100">
         <h3 className="font-bold text-emerald-900 mb-1 flex items-center">
           <CreditCard className="mr-2" size={18} /> 결제 링크 설정
