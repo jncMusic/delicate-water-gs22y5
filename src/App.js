@@ -5400,10 +5400,9 @@ const DateDetailModal = ({ date, students, onClose, onStudentClick }) => (
 );
 // [New Component] 초기 데이터 구축용: 원생별 달력 콕콕 (Fast Attendance Clicker)
 const FastAttendanceModal = ({ student, onClose, onSave }) => {
-  // 현재 월 기준 3개월 전부터 표시 (4개월치 보여줌)
-  const initBase = new Date();
-  initBase.setDate(1);
-  initBase.setMonth(initBase.getMonth() - 3);
+  // 현재 월 기준 3개월 전부터 표시 (4개월치 보여줌) - new Date(y, m, 1)로 overflow 방지
+  const nowAtt = new Date();
+  const initBase = new Date(nowAtt.getFullYear(), nowAtt.getMonth() - 3, 1);
   const [baseDate, setBaseDate] = useState(initBase);
   // 로컬 상태로 출석 기록 관리 (저장 전까지 DB 안 건드림)
   const [tempHistory, setTempHistory] = useState(
@@ -5510,11 +5509,10 @@ const FastAttendanceModal = ({ student, onClose, onSave }) => {
     onSave(student.id, sorted);
   };
 
-  // 4개월치 렌더링
+  // 4개월치 렌더링 (new Date(y, m, 1)로 overflow 방지)
   const calendars = [];
   for (let i = 0; i < 4; i++) {
-    const d = new Date(baseDate);
-    d.setMonth(baseDate.getMonth() + i);
+    const d = new Date(baseDate.getFullYear(), baseDate.getMonth() + i, 1);
     calendars.push(renderCalendarMonth(d.getFullYear(), d.getMonth()));
   }
 
@@ -5550,9 +5548,7 @@ const FastAttendanceModal = ({ student, onClose, onSave }) => {
           <div className="flex justify-center gap-4 mt-6">
             <button
               onClick={() => {
-                const d = new Date(baseDate);
-                d.setMonth(d.getMonth() - 1);
-                setBaseDate(d);
+                setBaseDate(new Date(baseDate.getFullYear(), baseDate.getMonth() - 1, 1));
               }}
               className="px-4 py-2 bg-white border rounded-lg hover:bg-slate-50 text-sm font-bold shadow-sm"
             >
@@ -5560,9 +5556,7 @@ const FastAttendanceModal = ({ student, onClose, onSave }) => {
             </button>
             <button
               onClick={() => {
-                const d = new Date(baseDate);
-                d.setMonth(d.getMonth() + 1);
-                setBaseDate(d);
+                setBaseDate(new Date(baseDate.getFullYear(), baseDate.getMonth() + 1, 1));
               }}
               className="px-4 py-2 bg-white border rounded-lg hover:bg-slate-50 text-sm font-bold shadow-sm"
             >
@@ -5592,10 +5586,10 @@ const FastAttendanceModal = ({ student, onClose, onSave }) => {
 };
 // [New Component] 초기 데이터 구축용: 원생별 수납 콕콕 (Fast Payment Clicker)
 const FastPaymentModal = ({ student, onClose, onSave }) => {
-  // 현재 월 기준 3개월 전부터 표시 (4개월치 보여줌)
-  const initBaseP2 = new Date();
-  initBaseP2.setDate(1);
-  initBaseP2.setMonth(initBaseP2.getMonth() - 3);
+  // 현재 월 기준 1개월 전부터 표시 (4개월치: 지난달·이번달·다음달·다다음달)
+  // new Date(year, month, 1)로 항상 1일 고정 → setMonth overflow 방지
+  const now = new Date();
+  const initBaseP2 = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const [baseDate, setBaseDate] = useState(initBaseP2);
   // 기본 원비 세팅
   const [defaultAmount, setDefaultAmount] = useState(student.tuitionFee || 0);
@@ -5697,11 +5691,10 @@ const FastPaymentModal = ({ student, onClose, onSave }) => {
     onSave(student.id, sorted);
   };
 
-  // 4개월치 렌더링
+  // 4개월치 렌더링 (new Date(y, m, 1)로 overflow 방지)
   const calendars = [];
   for (let i = 0; i < 4; i++) {
-    const d = new Date(baseDate);
-    d.setMonth(baseDate.getMonth() + i);
+    const d = new Date(baseDate.getFullYear(), baseDate.getMonth() + i, 1);
     calendars.push(renderCalendarMonth(d.getFullYear(), d.getMonth()));
   }
 
@@ -5745,9 +5738,7 @@ const FastPaymentModal = ({ student, onClose, onSave }) => {
           <div className="flex justify-center gap-4 mt-6">
             <button
               onClick={() => {
-                const d = new Date(baseDate);
-                d.setMonth(d.getMonth() - 1);
-                setBaseDate(d);
+                setBaseDate(new Date(baseDate.getFullYear(), baseDate.getMonth() - 1, 1));
               }}
               className="px-4 py-2 bg-white border rounded-lg hover:bg-slate-50 text-sm font-bold shadow-sm"
             >
@@ -5755,9 +5746,7 @@ const FastPaymentModal = ({ student, onClose, onSave }) => {
             </button>
             <button
               onClick={() => {
-                const d = new Date(baseDate);
-                d.setMonth(d.getMonth() + 1);
-                setBaseDate(d);
+                setBaseDate(new Date(baseDate.getFullYear(), baseDate.getMonth() + 1, 1));
               }}
               className="px-4 py-2 bg-white border rounded-lg hover:bg-slate-50 text-sm font-bold shadow-sm"
             >
@@ -5796,8 +5785,9 @@ const StudentModal = ({
 }) => {
   const [activeTab, setActiveTab] = useState("info"); // info | attendance | payment
 
-  // -- 공통 상태 --
-  const [baseDate, setBaseDate] = useState(new Date());
+  // -- 공통 상태 -- (new Date(y, m, 1)로 overflow 방지)
+  const nowSM = new Date();
+  const [baseDate, setBaseDate] = useState(new Date(nowSM.getFullYear(), nowSM.getMonth() - 1, 1));
 
   // -- 1. 정보 수정 상태 --
   const [formData, setFormData] = useState({});
@@ -5907,8 +5897,7 @@ const StudentModal = ({
   const renderCalendar = (type) => {
     const calendars = [];
     for (let i = 0; i < 4; i++) {
-      const d = new Date(baseDate);
-      d.setMonth(baseDate.getMonth() + i);
+      const d = new Date(baseDate.getFullYear(), baseDate.getMonth() + i, 1);
       const year = d.getFullYear();
       const month = d.getMonth();
       const daysInMonth = new Date(year, month + 1, 0).getDate();
