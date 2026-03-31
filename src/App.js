@@ -99,7 +99,7 @@ try {
 // =================================================================
 // 1-1. 알리고 SMS 발송 헬퍼
 // =================================================================
-const SMS_API_URL = process.env.REACT_APP_SMS_API_URL || "https://delicate-water-gs22y5-jncmusics-projects.vercel.app/api/send-sms";
+const SMS_API_URL = process.env.REACT_APP_SMS_API_URL || "/api/send-sms";
 
 const sendAligoSms = async (receiver, msg) => {
   const res = await fetch(SMS_API_URL, {
