@@ -442,6 +442,85 @@ J&C 음악학원장 올림.`;
 // 5. 모달 및 팝업 컴포넌트
 // =================================================================
 
+// [MemoNoticePopup] 강사 메모 알림 팝업 (로그인 직후 + 배너)
+const MemoNoticePopup = ({ memos, onDismiss }) => {
+  if (!memos || memos.length === 0) return null;
+  return (
+    <div className="fixed inset-0 bg-black/50 z-[200] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95 duration-200">
+        <div className="flex items-center gap-2 mb-4">
+          <span className="text-2xl">📝</span>
+          <h2 className="text-lg font-bold text-slate-800">원장님 전달 메모</h2>
+          <span className="ml-auto bg-amber-100 text-amber-700 text-xs font-bold px-2 py-0.5 rounded-full">
+            {memos.length}건
+          </span>
+        </div>
+        <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+          {memos.map((m) => (
+            <div
+              key={m.id}
+              className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3"
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-sm font-bold text-slate-700">
+                  {m.studentName}
+                </span>
+                <span className="text-xs text-slate-400">{m.date}</span>
+              </div>
+              <p className="text-sm text-amber-800">{m.memo}</p>
+            </div>
+          ))}
+        </div>
+        <button
+          onClick={onDismiss}
+          className="mt-5 w-full py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-colors"
+        >
+          확인 완료
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// [MemoNoticeBanner] 대시보드 상단 배너 (완료 전까지 지속)
+const MemoNoticeBanner = ({ memos, onDismiss }) => {
+  const [expanded, setExpanded] = React.useState(false);
+  if (!memos || memos.length === 0) return null;
+  return (
+    <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 shrink-0">
+      <div className="flex items-center gap-2">
+        <span className="text-base">📝</span>
+        <span className="text-sm font-bold text-amber-800">
+          원장님 전달 메모 {memos.length}건
+        </span>
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="text-xs text-amber-600 underline ml-1"
+        >
+          {expanded ? "접기" : "내용 보기"}
+        </button>
+        <button
+          onClick={onDismiss}
+          className="ml-auto text-xs bg-indigo-600 text-white px-3 py-1 rounded-lg font-bold hover:bg-indigo-700 transition-colors"
+        >
+          완료
+        </button>
+      </div>
+      {expanded && (
+        <div className="mt-2 space-y-1.5 pl-6">
+          {memos.map((m) => (
+            <div key={m.id} className="text-xs text-amber-700 flex gap-2">
+              <span className="font-bold text-slate-600">{m.studentName}</span>
+              <span className="text-slate-400">{m.date}</span>
+              <span>{m.memo}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // [LoginModal]
 const LoginModal = ({
   isOpen,
@@ -6806,7 +6885,7 @@ const AttendanceView = ({ students, showToast, user, teachers }) => {
     }
   };
 
-  // 메모 저장 (출석 기록에 memo 필드 업데이트)
+  // 메모 저장 (출석 기록에 memo 필드 업데이트 + 담당 강사 pendingMemos 전달)
   const saveMemo = async (student, memo) => {
     const dateStr = formatDate(selectedDate);
     const studentRef = doc(db, "artifacts", APP_ID, "public", "data", "students", student.id);
@@ -6816,6 +6895,24 @@ const AttendanceView = ({ students, showToast, user, teachers }) => {
     history[idx] = { ...history[idx], memo };
     try {
       await updateDoc(studentRef, { attendanceHistory: history });
+
+      // 담당 강사에게 메모 알림 전달 (관리자가 작성한 경우에만)
+      if (memo && user.role === "admin" && student.teacher) {
+        const targetTeacher = teachers.find((t) => t.name === student.teacher);
+        if (targetTeacher) {
+          const teacherRef = doc(db, "artifacts", APP_ID, "public", "data", "teachers", targetTeacher.id);
+          const newNotice = {
+            id: Date.now(),
+            studentName: student.name,
+            date: dateStr,
+            memo,
+            createdAt: new Date().toISOString(),
+          };
+          const existing = targetTeacher.pendingMemos || [];
+          await updateDoc(teacherRef, { pendingMemos: [...existing, newNotice] });
+        }
+      }
+
       showToast(`${student.name}님 메모 저장됨`);
       setMemoEditId(null);
     } catch (e) {
@@ -9528,6 +9625,9 @@ export default function App() {
   const [message, setMessage] = useState(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  // 강사 메모 알림 상태
+  const [pendingMemos, setPendingMemos] = useState([]);
+  const [showMemoPopup, setShowMemoPopup] = useState(false);
   const [today, setToday] = useState(new Date());
   const [targetConsultation, setTargetConsultation] = useState(null);
 
@@ -9566,7 +9666,19 @@ export default function App() {
       // 2. 강사
       unsubscribes.push(onSnapshot(
         collection(db, "artifacts", safeAppId, "public", "data", "teachers"),
-        (s) => setTeachers(s.docs.map((d) => ({ ...d.data(), id: d.id })))
+        (s) => {
+          const updated = s.docs.map((d) => ({ ...d.data(), id: d.id }));
+          setTeachers(updated);
+          // 현재 로그인된 강사의 pendingMemos 실시간 반영
+          setCurrentUser((prev) => {
+            if (prev?.role === "teacher") {
+              const me = updated.find((t) => t.name === prev.name);
+              const memos = me?.pendingMemos || [];
+              setPendingMemos(memos);
+            }
+            return prev;
+          });
+        }
       ));
 
       // 3. 상담
@@ -9808,6 +9920,35 @@ export default function App() {
     setIsLoginModalOpen(false);
     setActiveTab("dashboard");
     showToast(`${user.name}님 환영합니다.`, "success");
+
+    // 강사 로그인 시 pendingMemos 확인 후 팝업 표시
+    if (user.role === "teacher") {
+      const teacherData = teachers.find((t) => t.name === user.name);
+      const memos = teacherData?.pendingMemos || [];
+      if (memos.length > 0) {
+        setPendingMemos(memos);
+        setShowMemoPopup(true);
+      } else {
+        setPendingMemos([]);
+      }
+    }
+  };
+
+  // 강사 메모 알림 확인 완료 처리 (Firestore pendingMemos 초기화)
+  const handleMemoDismiss = async () => {
+    setShowMemoPopup(false);
+    setPendingMemos([]);
+    if (currentUser?.role === "teacher") {
+      const teacherData = teachers.find((t) => t.name === currentUser.name);
+      if (teacherData) {
+        const teacherRef = doc(db, "artifacts", APP_ID, "public", "data", "teachers", teacherData.id);
+        try {
+          await updateDoc(teacherRef, { pendingMemos: [] });
+        } catch (e) {
+          // silent fail
+        }
+      }
+    }
   };
 
   // 2. [정의] 로그아웃 처리 함수
@@ -9981,6 +10122,14 @@ export default function App() {
         <KioskView
           students={students}
           onExitKiosk={() => setActiveTab("dashboard")}
+        />
+      )}
+
+      {/* 0. 강사 메모 알림 팝업 (로그인 직후) */}
+      {showMemoPopup && (
+        <MemoNoticePopup
+          memos={pendingMemos}
+          onDismiss={handleMemoDismiss}
         />
       )}
 
@@ -10250,6 +10399,11 @@ export default function App() {
             {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
           </button>
         </header>
+
+        {/* 강사 메모 알림 배너 (완료 전까지 지속) */}
+        {currentUser?.role === "teacher" && !showMemoPopup && pendingMemos.length > 0 && (
+          <MemoNoticeBanner memos={pendingMemos} onDismiss={handleMemoDismiss} />
+        )}
 
         <main className="flex-1 overflow-y-auto p-4 md:p-8 w-full bg-slate-50">
           {activeTab === "dashboard" && (
