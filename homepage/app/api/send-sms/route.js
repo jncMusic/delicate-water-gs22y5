@@ -2,18 +2,17 @@
 // POST /api/send-sms
 // body: { receiver: "010-xxxx-xxxx", msg: "내용", title?: "제목" }
 //
-// 환경변수 (Vercel 프로젝트 Settings > Environment Variables):
-//   ALIGO_API_KEY   — 알리고 API 키
-//   ALIGO_USER_ID   — 알리고 계정 ID
-//   ALIGO_SENDER    — 발신번호 (예: 0222655020)
-//
-// 알리고 관리자 > 계정 설정 > IP 보안 설정을 OFF로 설정해야 합니다.
+// Vercel → Cafe24 릴레이 서버(1.234.88.73) → 알리고
+// 알리고 IP 보안에 1.234.88.73 등록 필요
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
 };
+
+const RELAY_URL = "http://1.234.88.73/sms-relay.php";
+const RELAY_TOKEN = "JNC_SMS_RELAY_2026";
 
 export async function OPTIONS() {
   return new Response(null, { status: 204, headers: CORS_HEADERS });
@@ -30,32 +29,16 @@ export async function POST(request) {
       );
     }
 
-    const apiKey    = process.env.ALIGO_API_KEY;
-    const userId    = process.env.ALIGO_USER_ID;
-    const sender    = process.env.ALIGO_SENDER;
-
-    if (!apiKey || !userId || !sender) {
-      return Response.json(
-        { success: false, error: "알리고 환경변수 미설정 (ALIGO_API_KEY, ALIGO_USER_ID, ALIGO_SENDER)" },
-        { status: 500, headers: CORS_HEADERS }
-      );
-    }
-
-    const form = new URLSearchParams();
-    form.append("key",      apiKey);
-    form.append("user_id",  userId);
-    form.append("sender",   sender);
-    form.append("receiver", receiver);
-    form.append("msg",      msg);
-    if (title) form.append("title", title);
-
-    const aligoRes = await fetch("https://apis.aligo.in/send/", {
+    const relayRes = await fetch(RELAY_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: form.toString(),
+      headers: {
+        "Content-Type": "application/json",
+        "X-Relay-Token": RELAY_TOKEN,
+      },
+      body: JSON.stringify({ receiver, msg, title }),
     });
 
-    const result = await aligoRes.json();
+    const result = await relayRes.json();
 
     // 알리고 result_code: 1 = 성공
     const success = String(result.result_code) === "1";
