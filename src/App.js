@@ -4060,13 +4060,12 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
           <div className="flex space-x-1 bg-slate-100 rounded-lg p-1">
             <button
               onClick={() => {
-                const newDate = new Date(currentDate);
                 if (viewType === "month")
-                  newDate.setMonth(newDate.getMonth() - 1);
+                  setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
                 else if (viewType === "week")
-                  newDate.setDate(newDate.getDate() - 7);
-                else newDate.setDate(newDate.getDate() - 1);
-                setCurrentDate(newDate);
+                  setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate() - 7));
+                else
+                  setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate() - 1));
               }}
               className="p-1.5 hover:bg-white rounded-md text-slate-600 shadow-sm"
             >
@@ -4080,13 +4079,12 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
             </button>
             <button
               onClick={() => {
-                const newDate = new Date(currentDate);
                 if (viewType === "month")
-                  newDate.setMonth(newDate.getMonth() + 1);
+                  setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
                 else if (viewType === "week")
-                  newDate.setDate(newDate.getDate() + 7);
-                else newDate.setDate(newDate.getDate() + 1);
-                setCurrentDate(newDate);
+                  setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate() + 7));
+                else
+                  setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate() + 1));
               }}
               className="p-1.5 hover:bg-white rounded-md text-slate-600 shadow-sm"
             >
@@ -7944,7 +7942,8 @@ const StudentManagementModal = ({
   const [formData, setFormData] = useState({});
   const [attHistory, setAttHistory] = useState([]);
   const [payHistory, setPayHistory] = useState([]);
-  const [baseDate, setBaseDate] = useState(new Date());
+  const nowSMM = new Date();
+  const [baseDate, setBaseDate] = useState(new Date(nowSMM.getFullYear(), nowSMM.getMonth() - 1, 1));
   const [payAmount, setPayAmount] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -8024,9 +8023,7 @@ const StudentManagementModal = ({
   if (!isOpen) return null;
 
   const moveMonth = (offset) => {
-    const d = new Date(baseDate);
-    d.setMonth(d.getMonth() + offset);
-    setBaseDate(d);
+    setBaseDate(new Date(baseDate.getFullYear(), baseDate.getMonth() + offset, 1));
   };
 
   const handleScheduleChange = (day, value) => {
@@ -8143,8 +8140,7 @@ const StudentManagementModal = ({
   const renderCalendar = (type) => {
     const calendars = [];
     for (let i = 0; i < 2; i++) {
-      const d = new Date(baseDate);
-      d.setMonth(baseDate.getMonth() + i);
+      const d = new Date(baseDate.getFullYear(), baseDate.getMonth() + i, 1);
       const year = d.getFullYear();
       const month = d.getMonth();
       const daysInMonth = new Date(year, month + 1, 0).getDate();
