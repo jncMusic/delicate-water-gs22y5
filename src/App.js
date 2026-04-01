@@ -7467,10 +7467,10 @@ const StudentView = ({
     };
   }, [accessibleStudents]);
 
-  // 4. 리스트 필터링
+  // 4. 리스트 필터링 + 강사별·시간순 정렬
   const filteredStudents = useMemo(() => {
     const currentMonth = new Date().toISOString().slice(0, 7);
-    return accessibleStudents.filter((s) => {
+    const filtered = accessibleStudents.filter((s) => {
       const term = searchTerm.toLowerCase().trim();
       const sPhone = s.phone || "";
 
@@ -7491,6 +7491,17 @@ const StudentView = ({
         );
       }
       return matchesSearch && status === filterStatus;
+    });
+
+    // 강사별 → 시간순 정렬 (schedules에서 가장 이른 시간 기준)
+    const getEarliestTime = (s) => {
+      const times = Object.values(s.schedules || {}).filter(Boolean);
+      return times.length > 0 ? times.sort()[0] : "99:99";
+    };
+    return filtered.slice().sort((a, b) => {
+      const tA = (a.teacher || "").localeCompare(b.teacher || "");
+      if (tA !== 0) return tA;
+      return getEarliestTime(a).localeCompare(getEarliestTime(b));
     });
   }, [accessibleStudents, searchTerm, filterStatus]);
 
