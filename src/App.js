@@ -3400,10 +3400,10 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
     const scheduled = students.filter((s) => {
       const isTeacherMatch = s.teacher === teacherName;
       const isStatusMatch = s.status === "재원";
-      const isDayMatch =
-        (s.classDays && s.classDays.includes(dayName)) ||
-        s.className === dayName ||
-        (s.schedules && s.schedules[dayName]);
+      // getLessonTime과 동일한 우선순위: schedules 있으면 schedules만, 없으면 className 레거시 폴백
+      const isDayMatch = s.schedules
+        ? !!s.schedules[dayName]
+        : s.className === dayName;
       return isTeacherMatch && isDayMatch && isStatusMatch;
     });
     const attended = students.filter((s) => {
@@ -3565,6 +3565,8 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
   };
 
   const getDetailModalData = (dateStr, dayOfWeek) => {
+    const dayNameMap = ["일", "월", "화", "수", "목", "금", "토"];
+    const dayName = dayNameMap[dayOfWeek];
     let currentTeachers = teachers;
     if (selectedTeacher)
       currentTeachers = teachers.filter((t) => t.name === selectedTeacher);
@@ -3573,7 +3575,12 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
       const studentsForTeacher = getStudentsForCell(t.name, dayOfWeek, dateStr);
       allStudents = [...allStudents, ...studentsForTeacher];
     });
-    return allStudents;
+    // 시간순 정렬
+    return allStudents.sort((a, b) => {
+      const tA = (a.schedules && a.schedules[dayName]) || "99:99";
+      const tB = (b.schedules && b.schedules[dayName]) || "99:99";
+      return tA.localeCompare(tB);
+    });
   };
 
   const renderWeeklyView = () => {
