@@ -10711,7 +10711,8 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
     if (student.status !== "재원") return null;
     if (student.schedules && student.schedules[targetDay])
       return student.schedules[targetDay];
-    if (student.className === targetDay && student.time) return student.time;
+    if (!student.schedules && student.className === targetDay && student.time)
+      return student.time;
     return null;
   };
 
