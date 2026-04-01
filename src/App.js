@@ -10718,25 +10718,32 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
 
   // 수업 데이터 필터링 (파트 필터 적용)
   const getLessons = (teacherName, day, hour) => {
-    return students.filter((s) => {
-      // 1. 기본 필터 (강사 매칭 & 보안)
-      if (isTeacherMode && teacherName !== myName) return false;
-      if (s.teacher !== teacherName) return false;
+    return students
+      .filter((s) => {
+        // 1. 기본 필터 (강사 매칭 & 보안)
+        if (isTeacherMode && teacherName !== myName) return false;
+        if (s.teacher !== teacherName) return false;
 
-      // 2. 시간 확인
-      const timeStr = getLessonTime(s, day);
-      if (!timeStr) return false;
-      const sHour = parseInt(timeStr.split(":")[0]);
-      if (sHour !== hour) return false;
+        // 2. 시간 확인
+        const timeStr = getLessonTime(s, day);
+        if (!timeStr) return false;
+        const sHour = parseInt(timeStr.split(":")[0]);
+        if (sHour !== hour) return false;
 
-      // 3. 파트 필터 적용
-      if (selectedPart !== "전체") {
-        const studentPart = getPartBySubject(s.subject || "");
-        if (studentPart !== selectedPart) return false;
-      }
+        // 3. 파트 필터 적용
+        if (selectedPart !== "전체") {
+          const studentPart = getPartBySubject(s.subject || "");
+          if (studentPart !== selectedPart) return false;
+        }
 
-      return true;
-    });
+        return true;
+      })
+      .sort((a, b) => {
+        // 같은 시간대 내 분(minute) 기준 오름차순 정렬
+        const tA = getLessonTime(a, day) || "99:99";
+        const tB = getLessonTime(b, day) || "99:99";
+        return tA.localeCompare(tB);
+      });
   };
 
   // 화면 표시 강사 목록 (자동 숨김 + 파트 필터 + 중앙 정렬용 데이터)
