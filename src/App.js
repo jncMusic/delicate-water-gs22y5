@@ -6986,8 +6986,12 @@ const AttendanceView = ({ students, showToast, user, teachers }) => {
     const studentRef = doc(db, "artifacts", APP_ID, "public", "data", "students", student.id);
     const history = [...(student.attendanceHistory || [])];
     const idx = history.findIndex((h) => h.date === dateStr);
-    if (idx === -1) return;
-    history[idx] = { ...history[idx], memo };
+    if (idx === -1) {
+      // 출석 기록 없으면 메모 전용 레코드 생성
+      history.push({ date: dateStr, status: "memo", memo, timestamp: new Date().toISOString() });
+    } else {
+      history[idx] = { ...history[idx], memo };
+    }
     try {
       await updateDoc(studentRef, { attendanceHistory: history });
 
