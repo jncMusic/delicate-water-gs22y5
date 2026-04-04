@@ -431,8 +431,8 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
   // ── 간결 형식 (새 템플릿) ──────────────────────────────────
   if (style === "simple") {
     const paymentBlock = paymentUrl
-      ? `결제하지 않으셨다면 결제선생 링크 보내드리오니 확인하시어 결제 부탁드립니다.\n${paymentUrl}`
-      : `결제하지 않으셨다면 아래 계좌로 결제 부탁드립니다.\n하나은행 125-91025-766307 강열혁(제이앤씨음악학원)\n(방문카드/현금·계좌이체·제로페이 모두 가능합니다)`;
+      ? `(결제하지 않으셨다면 발송드리는 결제선생 페이지 확인하셔서 결제 부탁드립니다.)`
+      : `(결제하지 않으셨다면 아래 계좌로 결제 부탁드립니다.\n하나은행 125-91025-766307 강열혁(제이앤씨음악학원)\n방문카드/현금·계좌이체·제로페이 모두 가능합니다.)`;
 
     return `안녕하세요, J&C 음악학원입니다. ${getSeasonalGreeting()}
 ${lastPaymentMD} 결제하신 ${nameLabel}의 ${subject} ${sessionUnit}회차가 ${lastCoveredMD}에 완료되었습니다. ${nextDateMD} 새로운 ${subject} 1회차가 시작되어 안내드립니다.
