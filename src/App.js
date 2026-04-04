@@ -9600,15 +9600,21 @@ const PaymentView = ({
 // [BulkMessageModal] - 일괄 메시지 생성 및 발송 완료 처리
 const BulkMessageModal = ({ students, messageLogs, paymentUrl, onSaveLog, onClose, showToast, user }) => {
   const today = new Date().toISOString().split("T")[0];
-  // 발송 완료 체크 state: { studentId: boolean }
   const [sent, setSent] = useState({});
-  // 편집된 메시지 내용: { studentId: string }
+  const [msgStyle, setMsgStyle] = useState("detailed");
   const [messages, setMessages] = useState(() => {
     const init = {};
-    students.forEach((s) => { init[s.id] = generatePaymentMessage(s, paymentUrl); });
+    students.forEach((s) => { init[s.id] = generatePaymentMessage(s, paymentUrl, "detailed"); });
     return init;
   });
   const [activeIdx, setActiveIdx] = useState(0);
+
+  const handleStyleChange = (style) => {
+    setMsgStyle(style);
+    const updated = {};
+    students.forEach((s) => { updated[s.id] = generatePaymentMessage(s, paymentUrl, style); });
+    setMessages(updated);
+  };
 
   const activeStudent = students[activeIdx];
 
@@ -9684,7 +9690,17 @@ const BulkMessageModal = ({ students, messageLogs, paymentUrl, onSaveLog, onClos
             <MessageSquareText className="mr-2" size={20} />
             일괄 안내 메시지 ({students.length}명)
           </h3>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
+            <div className="flex rounded-lg border border-slate-200 overflow-hidden text-xs font-bold">
+              <button
+                onClick={() => handleStyleChange("detailed")}
+                className={`px-3 py-1.5 transition-colors ${msgStyle === "detailed" ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+              >상세</button>
+              <button
+                onClick={() => handleStyleChange("simple")}
+                className={`px-3 py-1.5 transition-colors ${msgStyle === "simple" ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+              >간결</button>
+            </div>
             <button
               onClick={handleCopyAll}
               className="px-3 py-1.5 text-xs border border-indigo-300 text-indigo-700 rounded-lg font-bold hover:bg-indigo-50 flex items-center gap-1"
