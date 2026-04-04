@@ -304,7 +304,7 @@ const getSeasonalGreeting = () => {
   return greetings[month] || "";
 };
 
-const generatePaymentMessage = (student, paymentUrl = "") => {
+const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") => {
   const sessionUnit = getEffectiveSessions(student);
   const tuition = parseInt(student.tuitionFee || 0).toLocaleString();
 
@@ -428,11 +428,13 @@ const generatePaymentMessage = (student, paymentUrl = "") => {
     ? "평안한 한 주 보내시기 바랍니다."
     : "평안한 주말 되시기 바랍니다.";
 
-  const paymentBlock = paymentUrl
-    ? `결제하지 않으셨다면 결제선생 링크 보내드리오니 확인하시어 결제 부탁드립니다.\n${paymentUrl}`
-    : `결제하지 않으셨다면 아래 계좌로 결제 부탁드립니다.\n하나은행 125-91025-766307 강열혁(제이앤씨음악학원)\n(방문카드/현금·계좌이체·제로페이 모두 가능합니다)`;
+  // ── 간결 형식 (새 템플릿) ──────────────────────────────────
+  if (style === "simple") {
+    const paymentBlock = paymentUrl
+      ? `결제하지 않으셨다면 결제선생 링크 보내드리오니 확인하시어 결제 부탁드립니다.\n${paymentUrl}`
+      : `결제하지 않으셨다면 아래 계좌로 결제 부탁드립니다.\n하나은행 125-91025-766307 강열혁(제이앤씨음악학원)\n(방문카드/현금·계좌이체·제로페이 모두 가능합니다)`;
 
-  return `안녕하세요, J&C 음악학원입니다. ${getSeasonalGreeting()}
+    return `안녕하세요, J&C 음악학원입니다. ${getSeasonalGreeting()}
 ${lastPaymentMD} 결제하신 ${nameLabel}의 ${subject} ${sessionUnit}회차가 ${lastCoveredMD}에 완료되었습니다. ${nextDateMD} 새로운 ${subject} 1회차가 시작되어 안내드립니다.
 아직 결제 전으로 확인되어 안내드리오니 이미 결제하신 경우 알려주시면 감사하겠습니다. 제로페이/서울페이 등은 결제 후 알려주셔야 확인이 되는 점 양해부탁말씀 드립니다.
 
@@ -441,6 +443,40 @@ ${paymentBlock}
 항상 감사드립니다. ${closingGreeting}
 
 J&C 음악학원장 드림.`;
+  }
+
+  // ── 상세 형식 (기존 템플릿) ───────────────────────────────
+  const paymentLine = paymentUrl
+    ? `\n- 온라인 결제 링크 : ${paymentUrl}\n`
+    : "\n- 온라인 카드 결제를 원하시는 경우 알려주시면 발송드리겠습니다. 결제 선생(카카오톡 페이지) 페이지 보내드립니다.\n";
+
+  return `안녕하세요, J&C 음악학원입니다.
+
+${getSeasonalGreeting()}
+
+수업료 결제 안내입니다. 아래 수업일자와 결제내용 확인하시어 결제 부탁드리겠습니다.
+-------------------------------
+- 과정명 : ${subject} 1:1 개인레슨 과정 - ${student.name} ${student.grade === "성인" ? "님" : "학생"}
+- 최종 결제일 : ${lastPayment.slice(5).replace("-", "/")}
+- 수업일자 : ${recentSessions}
+- 결제하신 수업 완료일 : ${lastCoveredDate}
+- 새로운 1회차 수업 : ${nextDateStr} (예정)
+- 미납회차 : ${unpaidDatesStr} ${unpaidCount > 0 ? `(${unpaidCount}회)` : ""}
+
+- 결제금액 : ${subject} 1:1 개인레슨 ${sessionUnit}회 ${tuition}원 ${unpaidCount > 0 ? `(미납 ${unpaidCount}회 포함)` : ""}
+- 결제요청일 : ${requestDateStr} 까지 결제 부탁드립니다.
+(현장결제는 수업 당일까지, 온라인결제는 수업 전일까지 부탁드립니다)
+
+- 결제계좌
+하나은행 125-91025-766307 강열혁(제이앤씨음악학원)
+- 결제방법: 방문(카드/현금), 계좌이체, 제로페이, 온라인 결제
+${paymentLine}
+- 이미 결제하신 경우 알려주시면 감사하겠습니다. 특히 제로페이의 경우 학생명 확인이 어려우니 꼭 알려주시면 감사하겠습니다.
+
+
+항상 감사드립니다. ${closingGreeting}
+
+J&C 음악학원장 올림.`;
 };
 
 // =================================================================
@@ -9039,6 +9075,7 @@ const PaymentView = ({
   const [msgContent, setMsgContent] = useState("");
   const [msgStudent, setMsgStudent] = useState(null); // 개별 미리보기 대상 학생
   const [msgSending, setMsgSending] = useState(false);
+  const [msgStyle, setMsgStyle] = useState("detailed"); // "detailed" | "simple"
 
   // 안내 발송 모드 state
   const [notifMode, setNotifMode] = useState(false);
@@ -9159,9 +9196,9 @@ const PaymentView = ({
   );
 
   // 안내 문자 미리보기 (개별 학생, 전역 헬퍼 활용)
-  const handleOpenMsgPreview = (e, student) => {
+  const handleOpenMsgPreview = (e, student, style = msgStyle) => {
     e.stopPropagation();
-    setMsgContent(generatePaymentMessage(student, paymentUrl));
+    setMsgContent(generatePaymentMessage(student, paymentUrl, style));
     setMsgStudent(student);
     setShowMsgPreview(true);
   };
@@ -9224,8 +9261,20 @@ const PaymentView = ({
               </button>
             </div>
             <div className="p-4 flex-1 overflow-hidden flex flex-col">
-              <div className="text-sm text-slate-500 mb-2 flex items-center shrink-0">
-                <AlertCircle size={14} className="mr-1" /> 내용을 확인하고 필요하면 직접 수정한 뒤 복사하세요.
+              <div className="flex items-center justify-between mb-2 shrink-0">
+                <div className="text-sm text-slate-500 flex items-center">
+                  <AlertCircle size={14} className="mr-1" /> 내용을 확인하고 필요하면 직접 수정한 뒤 복사하세요.
+                </div>
+                <div className="flex rounded-lg border border-slate-200 overflow-hidden text-xs font-bold">
+                  <button
+                    onClick={() => { setMsgStyle("detailed"); setMsgContent(generatePaymentMessage(msgStudent, paymentUrl, "detailed")); }}
+                    className={`px-3 py-1 transition-colors ${msgStyle === "detailed" ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+                  >상세</button>
+                  <button
+                    onClick={() => { setMsgStyle("simple"); setMsgContent(generatePaymentMessage(msgStudent, paymentUrl, "simple")); }}
+                    className={`px-3 py-1 transition-colors ${msgStyle === "simple" ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+                  >간결</button>
+                </div>
               </div>
               <textarea
                 className="w-full flex-1 border border-slate-300 rounded-lg p-4 text-sm font-sans leading-relaxed focus:outline-indigo-500 resize-none bg-slate-50"
