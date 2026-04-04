@@ -1818,6 +1818,7 @@ const DashboardView = ({
   messageLogs,
   onNavigateToConsultation,
   onNavigate,
+  showToast,
 }) => {
   // 1. 내 담당 학생 필터링
   const myStudents = useMemo(() => {
@@ -10615,6 +10616,7 @@ export default function App() {
                 setActiveTab("consultations");
               }}
               onNavigate={(tab) => setActiveTab(tab)}
+              showToast={showToast}
             />
           )}
           {activeTab === "timetable" && (
