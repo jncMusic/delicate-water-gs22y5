@@ -342,7 +342,7 @@ const generatePaymentMessage = (student, paymentUrl = "") => {
   // 누적 가중치로 paid/unpaid 구분
   let cumulativeWeight = 0;
   let lastCoveredDate = "없음";
-  const unpaidSlots = [];
+  const unpaidItems = []; // { date, label }
   const recentSlots = [];
   for (const slot of sessionSlots) {
     const nextWeight = cumulativeWeight + slot.weight;
@@ -351,47 +351,55 @@ const generatePaymentMessage = (student, paymentUrl = "") => {
       lastCoveredDate = slot.label.replace("(당일취소)", ""); // 취소는 완료일 제외
       recentSlots.push(slot.label);
     } else {
-      unpaidSlots.push(slot.label);
+      unpaidItems.push(slot);
     }
   }
+  const unpaidSlots = unpaidItems.map((s) => s.label);
 
   const recentStart = Math.max(0, recentSlots.length - sessionUnit);
-  const recentSessions = recentSlots.slice(recentStart).join(", ") || "(출석 기록 없음)";
+  const recentSessions = [...recentSlots.slice(recentStart), ...unpaidSlots].join(", ") || "(출석 기록 없음)";
 
   const unpaidDatesStr = unpaidSlots.length > 0 ? unpaidSlots.join(", ") : "없음";
-  const unpaidCount = unpaidSlots.reduce((sum, _s) => sum + 1, 0);
+  const unpaidCount = unpaidSlots.length;
 
-  // 다음 수업일 자동 계산
+  // 새로운 1회차: 미납회차가 있으면 첫 미납 날짜, 없으면 다음 예정 수업일 계산
   let nextDateStr = "";
   let requestDateStr = "";
   const daysKor = ["일", "월", "화", "수", "목", "금", "토"];
   let targetDayIdx = -1;
 
-  if (student.schedules) {
-    const scheduledDays = Object.keys(student.schedules);
-    if (scheduledDays.length > 0) targetDayIdx = daysKor.indexOf(scheduledDays[0]);
-  }
-  if (targetDayIdx === -1 && student.className)
-    targetDayIdx = daysKor.indexOf(student.className);
+  if (unpaidItems.length > 0) {
+    // 첫 미납 회차가 곧 새로운 1회차
+    const [, mm, dd] = unpaidItems[0].date.split("-");
+    nextDateStr = `${mm}/${dd}`;
+    requestDateStr = `${parseInt(mm)}/${parseInt(dd)}(${daysKor[new Date(unpaidItems[0].date).getDay()]})`;
+  } else {
+    if (student.schedules) {
+      const scheduledDays = Object.keys(student.schedules);
+      if (scheduledDays.length > 0) targetDayIdx = daysKor.indexOf(scheduledDays[0]);
+    }
+    if (targetDayIdx === -1 && student.className)
+      targetDayIdx = daysKor.indexOf(student.className);
 
-  const lastClassDateStr =
-    allSessions.length > 0
-      ? allSessions[allSessions.length - 1].date
-      : new Date().toISOString().split("T")[0];
+    const lastClassDateStr =
+      allSessions.length > 0
+        ? allSessions[allSessions.length - 1].date
+        : new Date().toISOString().split("T")[0];
 
-  if (targetDayIdx !== -1) {
-    let d = new Date(lastClassDateStr);
-    d.setDate(d.getDate() + 1);
-    for (let i = 0; i < 14; i++) {
-      if (d.getDay() === targetDayIdx) {
-        const m = d.getMonth() + 1;
-        const dt = d.getDate();
-        const dayName = daysKor[d.getDay()];
-        nextDateStr = `${String(m).padStart(2, "0")}/${String(dt).padStart(2, "0")}`;
-        requestDateStr = `${m}/${dt}(${dayName})`;
-        break;
-      }
+    if (targetDayIdx !== -1) {
+      let d = new Date(lastClassDateStr);
       d.setDate(d.getDate() + 1);
+      for (let i = 0; i < 14; i++) {
+        if (d.getDay() === targetDayIdx) {
+          const m = d.getMonth() + 1;
+          const dt = d.getDate();
+          const dayName = daysKor[d.getDay()];
+          nextDateStr = `${String(m).padStart(2, "0")}/${String(dt).padStart(2, "0")}`;
+          requestDateStr = `${m}/${dt}(${dayName})`;
+          break;
+        }
+        d.setDate(d.getDate() + 1);
+      }
     }
   }
   if (!requestDateStr) {
