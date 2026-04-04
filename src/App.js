@@ -475,7 +475,7 @@ const MemoNoticePopup = ({ memos, onDismiss }) => {
           onClick={onDismiss}
           className="mt-5 w-full py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-colors"
         >
-          확인 완료
+          확인 (배너에서 완료 처리)
         </button>
       </div>
     </div>
@@ -10042,7 +10042,12 @@ export default function App() {
     }
   };
 
-  // 강사 메모 알림 확인 완료 처리 (Firestore pendingMemos 초기화)
+  // 강사 메모 팝업 닫기 (DB는 건드리지 않음 — 배너로 계속 표시)
+  const handleMemoPopupClose = () => {
+    setShowMemoPopup(false);
+  };
+
+  // 강사 메모 완료 처리 (Firestore pendingMemos 초기화 — 배너 완료 버튼)
   const handleMemoDismiss = async () => {
     setShowMemoPopup(false);
     setPendingMemos([]);
@@ -10233,11 +10238,11 @@ export default function App() {
         />
       )}
 
-      {/* 0. 강사 메모 알림 팝업 (로그인 직후) */}
+      {/* 0. 강사 메모 알림 팝업 (로그인 직후 — 확인은 팝업만 닫고 배너 유지) */}
       {showMemoPopup && (
         <MemoNoticePopup
           memos={pendingMemos}
-          onDismiss={handleMemoDismiss}
+          onDismiss={handleMemoPopupClose}
         />
       )}
 
