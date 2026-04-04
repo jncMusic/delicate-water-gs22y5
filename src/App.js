@@ -6987,8 +6987,8 @@ const AttendanceView = ({ students, showToast, user, teachers }) => {
     const history = [...(student.attendanceHistory || [])];
     const idx = history.findIndex((h) => h.date === dateStr);
     if (idx === -1) {
-      // 출석 기록 없으면 메모 전용 레코드 생성
-      history.push({ date: dateStr, status: "memo", memo, timestamp: new Date().toISOString() });
+      // 출석 기록 없으면 메모만 담긴 레코드 생성 (status 없음 → 출석/결석 뱃지 미표시)
+      history.push({ date: dateStr, memo, timestamp: new Date().toISOString() });
     } else {
       history[idx] = { ...history[idx], memo };
     }
