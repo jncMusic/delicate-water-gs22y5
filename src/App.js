@@ -400,42 +400,39 @@ const generatePaymentMessage = (student, paymentUrl = "") => {
     requestDateStr = `${fallback.getMonth() + 1}/${fallback.getDate()}(${daysKor[fallback.getDay()]})`;
   }
 
-  const paymentLine = paymentUrl
-    ? `\n- 온라인 결제 링크 : ${paymentUrl}\n`
-    : "\n- 온라인 카드 결제를 원하시는 경우 알려주시면 발송드리겠습니다. 결제 선생(카카오톡 페이지) 페이지 보내드립니다.\n";
+  // 날짜 포맷 변환 (MM/DD → M월 D일)
+  const fmtMD = (mmdd) => {
+    if (!mmdd || mmdd === "없음") return "없음";
+    const [m, d] = mmdd.split("/");
+    return `${parseInt(m)}월 ${parseInt(d)}일`;
+  };
+  const lastPaymentMD = lastPayment !== "기록 없음"
+    ? `${parseInt(lastPayment.slice(5, 7))}월 ${parseInt(lastPayment.slice(8, 10))}일`
+    : "기록 없음";
+  const lastCoveredMD = fmtMD(lastCoveredDate);
+  const nextDateMD = fmtMD(nextDateStr);
+  const subject = student.subject || "음악";
+  const nameLabel = `${student.name} ${student.grade === "성인" ? "님" : "학생"}`;
+  const dow = new Date().getDay();
+  const closingGreeting = dow === 1
+    ? "평안한 한 주의 시작 되시기 바랍니다."
+    : dow >= 2 && dow <= 4
+    ? "평안한 한 주 보내시기 바랍니다."
+    : "평안한 주말 되시기 바랍니다.";
 
-  return `안녕하세요, J&C 음악학원입니다.
+  const paymentBlock = paymentUrl
+    ? `결제하지 않으셨다면 결제선생 링크 보내드리오니 확인하시어 결제 부탁드립니다.\n${paymentUrl}`
+    : `결제하지 않으셨다면 아래 계좌로 결제 부탁드립니다.\n하나은행 125-91025-766307 강열혁(제이앤씨음악학원)\n(방문카드/현금·계좌이체·제로페이 모두 가능합니다)`;
 
-${getSeasonalGreeting()}
+  return `안녕하세요, J&C 음악학원입니다. ${getSeasonalGreeting()}
+${lastPaymentMD} 결제하신 ${nameLabel}의 ${subject} ${sessionUnit}회차가 ${lastCoveredMD}에 완료되었습니다. ${nextDateMD} 새로운 ${subject} 1회차가 시작되어 안내드립니다.
+아직 결제 전으로 확인되어 안내드리오니 이미 결제하신 경우 알려주시면 감사하겠습니다. 제로페이/서울페이 등은 결제 후 알려주셔야 확인이 되는 점 양해부탁말씀 드립니다.
 
-수업료 결제 안내입니다. 아래 수업일자와 결제내용 확인하시어 결제 부탁드리겠습니다.
--------------------------------
-- 과정명 : ${student.subject || "음악"} 1:1 개인레슨 과정 - ${student.name} ${student.grade === "성인" ? "님" : "학생"}
-- 최종 결제일 : ${lastPayment.slice(5).replace("-", "/")}
-- 수업일자 : ${recentSessions}
-- 결제하신 수업 완료일 : ${lastCoveredDate}
-- 새로운 1회차 수업 : ${nextDateStr} (예정)
-- 미납회차 : ${unpaidDatesStr} ${unpaidCount > 0 ? `(${unpaidCount}회)` : ""}
+${paymentBlock}
 
-- 결제금액 : ${student.subject || "음악"} 1:1 개인레슨 ${sessionUnit}회 ${tuition}원 ${unpaidCount > 0 ? `(미납 ${unpaidCount}회 포함)` : ""}
-- 결제요청일 : ${requestDateStr} 까지 결제 부탁드립니다.
-(현장결제는 수업 당일까지, 온라인결제는 수업 전일까지 부탁드립니다)
+항상 감사드립니다. ${closingGreeting}
 
-- 결제계좌
-하나은행 125-91025-766307 강열혁(제이앤씨음악학원)
-- 결제방법: 방문(카드/현금), 계좌이체, 제로페이, 온라인 결제
-${paymentLine}
-- 이미 결제하신 경우 알려주시면 감사하겠습니다. 특히 제로페이의 경우 학생명 확인이 어려우니 꼭 알려주시면 감사하겠습니다.
-
-
-항상 감사드립니다. ${(() => {
-  const dow = new Date().getDay(); // 0=일, 1=월, 2=화, 3=수, 4=목, 5=금, 6=토
-  if (dow === 1) return "평안한 한 주의 시작 되시기 바랍니다.";
-  if (dow >= 2 && dow <= 4) return "평안한 한 주 보내시기 바랍니다.";
-  return "평안한 주말 되시기 바랍니다.";
-})()}
-
-J&C 음악학원장 올림.`;
+J&C 음악학원장 드림.`;
 };
 
 // =================================================================
@@ -1588,7 +1585,7 @@ const PaymentDetailModal = ({
 // =================================================================
 // [수납 관리 모달] 대시보드에서 수강권 만료/미납자 확인
 // =================================================================
-const PaymentManagementModal = ({ students, messageLogs, onClose, user, onNavigate }) => {
+const PaymentManagementModal = ({ students, messageLogs, onClose, user, onNavigate, showToast }) => {
   const [activeTab, setActiveTab] = useState("expired");
 
   const { expiredStudents, overdueStudents } = useMemo(() => {
@@ -1701,9 +1698,9 @@ const PaymentManagementModal = ({ students, messageLogs, onClose, user, onNaviga
               return (
                 <div
                   key={s.id}
-                  className="flex items-center justify-between px-4 py-3 rounded-xl border border-slate-100 bg-slate-50/60 hover:bg-white hover:border-indigo-200 transition-all"
+                  className="flex items-center justify-between px-4 py-3 rounded-xl border border-slate-100 bg-slate-50/60 hover:bg-white hover:border-indigo-200 transition-all gap-2"
                 >
-                  <div className="flex flex-col">
+                  <div className="flex flex-col flex-1 min-w-0">
                     <span className="font-bold text-slate-800 text-sm">
                       {s.name}
                     </span>
@@ -1711,7 +1708,20 @@ const PaymentManagementModal = ({ students, messageLogs, onClose, user, onNaviga
                       {s.teacher || "-"} · {s.subject || "과목 미정"}
                     </span>
                   </div>
-                  <div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {activeTab === "overdue" && (
+                      <button
+                        onClick={() => {
+                          const msg = generatePaymentMessage(s);
+                          navigator.clipboard.writeText(msg).then(() => {
+                            showToast?.(`${s.name} 결제안내 문자 복사됨`);
+                          });
+                        }}
+                        className="text-[10px] bg-indigo-50 text-indigo-600 border border-indigo-200 px-2 py-1 rounded-full font-bold hover:bg-indigo-100"
+                      >
+                        문자 복사
+                      </button>
+                    )}
                     {isSentToday ? (
                       <span className="text-[10px] bg-emerald-50 text-emerald-600 border border-emerald-200 px-2 py-1 rounded-full font-bold">
                         오늘 발송
@@ -2216,6 +2226,7 @@ const DashboardView = ({
           onClose={() => setShowPaymentMgmt(false)}
           user={user}
           onNavigate={onNavigate}
+          showToast={showToast}
         />
       )}
     </div>
