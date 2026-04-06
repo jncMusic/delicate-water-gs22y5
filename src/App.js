@@ -356,8 +356,39 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
   }
   const unpaidSlots = unpaidItems.map((s) => s.label);
 
+  // 미납 회차가 없는 경우(수강권 만료): 다음 결제 주기 예정일을 스케줄 기반으로 생성
+  const projectedSlots = [];
+  if (unpaidItems.length === 0 && sessionUnit > 0) {
+    const dKor = ["일", "월", "화", "수", "목", "금", "토"];
+    const scheduledDayNames = student.schedules ? Object.keys(student.schedules) : [];
+    if (!scheduledDayNames.length && student.className) scheduledDayNames.push(student.className);
+    const targetIndices = scheduledDayNames.map((n) => dKor.indexOf(n)).filter((i) => i !== -1);
+    if (targetIndices.length > 0) {
+      const startDate =
+        allSessions.length > 0
+          ? allSessions[allSessions.length - 1].date
+          : new Date().toISOString().split("T")[0];
+      let d = new Date(startDate);
+      d.setDate(d.getDate() + 1);
+      let count = 0;
+      for (let i = 0; i < 60 && count < sessionUnit; i++) {
+        if (targetIndices.includes(d.getDay())) {
+          const m = d.getMonth() + 1;
+          const dt = d.getDate();
+          projectedSlots.push(
+            `${String(m).padStart(2, "0")}/${String(dt).padStart(2, "0")}(예정)`
+          );
+          count++;
+        }
+        d.setDate(d.getDate() + 1);
+      }
+    }
+  }
+
   const recentStart = Math.max(0, recentSlots.length - sessionUnit);
-  const recentSessions = [...recentSlots.slice(recentStart), ...unpaidSlots].join(", ") || "(출석 기록 없음)";
+  const recentSessions =
+    [...recentSlots.slice(recentStart), ...unpaidSlots, ...projectedSlots].join(", ") ||
+    "(출석 기록 없음)";
 
   const unpaidDatesStr = unpaidSlots.length > 0 ? unpaidSlots.join(", ") : "없음";
   const unpaidCount = unpaidSlots.length;
