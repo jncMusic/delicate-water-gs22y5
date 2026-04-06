@@ -10155,6 +10155,19 @@ export default function App() {
         lastPaymentDate: realSessionStartDate,
         sessionsCompleted: 0,
       });
+
+      // 결제 완료 시 해당 학생의 메시지 발송 이력 초기화 (다음 주기에 미발송으로 표시)
+      try {
+        const logsRef = collection(db, "artifacts", safeAppId, "public", "data", "messageLogs");
+        const logsQuery = query(logsRef, where("studentId", "==", studentId));
+        const logSnap = await getDocs(logsQuery);
+        const batch = writeBatch(db);
+        logSnap.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+      } catch (logErr) {
+        console.error("메시지 이력 초기화 오류:", logErr);
+      }
+
       showToast("결제 완료", "success");
     } catch (e) {
       showToast("결제 오류", "error");
