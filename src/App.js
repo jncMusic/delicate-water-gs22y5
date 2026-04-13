@@ -273,6 +273,14 @@ const StatCard = ({ icon: Icon, label, value, trend, trendUp, onClick }) => (
 // 4. 공통 헬퍼 함수
 // =================================================================
 
+// 로컬 날짜 문자열 반환 (YYYY-MM-DD) - toISOString()은 UTC 변환으로 한국 오전 9시 이전 하루 오차 발생
+const toLocalDateStr = (date = new Date()) => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+};
+
 // 결제 주기(세션 단위) 계산: 주2회(schedules 2개 이상)인데 totalSessions가
 // 구버전 기본값(4)으로 저장된 학생을 자동으로 8회로 보정한다.
 const getEffectiveSessions = (student) => {
@@ -3601,7 +3609,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
   };
 
   // [기능2] 오늘 이전 날짜 중 출석 미처리(scheduled) 여부
-  const todayStr = new Date().toISOString().split("T")[0];
+  const todayStr = toLocalDateStr();
   const isUnprocessedPast = (student, dateStr) => {
     if (dateStr >= todayStr) return false;
     const record = student.attendanceHistory?.find((h) => h.date === dateStr);
@@ -3649,8 +3657,8 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
             Time
           </div>
           {weekDates.map((date, i) => {
-            const dateStr = date.toISOString().split("T")[0];
-            const isToday = dateStr === new Date().toISOString().split("T")[0];
+            const dateStr = toLocalDateStr(date);
+            const isToday = dateStr === toLocalDateStr();
             return (
               <div
                 key={i}
@@ -3687,7 +3695,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                 {hour}:00
               </div>
               {weekDates.map((date, i) => {
-                const dateStr = date.toISOString().split("T")[0];
+                const dateStr = toLocalDateStr(date);
                 const dayOfWeek = date.getDay();
                 let cellStudents = [];
                 const targetTeachers = selectedTeacher
@@ -3766,7 +3774,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
   };
 
   const renderDailyView = () => {
-    const dateStr = currentDate.toISOString().split("T")[0];
+    const dateStr = toLocalDateStr(currentDate);
     const dayOfWeek = currentDate.getDay();
     const visibleTeachers = selectedTeacher
       ? teachers.filter((t) => t.name === selectedTeacher)
@@ -6600,7 +6608,7 @@ const KioskView = ({ students, onExitKiosk }) => {
     }
   }, [step]);
 
-  const toDateStr = (date) => date.toISOString().split("T")[0];
+  const toDateStr = (date) => toLocalDateStr(date);
   const todayStr = toDateStr(currentTime);
 
   // 전화번호 뒤 4자리로 재원 학생 검색
@@ -6932,7 +6940,7 @@ const AttendanceView = ({ students, showToast, user, teachers }) => {
 
   const getDayOfWeek = (date) =>
     ["일", "월", "화", "수", "목", "금", "토"][date.getDay()];
-  const formatDate = (date) => date.toISOString().split("T")[0];
+  const formatDate = (date) => toLocalDateStr(date);
 
   // [기능 보존] 오늘 수업 대상자 필터링 (강사 필터링 로직 포함)
   const todayStudents = useMemo(() => {
