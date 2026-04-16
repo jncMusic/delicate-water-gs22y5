@@ -2888,6 +2888,11 @@ const ConsultationView = ({
   });
 
   const [viewMode, setViewMode] = useState("pending");
+  const [showMsgModal, setShowMsgModal] = useState(false);
+  const [msgTargetConsult, setMsgTargetConsult] = useState(null);
+  const [msgTemplateType, setMsgTemplateType] = useState("new_lesson");
+  const [msgText, setMsgText] = useState("");
+  const [msgSending, setMsgSending] = useState(false);
 
   // 1. [기능 보존] 진행 중 / 보관함 필터링
   const filteredConsultations = useMemo(
@@ -3008,8 +3013,129 @@ const ConsultationView = ({
     }
   };
 
+  // 상담 문자 템플릿 생성
+  const generateConsultMsg = (consult, type) => {
+    const nameLabel = `${consult.name} ${consult.type === "adult" ? "님" : "학생"}`;
+    const subject = consult.subject || "음악";
+    if (type === "available") {
+      return `안녕하세요, J&C 음악학원입니다.\n\n문의주신 ${subject} 수업 가능 시간 안내드립니다.\n\n- 요일/시간: (예: 월요일 오후 4시, 수요일 오후 5시)\n\n편하신 시간에 방문하시거나 연락 주시면 자세히 안내드리겠습니다.\n\nJ&C 음악학원 (☎ 010-4028-9803)`;
+    }
+    if (type === "new_lesson") {
+      return `안녕하세요, J&C 음악학원입니다.\n\n${nameLabel}의 첫 수업 안내드립니다.\n\n📅 첫 수업: (날짜/요일/시간 입력)\n📖 과목: ${subject}\n\n💰 원비 안내\n월 원비: (금액)원 / (횟수)회 수업\n하나은행 125-91025-766307 강열혁(제이앤씨음악학원)\n방문(카드/현금), 계좌이체·제로페이, 온라인 카드결제 모두 가능합니다.\n\n⚠️ 취소/노쇼 안내\n당일 취소 및 노쇼는 수업 1회 차감됩니다.\n변경 사항은 수업 전날까지 연락 부탁드립니다.\n\n항상 감사드립니다 :)\nJ&C 음악학원장 드림.`;
+    }
+    if (type === "consult_confirm") {
+      return `안녕하세요, J&C 음악학원입니다.\n\n${nameLabel}, 상담 예약이 확인되었습니다.\n\n📅 상담 일시: (날짜/요일/시간 입력)\n📍 장소: J&C 음악학원 (목동)\n\n문의사항이 있으시면 언제든지 연락 주세요.\n연락처: 010-4028-9803\n\n감사합니다 :)\nJ&C 음악학원장 드림.`;
+    }
+    return "";
+  };
+
+  const openMsgModal = (e, consult) => {
+    e.stopPropagation();
+    setMsgTargetConsult(consult);
+    const defaultType = "new_lesson";
+    setMsgTemplateType(defaultType);
+    setMsgText(generateConsultMsg(consult, defaultType));
+    setShowMsgModal(true);
+  };
+
   return (
     <div className="bg-white rounded-2xl border shadow-sm p-6 h-full flex flex-col overflow-hidden animate-fade-in">
+      {/* --- 상담 문자 템플릿 모달 --- */}
+      {showMsgModal && msgTargetConsult && (
+        <div className="fixed inset-0 bg-black/60 z-[120] flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl flex flex-col" style={{ height: "78vh" }}>
+            <div className="flex justify-between items-center p-5 border-b shrink-0">
+              <div>
+                <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                  <MessageSquareText size={20} className="text-indigo-600" />
+                  문자 템플릿
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">{msgTargetConsult.name} · {msgTargetConsult.phone}</p>
+              </div>
+              <button onClick={() => setShowMsgModal(false)} className="p-1 hover:bg-slate-100 rounded-full transition-colors">
+                <X size={22} className="text-slate-400" />
+              </button>
+            </div>
+            <div className="p-4 border-b shrink-0">
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { id: "new_lesson", label: "신규수업 안내" },
+                  { id: "available", label: "수업 가능 안내" },
+                  { id: "consult_confirm", label: "상담 예약 확인" },
+                ].map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => {
+                      setMsgTemplateType(t.id);
+                      setMsgText(generateConsultMsg(msgTargetConsult, t.id));
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                      msgTemplateType === t.id
+                        ? "bg-indigo-600 text-white border-indigo-600"
+                        : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex-1 p-4 overflow-hidden">
+              <textarea
+                className="w-full h-full border border-slate-200 rounded-xl p-4 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-none bg-slate-50 font-sans"
+                value={msgText}
+                onChange={(e) => setMsgText(e.target.value)}
+                spellCheck="false"
+              />
+            </div>
+            <div className="p-4 border-t bg-slate-50 rounded-b-2xl flex justify-between items-center shrink-0">
+              <span className="text-xs text-slate-400">{msgText.length}자</span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowMsgModal(false)}
+                  className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg font-bold text-sm transition-colors"
+                >
+                  취소
+                </button>
+                <button
+                  onClick={() => {
+                    if (navigator.clipboard) {
+                      navigator.clipboard.writeText(msgText).then(() => {
+                        showToast("문자 내용이 복사되었습니다.", "success");
+                        setShowMsgModal(false);
+                      });
+                    }
+                  }}
+                  className="px-4 py-2 bg-slate-600 text-white rounded-lg font-bold text-sm hover:bg-slate-700 flex items-center gap-1.5 transition-colors"
+                >
+                  <Copy size={15} /> 복사
+                </button>
+                {msgTargetConsult.phone && (
+                  <button
+                    onClick={async () => {
+                      setMsgSending(true);
+                      try {
+                        await sendAligoSms(msgTargetConsult.phone, msgText);
+                        showToast(`${msgTargetConsult.name} 문자 발송 완료`, "success");
+                        setShowMsgModal(false);
+                      } catch (err) {
+                        showToast("발송 실패: " + err.message, "error");
+                      } finally {
+                        setMsgSending(false);
+                      }
+                    }}
+                    disabled={msgSending}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg font-bold text-sm hover:bg-blue-700 flex items-center gap-1.5 disabled:opacity-60 transition-colors"
+                  >
+                    📱 {msgSending ? "발송 중..." : "문자 발송"}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* --- 상담 모달 영역 --- */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 z-[110] flex items-center justify-center p-4 backdrop-blur-sm">
@@ -3318,6 +3444,7 @@ const ConsultationView = ({
               <th className="px-6 py-4">성함/연락처</th>
               <th className="px-6 py-4">과목 및 상세내역</th>
               <th className="px-6 py-4 text-center w-36">원생 등록</th>
+              <th className="px-6 py-4 text-center w-24">문자</th>
               <th className="px-6 py-4 text-right w-20">삭제</th>
             </tr>
           </thead>
@@ -3379,6 +3506,17 @@ const ConsultationView = ({
                   )}
                 </td>
                 <td
+                  className="px-6 py-4 text-center"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <button
+                    onClick={(e) => openMsgModal(e, c)}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-sky-50 text-sky-600 border border-sky-100 rounded-lg text-xs font-bold hover:bg-sky-100 transition-colors"
+                  >
+                    📱 문자
+                  </button>
+                </td>
+                <td
                   className="px-6 py-4 text-right"
                   onClick={(e) => e.stopPropagation()}
                 >
@@ -3394,7 +3532,7 @@ const ConsultationView = ({
             {filteredConsultations.length === 0 && (
               <tr>
                 <td
-                  colSpan="5"
+                  colSpan="6"
                   className="text-center py-20 text-slate-400 font-bold"
                 >
                   상담 내역이 없습니다.
