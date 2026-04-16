@@ -3026,6 +3026,12 @@ const ConsultationView = ({
     if (type === "consult_confirm") {
       return `안녕하세요, J&C 음악학원입니다.\n\n${nameLabel}, 상담 예약이 확인되었습니다.\n\n📅 상담 일시: (날짜/요일/시간 입력)\n📍 장소: J&C 음악학원 (목동)\n\n문의사항이 있으시면 언제든지 연락 주세요.\n연락처: 010-4028-9803\n\n감사합니다 :)\nJ&C 음악학원장 드림.`;
     }
+    if (type === "academy_info") {
+      return `안녕하세요, J&C 음악학원입니다.\n\n문의해 주셔서 감사합니다 :)\n아래 학원 안내 정보 참고 부탁드립니다.\n\n🏫 J&C 음악학원\n📍 위치: 서울 양천구 목동서로 35, 목동프라자 3층\n🌐 홈페이지: https://www.jncmusic.kr\n☎ 전화: 010-4028-9803\n\n⏰ 운영 시간\n평일(월~금): 10:30 ~ 22:00\n주말(토·일): 09:00 ~ 22:00\n\n📋 상담 안내\n상담은 예약제로 운영됩니다.\n방문 또는 전화 상담 모두 가능하오니 편하신 방법으로 예약 후 방문 부탁드립니다.\n\n감사합니다 :)\nJ&C 음악학원장 드림.`;
+    }
+    if (type === "blank") {
+      return `안녕하세요, J&C 음악학원입니다.\n\n`;
+    }
     return "";
   };
 
@@ -3062,6 +3068,8 @@ const ConsultationView = ({
                   { id: "new_lesson", label: "신규수업 안내" },
                   { id: "available", label: "수업 가능 안내" },
                   { id: "consult_confirm", label: "상담 예약 확인" },
+                  { id: "academy_info", label: "학원 안내" },
+                  { id: "blank", label: "빈 템플릿" },
                 ].map((t) => (
                   <button
                     key={t.id}
