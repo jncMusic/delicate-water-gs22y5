@@ -9333,6 +9333,13 @@ const PaymentView = ({
   const [quickPayStudent, setQuickPayStudent] = useState(null);
   const [quickPayDate, setQuickPayDate] = useState("");
 
+  // 결제 처리 탭 state
+  const [processMode, setProcessMode] = useState(false);
+  const [paymentMethods, setPaymentMethods] = useState({});
+  const [completedPeriod, setCompletedPeriod] = useState("week");
+  const [processQuickPay, setProcessQuickPay] = useState(null);
+  const [processPayDate, setProcessPayDate] = useState(toLocalDateStr());
+
   // 수강 현황 계산 헬퍼
   const getStudentProgress = (s) => {
     const totalAttended = (s.attendanceHistory || [])
@@ -9441,6 +9448,41 @@ const PaymentView = ({
     () => students.find((s) => s.id === selectedStudentId) || null,
     [students, selectedStudentId]
   );
+
+  // 결제 처리 탭: 결제 예정자
+  const processableStudents = useMemo(() =>
+    students
+      .filter((s) => {
+        const { isCompleted, isOverdue } = getStudentProgress(s);
+        return s.status === "재원" && (isCompleted || isOverdue);
+      })
+      .sort((a, b) => a.name.localeCompare(b.name, "ko")),
+    [students]
+  );
+
+  // 결제 처리 탭: 결제 완료자 명단
+  const recentlyPaidList = useMemo(() => {
+    const now = new Date();
+    let cutoff;
+    if (completedPeriod === "today") {
+      cutoff = toLocalDateStr(now);
+    } else if (completedPeriod === "week") {
+      const d = new Date(now);
+      d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+      cutoff = toLocalDateStr(d);
+    } else {
+      cutoff = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+    }
+    const results = [];
+    students.filter((s) => s.status === "재원").forEach((s) => {
+      (s.paymentHistory || []).forEach((p) => {
+        if (p.date >= cutoff) results.push({ student: s, payment: p });
+      });
+    });
+    return results.sort((a, b) => b.payment.date.localeCompare(a.payment.date));
+  }, [students, completedPeriod]);
+
+  const getMethodForStudent = (s) => paymentMethods[s.id] || s.lastPaymentMethod || "";
 
   // 안내 문자 미리보기 (개별 학생, 전역 헬퍼 활용)
   const handleOpenMsgPreview = (e, student, style = msgStyle) => {
@@ -9597,6 +9639,61 @@ const PaymentView = ({
         </div>
       )}
 
+      {/* 결제 처리: 수납 완료 입력 모달 */}
+      {processQuickPay && (
+        <div className="fixed inset-0 bg-black/60 z-[110] flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6">
+            <h3 className="text-lg font-bold mb-1 flex items-center text-emerald-700">
+              <CreditCard className="mr-2" size={20} /> 수납 완료 처리
+            </h3>
+            <p className="text-sm text-slate-500 mb-1">{processQuickPay.student.name} ({processQuickPay.student.subject})</p>
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium mb-4 inline-block ${
+              processQuickPay.method === "계좌이체" ? "bg-emerald-100 text-emerald-700" : "bg-indigo-100 text-indigo-700"
+            }`}>{processQuickPay.method}</span>
+            <div className="mb-4 mt-3">
+              <label className="block text-xs font-bold text-slate-500 mb-1">결제일자</label>
+              <input
+                type="date"
+                value={processPayDate}
+                onChange={(e) => setProcessPayDate(e.target.value)}
+                className="w-full p-3 border rounded-xl bg-slate-50 focus:outline-emerald-500 text-sm"
+              />
+            </div>
+            <div className="mb-3">
+              <label className="block text-xs font-bold text-slate-500 mb-1">결제금액</label>
+              <div className="p-3 border rounded-xl bg-slate-50 text-sm font-bold text-indigo-600">
+                {Number(processQuickPay.student.tuitionFee || 0).toLocaleString()}원
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end mt-4">
+              <button onClick={() => setProcessQuickPay(null)} className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg font-bold">취소</button>
+              <button
+                onClick={async () => {
+                  if (!processPayDate) return;
+                  try {
+                    await onSavePayment(
+                      processQuickPay.student.id,
+                      processPayDate,
+                      parseInt(processQuickPay.student.tuitionFee || 0),
+                      processPayDate,
+                      processQuickPay.method
+                    );
+                    showToast(`${processQuickPay.student.name} 수납 완료`, "success");
+                    setProcessQuickPay(null);
+                  } catch (e) {
+                    showToast("저장 오류: " + e.message, "error");
+                  }
+                }}
+                disabled={!processPayDate}
+                className="px-6 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 shadow-md disabled:opacity-40"
+              >
+                완료 처리
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 일괄 메시지 발송 모달 */}
       {showBulkModal && (
         <BulkMessageModal
@@ -9630,16 +9727,22 @@ const PaymentView = ({
           {/* 모드 탭 */}
           <div className="flex rounded-lg overflow-hidden border text-sm">
             <button
-              onClick={() => { setNotifMode(false); setSelectedIds([]); }}
-              className={`px-3 py-1.5 font-medium transition-colors ${!notifMode ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+              onClick={() => { setNotifMode(false); setProcessMode(false); setSelectedIds([]); }}
+              className={`px-3 py-1.5 font-medium transition-colors ${!notifMode && !processMode ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
             >
               명단 관리
             </button>
             <button
-              onClick={() => { setNotifMode(true); setSelectedIds([]); }}
+              onClick={() => { setNotifMode(true); setProcessMode(false); setSelectedIds([]); }}
               className={`px-3 py-1.5 font-medium transition-colors flex items-center gap-1 ${notifMode ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
             >
               <MessageSquareText size={14} /> 안내 발송
+            </button>
+            <button
+              onClick={() => { setNotifMode(false); setProcessMode(true); setSelectedIds([]); }}
+              className={`px-3 py-1.5 font-medium transition-colors flex items-center gap-1 ${processMode ? "bg-emerald-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+            >
+              <CreditCard size={14} /> 결제 처리
             </button>
           </div>
         </div>
@@ -9727,6 +9830,155 @@ const PaymentView = ({
           </button>
         </div>
       )}
+
+      {processMode ? (
+        <div className="flex-1 overflow-auto flex flex-col gap-4 min-h-0">
+          {/* 결제 예정자 */}
+          <div className="border rounded-xl overflow-hidden shrink-0">
+            <div className="bg-rose-50 px-4 py-2.5 flex items-center gap-2 border-b">
+              <AlertCircle size={15} className="text-rose-600" />
+              <span className="font-bold text-rose-700 text-sm">결제 예정자</span>
+              <span className="bg-rose-200 text-rose-800 text-xs px-1.5 py-0.5 rounded-full">{processableStudents.length}명</span>
+            </div>
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 border-b text-xs text-slate-400 uppercase">
+                <tr>
+                  <th className="py-2.5 px-4 text-left">이름/과목</th>
+                  <th className="py-2.5 px-4 text-left">강사</th>
+                  <th className="py-2.5 px-4 text-right">원비</th>
+                  <th className="py-2.5 px-4 text-left">최종결제일</th>
+                  <th className="py-2.5 px-4 text-center">결제방법</th>
+                  <th className="py-2.5 px-4 text-center w-32">액션</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {processableStudents.map((s) => {
+                  const method = getMethodForStudent(s);
+                  const { displayStatus, statusColor } = getStudentProgress(s);
+                  return (
+                    <tr key={s.id} className="hover:bg-slate-50">
+                      <td className="py-3 px-4">
+                        <div className="font-medium">{s.name}</div>
+                        <div className="text-xs text-slate-400">{s.subject}</div>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded ${statusColor}`}>{displayStatus}</span>
+                      </td>
+                      <td className="py-3 px-4 text-slate-600">{s.teacher || "-"}</td>
+                      <td className="py-3 px-4 text-right font-bold text-indigo-600">
+                        {Number(s.tuitionFee || 0).toLocaleString()}원
+                      </td>
+                      <td className="py-3 px-4 text-xs text-slate-500">{s.lastPaymentDate || "-"}</td>
+                      <td className="py-3 px-4">
+                        <div className="flex flex-wrap gap-1 justify-center">
+                          {["현장", "계좌이체", "기타", "결제선생"].map((m) => (
+                            <button
+                              key={m}
+                              onClick={() => setPaymentMethods((prev) => ({ ...prev, [s.id]: m }))}
+                              className={`px-2 py-0.5 text-xs rounded border font-medium transition-all ${
+                                method === m
+                                  ? m === "결제선생"
+                                    ? "bg-blue-600 text-white border-blue-600"
+                                    : "bg-indigo-600 text-white border-indigo-600"
+                                  : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
+                              }`}
+                            >
+                              {m}
+                            </button>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        {method === "결제선생" ? (
+                          <button
+                            onClick={(e) => handleOpenMsgPreview(e, s)}
+                            className="px-3 py-1.5 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 font-medium"
+                          >
+                            📱 문자 발송
+                          </button>
+                        ) : method ? (
+                          <button
+                            onClick={() => { setProcessQuickPay({ student: s, method }); setProcessPayDate(toLocalDateStr()); }}
+                            className="px-3 py-1.5 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 font-medium"
+                          >
+                            ✅ 수납 완료
+                          </button>
+                        ) : (
+                          <span className="text-slate-300 text-xs">방법 선택</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {processableStudents.length === 0 && (
+                  <tr><td colSpan={6} className="py-10 text-center text-slate-400">결제 예정자가 없습니다.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* 결제 완료자 */}
+          <div className="border rounded-xl overflow-hidden">
+            <div className="bg-emerald-50 px-4 py-2.5 flex items-center justify-between border-b">
+              <div className="flex items-center gap-2">
+                <CheckCircle size={15} className="text-emerald-600" />
+                <span className="font-bold text-emerald-700 text-sm">결제 완료자</span>
+                <span className="bg-emerald-200 text-emerald-800 text-xs px-1.5 py-0.5 rounded-full">{recentlyPaidList.length}건</span>
+              </div>
+              <div className="flex rounded-lg overflow-hidden border border-emerald-200 text-xs">
+                {[["today", "오늘"], ["week", "이번 주"], ["month", "이번 달"]].map(([val, label]) => (
+                  <button
+                    key={val}
+                    onClick={() => setCompletedPeriod(val)}
+                    className={`px-3 py-1 font-medium transition-colors ${completedPeriod === val ? "bg-emerald-600 text-white" : "bg-white text-emerald-600 hover:bg-emerald-50"}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 border-b text-xs text-slate-400 uppercase">
+                <tr>
+                  <th className="py-2.5 px-4 text-left">이름/과목</th>
+                  <th className="py-2.5 px-4 text-left">강사</th>
+                  <th className="py-2.5 px-4 text-left">결제일</th>
+                  <th className="py-2.5 px-4 text-right">금액</th>
+                  <th className="py-2.5 px-4 text-center">결제방법</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {recentlyPaidList.map(({ student: s, payment: p }, i) => (
+                  <tr key={`${s.id}-${i}`} className="hover:bg-slate-50">
+                    <td className="py-2.5 px-4">
+                      <div className="font-medium">{s.name}</div>
+                      <div className="text-xs text-slate-400">{s.subject}</div>
+                    </td>
+                    <td className="py-2.5 px-4 text-slate-600">{s.teacher || "-"}</td>
+                    <td className="py-2.5 px-4 text-slate-600">{p.date}</td>
+                    <td className="py-2.5 px-4 text-right font-bold text-indigo-600">
+                      {Number(p.amount || 0).toLocaleString()}원
+                    </td>
+                    <td className="py-2.5 px-4 text-center">
+                      {p.method ? (
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                          p.method === "결제선생" ? "bg-blue-100 text-blue-700" :
+                          p.method === "현장" ? "bg-indigo-100 text-indigo-700" :
+                          p.method === "계좌이체" ? "bg-emerald-100 text-emerald-700" :
+                          "bg-slate-100 text-slate-600"
+                        }`}>{p.method}</span>
+                      ) : <span className="text-slate-300">-</span>}
+                    </td>
+                  </tr>
+                ))}
+                {recentlyPaidList.length === 0 && (
+                  <tr><td colSpan={5} className="py-8 text-center text-slate-400">
+                    {completedPeriod === "today" ? "오늘" : completedPeriod === "week" ? "이번 주" : "이번 달"} 결제 완료자가 없습니다.
+                  </td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
 
       <div className="flex-1 overflow-auto border rounded-lg">
         <table className="w-full text-left min-w-[640px]">
@@ -9840,6 +10092,7 @@ const PaymentView = ({
           </tbody>
         </table>
       </div>
+      )}
     </div>
   );
 };
@@ -10279,7 +10532,8 @@ export default function App() {
     studentId,
     date,
     amount,
-    realSessionStartDate = date
+    realSessionStartDate = date,
+    method = ""
   ) => {
     const safeAppId = APP_ID || "jnc-music-v2";
     try {
@@ -10301,6 +10555,7 @@ export default function App() {
         sessionStartDate: realSessionStartDate,
         totalSessions: getEffectiveSessions(student),
         createdAt: new Date().toISOString(),
+        ...(method && { method }),
       };
       const updatedHistory = [
         ...(student.paymentHistory || []),
@@ -10310,6 +10565,7 @@ export default function App() {
         paymentHistory: updatedHistory,
         lastPaymentDate: realSessionStartDate,
         sessionsCompleted: 0,
+        ...(method && { lastPaymentMethod: method }),
       });
 
       // 결제 완료 시 해당 학생의 메시지 발송 이력 초기화 (다음 주기에 미발송으로 표시)
