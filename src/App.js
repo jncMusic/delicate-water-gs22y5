@@ -3578,6 +3578,20 @@ const ConsultationView = ({
   );
 };
 
+// 강사별 고유 색상 팔레트 (주간 뷰 블록 카드용)
+const TEACHER_COLOR_PALETTE = [
+  { bg: "bg-violet-100",  text: "text-violet-900",  border: "border-l-violet-500"  },
+  { bg: "bg-emerald-100", text: "text-emerald-900", border: "border-l-emerald-500" },
+  { bg: "bg-amber-100",   text: "text-amber-900",   border: "border-l-amber-500"   },
+  { bg: "bg-cyan-100",    text: "text-cyan-900",    border: "border-l-cyan-500"    },
+  { bg: "bg-rose-100",    text: "text-rose-900",    border: "border-l-rose-500"    },
+  { bg: "bg-indigo-100",  text: "text-indigo-900",  border: "border-l-indigo-500"  },
+  { bg: "bg-pink-100",    text: "text-pink-900",    border: "border-l-pink-500"    },
+  { bg: "bg-teal-100",    text: "text-teal-900",    border: "border-l-teal-500"    },
+  { bg: "bg-orange-100",  text: "text-orange-900",  border: "border-l-orange-500"  },
+  { bg: "bg-lime-100",    text: "text-lime-900",    border: "border-l-lime-500"    },
+];
+
 // [CalendarView]
 const CalendarView = ({ teachers, user, students, showToast }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -3620,6 +3634,16 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
     for (let i = 10; i <= 22; i++) slots.push(i);
     return slots;
   }, []);
+
+  const teacherColorMap = useMemo(() => {
+    const map = {};
+    [...teachers]
+      .sort((a, b) => a.name.localeCompare(b.name, "ko"))
+      .forEach((t, i) => {
+        map[t.name] = TEACHER_COLOR_PALETTE[i % TEACHER_COLOR_PALETTE.length];
+      });
+    return map;
+  }, [teachers]);
 
   const getTeachersByDay = (dayIndex) => {
     let dayTeachers = teachers.filter(
@@ -3822,7 +3846,8 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
   const renderWeeklyView = () => {
     return (
       <div className="flex flex-col h-full border rounded-lg overflow-hidden bg-white">
-        <div className="grid grid-cols-8 border-b bg-slate-50">
+        {/* 날짜 헤더 */}
+        <div className="grid grid-cols-8 border-b bg-slate-50 shrink-0">
           <div className="p-2 text-center text-xs font-bold text-slate-500 border-r">
             Time
           </div>
@@ -3832,36 +3857,34 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
             return (
               <div
                 key={i}
-                className={`p-2 text-center border-r last:border-r-0 ${
-                  isToday ? "bg-indigo-50" : ""
-                }`}
+                className={`p-2 text-center border-r last:border-r-0 ${isToday ? "bg-indigo-50" : ""}`}
               >
-                <div
-                  className={`text-xs font-bold ${
-                    i === 6
-                      ? "text-rose-500"
-                      : i === 5
-                      ? "text-blue-500"
-                      : "text-slate-700"
-                  }`}
-                >
+                <div className={`text-xs font-bold ${i === 6 ? "text-rose-500" : i === 5 ? "text-blue-500" : "text-slate-700"}`}>
                   {DAYS_OF_WEEK.find((d) => d.id === (i + 1) % 7)?.label}
                 </div>
-                <div
-                  className={`text-xs ${
-                    isToday ? "text-indigo-600 font-bold" : "text-slate-500"
-                  }`}
-                >
+                <div className={`text-xs ${isToday ? "text-indigo-600 font-bold" : "text-slate-500"}`}>
                   {date.getDate()}
                 </div>
               </div>
             );
           })}
         </div>
+        {/* 강사 색상 범례 */}
+        <div className="flex gap-1.5 flex-wrap px-3 py-2 border-b bg-white shrink-0">
+          {teachers.map((t) => {
+            const c = teacherColorMap[t.name] || TEACHER_COLOR_PALETTE[0];
+            return (
+              <span key={t.name} className={`text-xs px-2 py-0.5 rounded-full font-medium ${c.bg} ${c.text}`}>
+                {t.name}
+              </span>
+            );
+          })}
+        </div>
+        {/* 시간대 그리드 */}
         <div className="flex-1 overflow-y-auto">
           {timeSlots.map((hour) => (
-            <div key={hour} className="grid grid-cols-8 border-b min-h-[60px]">
-              <div className="p-2 text-center text-xs text-slate-400 border-r font-mono bg-slate-50">
+            <div key={hour} className="grid grid-cols-8 border-b min-h-[80px]">
+              <div className="p-2 text-center text-xs text-slate-400 border-r font-mono bg-slate-50 shrink-0">
                 {hour}:00
               </div>
               {weekDates.map((date, i) => {
@@ -3875,61 +3898,56 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                   if (!t) return;
                   const st = getStudentsForCell(t.name, dayOfWeek, dateStr);
                   const timeFiltered = st.filter((s) => {
-                    const dayName = ["일", "월", "화", "수", "목", "금", "토"][
-                      dayOfWeek
-                    ];
+                    const dayName = ["일", "월", "화", "수", "목", "금", "토"][dayOfWeek];
                     const time = getStudentScheduleTime(s, dayName);
                     return time && time.startsWith(`${hour}:`);
                   });
                   cellStudents = [...cellStudents, ...timeFiltered];
                 });
-                // [기능3] 강사 선택 시 빈 슬롯 표시
                 const emptySlot = selectedTeacher && cellStudents.length === 0 &&
                   isEmptySlot(selectedTeacher, hour, dayOfWeek, dateStr) &&
                   dateStr >= todayStr;
                 return (
                   <div
                     key={i}
-                    className={`p-1 border-r last:border-r-0 relative transition-colors ${emptySlot ? "bg-emerald-50/40" : "hover:bg-slate-50"}`}
+                    className={`p-1 border-r last:border-r-0 relative ${emptySlot ? "bg-emerald-50/40" : ""}`}
                   >
                     {emptySlot && (
                       <div className="text-[9px] text-emerald-400 text-center mt-1 font-medium">빈 슬롯</div>
                     )}
                     {cellStudents.map((s, idx) => {
-                      const record = s.attendanceHistory?.find(
-                        (h) => h.date === dateStr
-                      );
+                      const record = s.attendanceHistory?.find((h) => h.date === dateStr);
                       const status = record ? record.status : "scheduled";
                       const isDoubleLesson = status === "present" && (record?.count || 1) === 2;
-                      const sessionNum = getSessionCount(s, dateStr);
                       const isLast = status === "present" && isLastSessionOfCycle(s, dateStr);
                       const isUnprocessed = isUnprocessedPast(s, dateStr);
-                      let bgClass =
-                        "bg-indigo-100 text-indigo-700 border-indigo-200";
-                      if (isUnprocessed)
-                        bgClass = "bg-amber-50 text-amber-700 border-amber-400";
-                      else if (isDoubleLesson)
-                        bgClass = "bg-emerald-700 text-white border-emerald-800";
-                      else if (status === "present")
-                        bgClass =
-                          "bg-emerald-100 text-emerald-700 border-emerald-200";
-                      else if (status === "absent")
-                        bgClass = "bg-rose-100 text-rose-700 border-rose-200";
-                      else if (status === "canceled")
-                        bgClass =
-                          "bg-slate-100 text-slate-400 border-slate-200 line-through";
+                      const tc = teacherColorMap[s.teacher] ?? TEACHER_COLOR_PALETTE[0];
+                      const isAbsent = status === "absent";
+                      const isCanceled = status === "canceled";
                       return (
                         <div
                           key={idx}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setAttendanceMenu({ student: s, date: dateStr });
-                          }}
-                          className={`text-[10px] px-1 py-0.5 rounded border mb-1 cursor-pointer truncate flex items-center gap-0.5 ${bgClass}`}
+                          onClick={(e) => { e.stopPropagation(); setAttendanceMenu({ student: s, date: dateStr }); }}
+                          className={`border-l-4 rounded-lg px-2 py-1.5 mb-1 cursor-pointer transition-all hover:brightness-95
+                            ${isAbsent
+                              ? "bg-slate-100 border-l-slate-400 opacity-60"
+                              : isCanceled
+                              ? "bg-slate-50 border-l-slate-300 opacity-50"
+                              : isUnprocessed
+                              ? `${tc.bg} border-l-amber-500 ring-1 ring-amber-400`
+                              : `${tc.bg} ${tc.border}`}`}
                         >
-                          <span className="truncate">{s.name} {sessionNum ? `(${sessionNum})` : ""}{isDoubleLesson ? "×2" : ""}</span>
-                          {isLast && <span className="shrink-0">💳</span>}
-                          {isUnprocessed && <span className="shrink-0 text-amber-500">!</span>}
+                          <div className={`text-xs font-bold flex items-center gap-1 ${isAbsent || isCanceled ? "text-slate-400" : tc.text}`}>
+                            <span className="truncate">{s.name}</span>
+                            {isDoubleLesson && <span className="shrink-0 text-[8px] bg-indigo-700 text-white px-1 rounded leading-tight">×2</span>}
+                            {isLast && <span className="shrink-0 text-[10px]">💳</span>}
+                            {isUnprocessed && <span className="shrink-0 text-amber-500 font-bold">!</span>}
+                          </div>
+                          <div className="text-[10px] text-slate-500 truncate">{s.teacher} · {s.subject}</div>
+                          {status === "present" && !isDoubleLesson && <div className="text-[9px] text-emerald-600 font-medium">✓ 출석</div>}
+                          {isDoubleLesson && <div className="text-[9px] text-indigo-600 font-medium">✓ 연강 출석</div>}
+                          {isAbsent && <div className="text-[9px] text-rose-500">✗ 결석</div>}
+                          {isCanceled && <div className="text-[9px] text-slate-400">취소</div>}
                         </div>
                       );
                     })}
