@@ -3919,6 +3919,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                       const record = s.attendanceHistory?.find((h) => h.date === dateStr);
                       const status = record ? record.status : "scheduled";
                       const isDoubleLesson = status === "present" && (record?.count || 1) === 2;
+                      const sessionNum = getSessionCount(s, dateStr);
                       const isLast = status === "present" && isLastSessionOfCycle(s, dateStr);
                       const isUnprocessed = isUnprocessedPast(s, dateStr);
                       const tc = teacherColorMap[s.teacher] ?? TEACHER_COLOR_PALETTE[0];
@@ -3939,6 +3940,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                         >
                           <div className={`text-xs font-bold flex items-center gap-1 ${isAbsent || isCanceled ? "text-slate-400" : tc.text}`}>
                             <span className="truncate">{s.name}</span>
+                            {sessionNum > 0 && <span className="shrink-0 text-[9px] opacity-60 font-normal">({sessionNum})</span>}
                             {isDoubleLesson && <span className="shrink-0 text-[8px] bg-indigo-700 text-white px-1 rounded leading-tight">×2</span>}
                             {isLast && <span className="shrink-0 text-[10px]">💳</span>}
                             {isUnprocessed && <span className="shrink-0 text-amber-500 font-bold">!</span>}
