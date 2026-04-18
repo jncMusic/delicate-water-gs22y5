@@ -3820,7 +3820,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
     );
     return teacherStudents.every((s) => {
       const time = getStudentScheduleTime(s, dayName);
-      return !time || !time.startsWith(`${hour}:`);
+      return !time || parseInt(time.split(":")[0], 10) !== hour;
     });
   };
 
@@ -3857,7 +3857,8 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
             return (
               <div
                 key={i}
-                className={`p-2 text-center border-r last:border-r-0 ${isToday ? "bg-indigo-50" : ""}`}
+                onClick={() => { setCurrentDate(new Date(date)); setViewType("day"); }}
+                className={`p-2 text-center border-r last:border-r-0 cursor-pointer hover:bg-indigo-50 transition-colors ${isToday ? "bg-indigo-50" : ""}`}
               >
                 <div className={`text-xs font-bold ${i === 6 ? "text-rose-500" : i === 5 ? "text-blue-500" : "text-slate-700"}`}>
                   {DAYS_OF_WEEK.find((d) => d.id === (i + 1) % 7)?.label}
@@ -3900,7 +3901,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                   const timeFiltered = st.filter((s) => {
                     const dayName = ["일", "월", "화", "수", "목", "금", "토"][dayOfWeek];
                     const time = getStudentScheduleTime(s, dayName);
-                    return time && time.startsWith(`${hour}:`);
+                    return time && parseInt(time.split(":")[0], 10) === hour;
                   });
                   cellStudents = [...cellStudents, ...timeFiltered];
                 });
