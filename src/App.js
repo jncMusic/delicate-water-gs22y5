@@ -3631,7 +3631,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
   );
   const timeSlots = useMemo(() => {
     const slots = [];
-    for (let i = 10; i <= 22; i++) slots.push(i);
+    for (let i = 8; i <= 22; i++) slots.push(i);
     return slots;
   }, []);
 
