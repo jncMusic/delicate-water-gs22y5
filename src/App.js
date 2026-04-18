@@ -799,7 +799,7 @@ const LoginModal = ({
 };
 
 // [StudentEditModal]
-const StudentEditModal = ({ student, teachers, onClose, onUpdate, user }) => {
+const StudentEditModal = ({ student, teachers, onClose, onUpdate, user, onUpdateAttendance }) => {
   const [formData, setFormData] = useState(() => {
     const initSchedules =
       student.schedules ||
@@ -821,6 +821,7 @@ const StudentEditModal = ({ student, teachers, onClose, onUpdate, user }) => {
     };
   });
   const isAdmin = user.role === "admin";
+  const [isAttModalOpen, setIsAttModalOpen] = useState(false);
 
   // 결제 주기 자동/수동 모드: 시간표 슬롯 수에 따라 자동 설정 여부
   const [weeklyMode, setWeeklyMode] = useState(() => {
@@ -894,6 +895,18 @@ const StudentEditModal = ({ student, teachers, onClose, onUpdate, user }) => {
 
   return (
     <div className="fixed inset-0 bg-black/50 z-[90] flex items-center justify-center p-4 backdrop-blur-sm">
+      {isAttModalOpen && (
+        <FastAttendanceModal
+          student={{ ...student, schedules: formData.schedules }}
+          onClose={() => setIsAttModalOpen(false)}
+          onSave={(studentId, newHistory) => {
+            if (onUpdateAttendance) {
+              onUpdateAttendance(studentId, newHistory);
+            }
+            setIsAttModalOpen(false);
+          }}
+        />
+      )}
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-xl font-bold text-slate-800">원생 정보 수정</h2>
@@ -1180,12 +1193,23 @@ const StudentEditModal = ({ student, teachers, onClose, onUpdate, user }) => {
               ))}
             </div>
           </div>
-          <button
-            onClick={handleSave}
-            className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 mt-4 shadow-sm"
-          >
-            변경사항 저장
-          </button>
+          <div className="flex gap-2 mt-4">
+            {onUpdateAttendance && (
+              <button
+                type="button"
+                onClick={() => setIsAttModalOpen(true)}
+                className="flex-1 py-3 rounded-xl border border-indigo-200 text-indigo-600 font-bold hover:bg-indigo-50 flex items-center justify-center gap-1.5 text-sm"
+              >
+                <CalendarDays size={15} /> 출석 기록 편집
+              </button>
+            )}
+            <button
+              onClick={handleSave}
+              className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-sm"
+            >
+              변경사항 저장
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -7070,8 +7094,9 @@ const KioskView = ({ students, onExitKiosk }) => {
 };
 
 // [AttendanceView] - 1:1 레슨 맞춤형 (지각 삭제, 결석 사유, 당일취소 유형화 + 강사필터링 유지)
-const AttendanceView = ({ students, showToast, user, teachers }) => {
+const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }) => {
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [attViewStudent, setAttViewStudent] = useState(null);
 
   // [기능 보존] 강사 필터링 상태 (관리자는 빈값=전체, 강사는 본인이름 고정)
   const [selectedTeacher, setSelectedTeacher] = useState(
@@ -7351,6 +7376,29 @@ const AttendanceView = ({ students, showToast, user, teachers }) => {
         </div>
       </div>
 
+      {/* 원생관리 창 (이름 클릭 시) */}
+      {attViewStudent && (
+        <StudentEditModal
+          student={attViewStudent}
+          teachers={teachers}
+          user={user}
+          onClose={() => setAttViewStudent(null)}
+          onUpdate={(id, data) => { onUpdateStudent(id, data); setAttViewStudent(null); }}
+          onUpdateAttendance={(studentId, newHistory) => {
+            const lastPay = attViewStudent.lastPaymentDate || "0000-00-00";
+            const sc = newHistory.reduce((sum, h) => {
+              if (h.date < lastPay) return sum;
+              if (h.status === "present") return sum + (h.count || 1);
+              if (h.status === "canceled") return sum + 1;
+              return sum;
+            }, 0);
+            onUpdateStudent(studentId, { attendanceHistory: newHistory, sessionsCompleted: sc });
+            showToast("출석 기록이 수정되었습니다.", "success");
+            setAttViewStudent(null);
+          }}
+        />
+      )}
+
       {/* 3. 학생 리스트 카드 */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {todayStudents.length > 0 ? (
@@ -7378,7 +7426,10 @@ const AttendanceView = ({ students, showToast, user, teachers }) => {
                 <div className="flex justify-between items-start mb-4">
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-bold text-lg text-slate-800">
+                      <span
+                        className={`font-bold text-lg text-slate-800 ${onUpdateStudent ? "cursor-pointer hover:text-indigo-600 transition-colors" : ""}`}
+                        onClick={(e) => { if (onUpdateStudent) { e.stopPropagation(); setAttViewStudent(s); } }}
+                      >
                         {s.name}
                       </span>
                       <span className="text-xs px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full font-bold">
@@ -11178,6 +11229,7 @@ export default function App() {
               user={currentUser}
               students={students}
               teachers={teachers}
+              onUpdateStudent={handleUpdateStudent}
             />
           )}
           {activeTab === "reports" && (
