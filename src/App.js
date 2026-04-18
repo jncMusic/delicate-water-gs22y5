@@ -2116,7 +2116,7 @@ const DashboardView = ({
       )}
 
       {/* 4. 빠른 메뉴 이동 */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <QuickMenuBtn
           icon={CheckCircle}
           color="indigo"
@@ -2137,6 +2137,13 @@ const DashboardView = ({
           label="시간표"
           sub="전체 수업 일정"
           onClick={() => onNavigate("timetable")}
+        />
+        <QuickMenuBtn
+          icon={CalendarIcon}
+          color="violet"
+          label="주간 캘린더"
+          sub="이번 주 수업 일정"
+          onClick={() => onNavigate("calendar")}
         />
       </div>
 
@@ -2318,6 +2325,7 @@ const QuickMenuBtn = ({ icon: Icon, color, label, sub, onClick }) => {
     indigo: "text-indigo-600 bg-indigo-50 group-hover:bg-indigo-600",
     blue: "text-blue-600 bg-blue-50 group-hover:bg-blue-600",
     amber: "text-amber-600 bg-amber-50 group-hover:bg-amber-600",
+    violet: "text-violet-600 bg-violet-50 group-hover:bg-violet-600",
   };
 
   return (
@@ -4267,8 +4275,10 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
       )}
       <div className="flex flex-col md:flex-row justify-between items-center mb-4 gap-4">
         <h2 className="text-xl font-bold text-slate-800 flex items-center">
-          <CalendarIcon className="mr-2 text-indigo-600" size={24} /> {year}년{" "}
-          {month + 1}월
+          <CalendarIcon className="mr-2 text-indigo-600" size={24} />
+          {viewType === "day"
+            ? `${year}년 ${month + 1}월 ${currentDate.getDate()}일 (${["일", "월", "화", "수", "목", "금", "토"][currentDate.getDay()]})`
+            : `${year}년 ${month + 1}월`}
         </h2>
         <div className="flex items-center gap-2">
           <div className="flex bg-slate-100 p-1 rounded-lg mr-2">
