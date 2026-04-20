@@ -289,10 +289,10 @@ const toLocalDateStr = (date = new Date()) => {
 // 결제 주기(세션 단위) 계산: 주2회(schedules 2개 이상)인데 totalSessions가
 // 구버전 기본값(4)으로 저장된 학생을 자동으로 8회로 보정한다.
 const getEffectiveSessions = (student) => {
-  const saved = parseInt(student.totalSessions) || 4;
+  const saved = parseInt(student.totalSessions);
+  if (!isNaN(saved) && saved > 0) return saved;
   const scheduleCount = Object.keys(student.schedules || {}).length;
-  if (scheduleCount >= 2 && saved === 4) return 8;
-  return saved;
+  return scheduleCount >= 2 ? 8 : 4;
 };
 
 // =================================================================
@@ -9444,7 +9444,7 @@ const PaymentView = ({
 
     const remainingCapacity = totalPaidCapacity - totalAttended;
 
-    // 마지막 결제 사이클 단위 (표시용)
+    // 마지막 결제 사이클 단위 (표시용) — 결제별 독립 회차 이력 유지
     const lastPayUnit =
       sortedPayments.length > 0
         ? sortedPayments[sortedPayments.length - 1].totalSessions || sessionUnit
