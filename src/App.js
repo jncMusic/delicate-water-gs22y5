@@ -1874,8 +1874,11 @@ const DashboardView = ({
       .filter((h) => h.status === "present" || h.status === "canceled")
       .reduce((sum, h) => sum + (h.status === "canceled" ? 1 : (h.count || 1)), 0);
     const sessionUnit = getEffectiveSessions(s);
-    const totalPaidCapacity = (s.paymentHistory || []).reduce(
-      (sum, p) => sum + (p.totalSessions || sessionUnit), 0
+    const sortedPays = [...(s.paymentHistory || [])].sort((a, b) => a.date.localeCompare(b.date));
+    // totalSessions 없는 구버전 기록 → 가장 오래된 저장값 참조 (현재 설정값 변경에 영향받지 않음)
+    const legacyFallback = sortedPays.find(p => p.totalSessions > 0)?.totalSessions || sessionUnit;
+    const totalPaidCapacity = sortedPays.reduce(
+      (sum, p) => sum + (p.totalSessions || legacyFallback), 0
     );
     const remainingCapacity = totalPaidCapacity - totalAttended;
 
@@ -9436,9 +9439,10 @@ const PaymentView = ({
     const sortedPayments = [...(s.paymentHistory || [])].sort((a, b) =>
       a.date.localeCompare(b.date)
     );
-    // 결제별 totalSessions 합산 (수강권 변경 이력 반영)
+    // 결제별 totalSessions 합산 — 없는 구버전 기록은 가장 오래된 저장값 참조
+    const legacyFallback = sortedPayments.find(p => p.totalSessions > 0)?.totalSessions || sessionUnit;
     const totalPaidCapacity = sortedPayments.reduce(
-      (sum, p) => sum + (p.totalSessions || sessionUnit),
+      (sum, p) => sum + (p.totalSessions || legacyFallback),
       0
     );
 
