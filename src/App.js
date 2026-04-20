@@ -113,6 +113,11 @@ const sendAligoSms = async (receiver, msg) => {
   return data;
 };
 
+const sendKyuljesaengnim = async (studentId, studentName) => {
+  // TODO: 결제선생 API 연동 (API 키 수령 후 이 함수만 교체)
+  return { success: true };
+};
+
 // =================================================================
 // 2. 상수 및 데이터 & 헬퍼 함수
 // =================================================================
@@ -9392,7 +9397,7 @@ const PaymentView = ({
   user,
 }) => {
   const [filterDue, setFilterDue] = useState(false);
-  // sentFilter: "" = 전체, "sent" = 발송됨만, "unsent" = 미발송만
+  // sentFilter: "" = 전체, "none" = 미발송만, "sms-only" = SMS발송(결제선생 미발송), "done" = 발송완료
   const [sentFilter, setSentFilter] = useState("");
   // filterWeek: 이번 주 만료/미납자만 표시
   const [filterWeek, setFilterWeek] = useState(false);
@@ -9477,8 +9482,20 @@ const PaymentView = ({
     return Array.from(set).sort();
   }, [students]);
 
+  // 발송 상태 3단계: none / sms-only / done (구버전 channel 문자열 하위 호환)
+  const getNotifStatus = (studentId) => {
+    const logs = messageLogs
+      .filter((l) => l.studentId === studentId)
+      .sort((a, b) => b.sentAt.localeCompare(a.sentAt));
+    if (!logs.length) return "none";
+    const latest = logs[0];
+    const ch = latest.channels || [latest.channel || "sms"];
+    if (ch.includes("결제선생")) return "done";
+    if (ch.includes("sms")) return "sms-only";
+    return "none";
+  };
+
   const list = useMemo(() => {
-    const sentStudentIds = new Set(messageLogs.map((l) => l.studentId));
     // 이번 주 시작(월요일) 계산
     const today = new Date();
     const dayOfWeek = (today.getDay() + 6) % 7; // 0=월 … 6=일
@@ -9499,11 +9516,12 @@ const PaymentView = ({
         (s.subject && s.subject.includes(searchTerm)) ||
         (s.teacher && s.teacher.includes(searchTerm));
       const matchesTeacher = !selectedTeacher || s.teacher === selectedTeacher;
-      // 발송 필터: 전체 / 발송됨만 / 미발송만
-      const isSent = sentStudentIds.has(s.id);
+      // 발송 필터: 전체 / 미발송 / SMS발송(결제선생 미발송) / 발송완료
+      const notifStatus = getNotifStatus(s.id);
       const matchesSent =
-        sentFilter === "sent" ? isSent :
-        sentFilter === "unsent" ? !isSent :
+        sentFilter === "none" ? notifStatus === "none" :
+        sentFilter === "sms-only" ? notifStatus === "sms-only" :
+        sentFilter === "done" ? notifStatus === "done" :
         true;
       // 주간 필터: 이번 주 이후 안내 발송 기록이 없는 미납/만료자
       const lastNotif = messageLogs
@@ -9654,7 +9672,7 @@ const PaymentView = ({
                 spellCheck="false"
               />
             </div>
-            <div className="p-4 border-t bg-slate-50 rounded-b-xl flex justify-end gap-3 shrink-0">
+            <div className="p-4 border-t bg-slate-50 rounded-b-xl flex justify-end gap-3 shrink-0 flex-wrap">
               <button onClick={() => setShowMsgPreview(false)} className="px-5 py-2.5 rounded-lg text-slate-600 hover:bg-slate-200 font-bold">취소</button>
               <button onClick={handleConfirmCopy} className="px-6 py-2.5 rounded-lg bg-indigo-600 text-white font-bold hover:bg-indigo-700 shadow-lg flex items-center">
                 <Copy size={18} className="mr-2" /> 복사하기
@@ -9665,6 +9683,7 @@ const PaymentView = ({
                     setMsgSending(true);
                     try {
                       await sendAligoSms(msgStudent.phone, msgContent);
+                      if (onSaveMessageLog) await onSaveMessageLog({ studentId: msgStudent.id, studentName: msgStudent.name, phone: msgStudent.phone, sentAt: new Date().toISOString().split("T")[0], channels: ["sms"], messageType: "결제안내", sentBy: user?.name || "원장" });
                       showToast(`${msgStudent.name} 문자 발송 완료`, "success");
                       setShowMsgPreview(false);
                     } catch (e) {
@@ -9679,6 +9698,22 @@ const PaymentView = ({
                   📱 {msgSending ? "발송 중..." : "문자 발송"}
                 </button>
               )}
+              <button
+                onClick={async () => {
+                  try {
+                    await sendKyuljesaengnim(msgStudent.id, msgStudent.name);
+                    if (onSaveMessageLog) await onSaveMessageLog({ studentId: msgStudent.id, studentName: msgStudent.name, phone: msgStudent.phone || "", sentAt: new Date().toISOString().split("T")[0], channels: ["결제선생"], messageType: "결제안내", sentBy: user?.name || "원장" });
+                    showToast(`${msgStudent.name} 결제선생 발송 완료`, "success");
+                    setShowMsgPreview(false);
+                  } catch (e) {
+                    showToast("결제선생 발송 실패: " + e.message, "error");
+                  }
+                }}
+                disabled={msgSending}
+                className="px-6 py-2.5 rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700 shadow-lg flex items-center disabled:opacity-60"
+              >
+                💳 결제선생
+              </button>
             </div>
           </div>
         </div>
@@ -9861,17 +9896,23 @@ const PaymentView = ({
             <AlertCircle size={14} className="mr-1" /> {filterWeek ? "주간 해제" : "주간 미발송"}
           </button>
           <button
-            onClick={() => setSentFilter(sentFilter === "" ? "unsent" : sentFilter === "unsent" ? "sent" : "")}
+            onClick={() => setSentFilter(
+              sentFilter === "" ? "none" :
+              sentFilter === "none" ? "sms-only" :
+              sentFilter === "sms-only" ? "done" : ""
+            )}
             className={`px-3 py-1.5 rounded text-sm border flex items-center transition-colors ${
-              sentFilter === "unsent"
+              sentFilter === "none"
+                ? "bg-rose-50 border-rose-300 text-rose-700 font-bold"
+                : sentFilter === "sms-only"
                 ? "bg-amber-50 border-amber-300 text-amber-700 font-bold"
-                : sentFilter === "sent"
-                ? "bg-indigo-50 border-indigo-200 text-indigo-700 font-bold"
+                : sentFilter === "done"
+                ? "bg-emerald-50 border-emerald-300 text-emerald-700 font-bold"
                 : "bg-white hover:bg-slate-50"
             }`}
           >
             <MessageSquareText size={14} className="mr-1" />
-            {sentFilter === "unsent" ? "미발송만" : sentFilter === "sent" ? "발송됨만" : "발송 필터"}
+            {sentFilter === "none" ? "🔴 미발송만" : sentFilter === "sms-only" ? "🟡 결제선생 미발송" : sentFilter === "done" ? "🟢 발송완료" : "발송 필터"}
           </button>
         </div>
       </div>
@@ -10096,6 +10137,7 @@ const PaymentView = ({
             {list.map((s) => {
               const { currentUsage, sessionUnit, displayStatus, statusColor } = getStudentProgress(s);
               const lastNotif = getLastNotifDate(s.id);
+              const notifSt = getNotifStatus(s.id);
               return (
                 <tr
                   key={s.id}
@@ -10132,10 +10174,12 @@ const PaymentView = ({
                   {notifMode ? (
                     <>
                       <td className="py-3 px-4 text-xs">
-                        {lastNotif ? (
-                          <span className="text-emerald-600 font-medium">{lastNotif}</span>
+                        {notifSt === "done" ? (
+                          <span className="text-emerald-600 font-medium">🟢 {lastNotif}</span>
+                        ) : notifSt === "sms-only" ? (
+                          <span className="text-amber-600 font-medium">🟡 {lastNotif}</span>
                         ) : (
-                          <span className="text-slate-300">미발송</span>
+                          <span className="text-rose-400">🔴 미발송</span>
                         )}
                       </td>
                       <td className="py-3 px-4 text-center" onClick={(e) => e.stopPropagation()}>
@@ -10190,6 +10234,9 @@ const BulkMessageModal = ({ students, messageLogs, paymentUrl, onSaveLog, onClos
     return init;
   });
   const [activeIdx, setActiveIdx] = useState(0);
+  const [sendChannels, setSendChannels] = useState(() =>
+    Object.fromEntries(students.map(s => [s.id, { sms: true, kyuljesaengnim: false }]))
+  );
 
   const handleStyleChange = (style) => {
     setMsgStyle(style);
@@ -10216,26 +10263,8 @@ const BulkMessageModal = ({ students, messageLogs, paymentUrl, onSaveLog, onClos
 
   // 알리고 SMS 직접 발송
   const [sending, setSending] = useState({});
-  const handleSendSms = async (s) => {
-    if (!s.phone) {
-      showToast(`${s.name}: 연락처가 없습니다.`, "warning");
-      return;
-    }
-    if (sending[s.id]) return;
-    setSending((prev) => ({ ...prev, [s.id]: true }));
-    try {
-      await sendAligoSms(s.phone, messages[s.id]);
-      showToast(`${s.name} 문자 발송 완료`, "success");
-      // 발송 완료 이력도 자동 저장
-      await handleMarkSent(s);
-    } catch (e) {
-      showToast(`${s.name} 발송 실패: ${e.message}`, "error");
-    } finally {
-      setSending((prev) => ({ ...prev, [s.id]: false }));
-    }
-  };
 
-  const handleMarkSent = async (s) => {
+  const handleMarkSent = async (s, channels = ["sms"]) => {
     if (sent[s.id]) return;
     try {
       if (onSaveLog) {
@@ -10244,7 +10273,7 @@ const BulkMessageModal = ({ students, messageLogs, paymentUrl, onSaveLog, onClos
           studentName: s.name,
           phone: s.phone || "",
           sentAt: today,
-          channel: "수동복사",
+          channels,
           messageType: "결제안내",
           sentBy: user?.name || "원장",
         });
@@ -10254,6 +10283,35 @@ const BulkMessageModal = ({ students, messageLogs, paymentUrl, onSaveLog, onClos
     } catch (e) {
       showToast("저장 오류: " + e.message, "error");
     }
+  };
+
+  const handleSendAll = async (s) => {
+    const ch = sendChannels[s.id] || { sms: true, kyuljesaengnim: false };
+    const channelArr = [];
+    if (ch.sms && s.phone) {
+      setSending((prev) => ({ ...prev, [s.id]: true }));
+      try {
+        await sendAligoSms(s.phone, messages[s.id]);
+        channelArr.push("sms");
+        showToast(`${s.name} 문자 발송 완료`, "success");
+      } catch (e) {
+        showToast(`${s.name} 문자 발송 실패: ${e.message}`, "error");
+      } finally {
+        setSending((prev) => ({ ...prev, [s.id]: false }));
+      }
+    } else if (ch.sms && !s.phone) {
+      showToast(`${s.name}: 연락처가 없습니다.`, "warning");
+    }
+    if (ch.kyuljesaengnim) {
+      try {
+        await sendKyuljesaengnim(s.id, s.name);
+        channelArr.push("결제선생");
+        showToast(`${s.name} 결제선생 발송 완료`, "success");
+      } catch (e) {
+        showToast(`${s.name} 결제선생 발송 실패: ${e.message}`, "error");
+      }
+    }
+    if (channelArr.length) await handleMarkSent(s, channelArr);
   };
 
   const getLastNotif = (studentId) => {
@@ -10318,7 +10376,7 @@ const BulkMessageModal = ({ students, messageLogs, paymentUrl, onSaveLog, onClos
           {/* 오른쪽: 메시지 편집 */}
           {activeStudent && (
             <div className="flex-1 flex flex-col overflow-hidden">
-              <div className="flex items-center justify-between px-4 pt-3 pb-2 shrink-0">
+              <div className="flex items-center justify-between px-4 pt-3 pb-2 shrink-0 flex-wrap gap-2">
                 <div>
                   <span className="font-bold text-slate-800">{activeStudent.name}</span>
                   <span className="text-xs text-slate-500 ml-2">{activeStudent.phone || "연락처 없음"}</span>
@@ -10327,7 +10385,27 @@ const BulkMessageModal = ({ students, messageLogs, paymentUrl, onSaveLog, onClos
                     return lastNotif ? <span className="text-xs text-emerald-600 ml-2">최근 안내: {lastNotif}</span> : null;
                   })()}
                 </div>
-                <div className="flex gap-2">
+                <div className="flex items-center gap-3">
+                  <div className="flex gap-3 text-sm border rounded-lg px-3 py-1.5 bg-slate-50">
+                    <label className="flex items-center gap-1 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={sendChannels[activeStudent.id]?.sms ?? true}
+                        onChange={e => setSendChannels(prev => ({ ...prev, [activeStudent.id]: { ...prev[activeStudent.id], sms: e.target.checked } }))}
+                        className="accent-blue-600"
+                      />
+                      📱 문자
+                    </label>
+                    <label className="flex items-center gap-1 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={sendChannels[activeStudent.id]?.kyuljesaengnim ?? false}
+                        onChange={e => setSendChannels(prev => ({ ...prev, [activeStudent.id]: { ...prev[activeStudent.id], kyuljesaengnim: e.target.checked } }))}
+                        className="accent-emerald-600"
+                      />
+                      💳 결제선생
+                    </label>
+                  </div>
                   <button
                     onClick={() => handleCopySingle(activeStudent.id)}
                     className="px-3 py-1.5 text-xs border rounded-lg font-bold flex items-center gap-1 hover:bg-slate-50"
@@ -10335,17 +10413,17 @@ const BulkMessageModal = ({ students, messageLogs, paymentUrl, onSaveLog, onClos
                     <Copy size={13} /> 복사
                   </button>
                   <button
-                    onClick={() => handleSendSms(activeStudent)}
+                    onClick={() => handleSendAll(activeStudent)}
                     disabled={!!sent[activeStudent.id] || !!sending[activeStudent.id]}
                     className={`px-3 py-1.5 text-xs rounded-lg font-bold flex items-center gap-1 transition-colors ${
                       sent[activeStudent.id]
                         ? "bg-emerald-100 text-emerald-700 border border-emerald-200 cursor-default"
                         : sending[activeStudent.id]
                         ? "bg-blue-100 text-blue-600 border border-blue-200 cursor-wait"
-                        : "bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
+                        : "bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm"
                     }`}
                   >
-                    {sent[activeStudent.id] ? "✓ 발송완료" : sending[activeStudent.id] ? "발송 중..." : "📱 문자 발송"}
+                    {sent[activeStudent.id] ? "✓ 발송완료" : sending[activeStudent.id] ? "발송 중..." : "발송하기"}
                   </button>
                   <button
                     onClick={() => handleMarkSent(activeStudent)}
