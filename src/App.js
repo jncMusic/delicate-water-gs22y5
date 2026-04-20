@@ -1875,8 +1875,8 @@ const DashboardView = ({
       .reduce((sum, h) => sum + (h.status === "canceled" ? 1 : (h.count || 1)), 0);
     const sessionUnit = getEffectiveSessions(s);
     const sortedPays = [...(s.paymentHistory || [])].sort((a, b) => a.date.localeCompare(b.date));
-    // totalSessions 없는 구버전 기록 → 가장 오래된 저장값 참조 (현재 설정값 변경에 영향받지 않음)
-    const legacyFallback = sortedPays.find(p => p.totalSessions > 0)?.totalSessions || sessionUnit;
+    const scheduleBasedUnit = Object.keys(s.schedules || {}).length >= 2 ? 8 : 4;
+    const legacyFallback = sortedPays.find(p => p.totalSessions > 0)?.totalSessions || scheduleBasedUnit;
     const totalPaidCapacity = sortedPays.reduce(
       (sum, p) => sum + (p.totalSessions || legacyFallback), 0
     );
@@ -9439,8 +9439,9 @@ const PaymentView = ({
     const sortedPayments = [...(s.paymentHistory || [])].sort((a, b) =>
       a.date.localeCompare(b.date)
     );
-    // 결제별 totalSessions 합산 — 없는 구버전 기록은 가장 오래된 저장값 참조
-    const legacyFallback = sortedPayments.find(p => p.totalSessions > 0)?.totalSessions || sessionUnit;
+    // totalSessions 없는 구버전 기록 fallback: 가장 오래된 저장값 → 스케줄 수 기반 (현재 설정값과 독립)
+    const scheduleBasedUnit = Object.keys(s.schedules || {}).length >= 2 ? 8 : 4;
+    const legacyFallback = sortedPayments.find(p => p.totalSessions > 0)?.totalSessions || scheduleBasedUnit;
     const totalPaidCapacity = sortedPayments.reduce(
       (sum, p) => sum + (p.totalSessions || legacyFallback),
       0
@@ -9448,10 +9449,10 @@ const PaymentView = ({
 
     const remainingCapacity = totalPaidCapacity - totalAttended;
 
-    // 마지막 결제 사이클 단위 (표시용) — 결제별 독립 회차 이력 유지
+    // 마지막 결제 사이클 단위 (표시용) — legacyFallback 통일 적용
     const lastPayUnit =
       sortedPayments.length > 0
-        ? sortedPayments[sortedPayments.length - 1].totalSessions || sessionUnit
+        ? sortedPayments[sortedPayments.length - 1].totalSessions || legacyFallback
         : sessionUnit;
     const lastCycleStart = Math.max(0, totalPaidCapacity - lastPayUnit);
     let currentUsage = Math.max(0, totalAttended - lastCycleStart);
