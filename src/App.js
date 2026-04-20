@@ -9489,7 +9489,7 @@ const PaymentView = ({
       .sort((a, b) => b.sentAt.localeCompare(a.sentAt));
     if (!logs.length) return "none";
     const latest = logs[0];
-    const ch = latest.channels || [latest.channel || "sms"];
+    const ch = latest.channels || (latest.channel ? ["sms"] : []);
     if (ch.includes("결제선생")) return "done";
     if (ch.includes("sms")) return "sms-only";
     return "none";
