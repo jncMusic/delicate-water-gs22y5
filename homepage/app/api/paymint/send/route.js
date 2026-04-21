@@ -18,7 +18,8 @@ const PAYMINT_MERCHANT =
 const CALLBACK_URL =
   process.env.PAYMINT_CALLBACK_URL || "https://jncmusic.kr/api/paymint/callback";
 // 개발: bill_id = 사업자번호(10자리) + 10자리 자유롭게 (총 20자리)
-// 운영: Vercel 환경변수 PAYMINT_CORP_NUM에 실제 사업자번호 설정
+// 운영 전환 시 Vercel 환경변수에 PAYMINT_CORP_NUM=5199600545 설정
+// (현재 기본값은 테스트 계정 corp_num)
 const PAYMINT_CORP_NUM = process.env.PAYMINT_CORP_NUM || "2208875476";
 
 const CORS_HEADERS = {
