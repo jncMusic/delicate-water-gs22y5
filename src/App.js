@@ -1683,8 +1683,11 @@ const PaymentManagementModal = ({ students, messageLogs, onClose, user, onNaviga
         .filter((h) => h.status === "present" || h.status === "canceled")
         .reduce((sum, h) => sum + (h.status === "canceled" ? 1 : (h.count || 1)), 0);
       const sessionUnit = getEffectiveSessions(s);
-      const capacity = (s.paymentHistory || []).reduce(
-        (sum, p) => sum + (p.totalSessions || sessionUnit),
+      const sortedPays = [...(s.paymentHistory || [])].sort((a, b) => a.date.localeCompare(b.date));
+      const scheduleBasedUnit = Object.keys(s.schedules || {}).length >= 2 ? 8 : 4;
+      const legacyFallback = sortedPays.find(p => p.totalSessions > 0)?.totalSessions || scheduleBasedUnit;
+      const capacity = sortedPays.reduce(
+        (sum, p) => sum + (p.totalSessions || legacyFallback),
         0
       );
       const remaining = capacity - attended;
