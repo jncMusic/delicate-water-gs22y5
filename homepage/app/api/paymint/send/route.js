@@ -64,6 +64,13 @@ export async function POST(request) {
     const billId = generateBillId(studentId);
     const cleanPhone = (phone || "").replace(/[^0-9]/g, "");
 
+    if (!cleanPhone) {
+      return Response.json(
+        { success: false, error: "전화번호가 없습니다. 학생 프로필에 전화번호를 입력해주세요." },
+        { status: 400, headers: CORS_HEADERS }
+      );
+    }
+
     // Hash: phone 있으면 SHA-256(bill_id*phone*price), 없으면 SHA-256(bill_id*price)
     const hash = crypto
       .createHash("sha256")
