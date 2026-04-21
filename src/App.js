@@ -113,9 +113,26 @@ const sendAligoSms = async (receiver, msg) => {
   return data;
 };
 
-const sendKyuljesaengnim = async (studentId, studentName) => {
-  // TODO: 결제선생 API 연동 (API 키 수령 후 이 함수만 교체)
-  return { success: true };
+// =================================================================
+// 1-2. 결제선생(Paymint) 청구서 발송 헬퍼
+// =================================================================
+const PAYMINT_SEND_URL = process.env.REACT_APP_PAYMINT_API_URL || "/api/paymint/send";
+
+// student: { id, name, phone, tuitionFee }
+const sendKyuljesaengnim = async (student) => {
+  const res = await fetch(PAYMINT_SEND_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      studentId: student.id,
+      studentName: student.name,
+      phone: student.phone || "",
+      price: String(student.tuitionFee || 0),
+    }),
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error || "결제선생 발송 실패");
+  return data; // { success, billId, shortURL }
 };
 
 // =================================================================
@@ -9716,9 +9733,10 @@ const PaymentView = ({
               <button
                 onClick={async () => {
                   try {
-                    await sendKyuljesaengnim(msgStudent.id, msgStudent.name);
-                    if (onSaveMessageLog) await onSaveMessageLog({ studentId: msgStudent.id, studentName: msgStudent.name, phone: msgStudent.phone || "", sentAt: new Date().toISOString().split("T")[0], channels: ["결제선생"], messageType: "결제안내", sentBy: user?.name || "원장" });
-                    showToast(`${msgStudent.name} 결제선생 발송 완료`, "success");
+                    const result = await sendKyuljesaengnim(msgStudent);
+                    if (onSaveMessageLog) await onSaveMessageLog({ studentId: msgStudent.id, studentName: msgStudent.name, phone: msgStudent.phone || "", sentAt: new Date().toISOString().split("T")[0], channels: ["결제선생"], messageType: "결제안내", sentBy: user?.name || "원장", billId: result.billId, shortURL: result.shortURL });
+                    const urlNote = result.shortURL ? ` (링크: ${result.shortURL})` : "";
+                    showToast(`${msgStudent.name} 결제선생 발송 완료${urlNote}`, "success");
                     setShowMsgPreview(false);
                   } catch (e) {
                     showToast("결제선생 발송 실패: " + e.message, "error");
@@ -10279,7 +10297,7 @@ const BulkMessageModal = ({ students, messageLogs, paymentUrl, onSaveLog, onClos
   // 알리고 SMS 직접 발송
   const [sending, setSending] = useState({});
 
-  const handleMarkSent = async (s, channels = ["sms"]) => {
+  const handleMarkSent = async (s, channels = ["sms"], extra = {}) => {
     if (sent[s.id]) return;
     try {
       if (onSaveLog) {
@@ -10291,6 +10309,7 @@ const BulkMessageModal = ({ students, messageLogs, paymentUrl, onSaveLog, onClos
           channels,
           messageType: "결제안내",
           sentBy: user?.name || "원장",
+          ...extra,
         });
       }
       setSent((prev) => ({ ...prev, [s.id]: true }));
@@ -10303,6 +10322,7 @@ const BulkMessageModal = ({ students, messageLogs, paymentUrl, onSaveLog, onClos
   const handleSendAll = async (s) => {
     const ch = sendChannels[s.id] || { sms: true, kyuljesaengnim: false };
     const channelArr = [];
+    let kyuljesaengnimExtra = {};
     if (ch.sms && s.phone) {
       setSending((prev) => ({ ...prev, [s.id]: true }));
       try {
@@ -10319,14 +10339,16 @@ const BulkMessageModal = ({ students, messageLogs, paymentUrl, onSaveLog, onClos
     }
     if (ch.kyuljesaengnim) {
       try {
-        await sendKyuljesaengnim(s.id, s.name);
+        const result = await sendKyuljesaengnim(s);
         channelArr.push("결제선생");
-        showToast(`${s.name} 결제선생 발송 완료`, "success");
+        kyuljesaengnimExtra = { billId: result.billId, shortURL: result.shortURL };
+        const urlNote = result.shortURL ? ` (링크: ${result.shortURL})` : "";
+        showToast(`${s.name} 결제선생 발송 완료${urlNote}`, "success");
       } catch (e) {
         showToast(`${s.name} 결제선생 발송 실패: ${e.message}`, "error");
       }
     }
-    if (channelArr.length) await handleMarkSent(s, channelArr);
+    if (channelArr.length) await handleMarkSent(s, channelArr, kyuljesaengnimExtra);
   };
 
   const getLastNotif = (studentId) => {
