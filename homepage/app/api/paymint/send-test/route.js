@@ -20,9 +20,10 @@ function hmac(key, s) {
   return crypto.createHmac("sha256", key).update(s).digest("hex");
 }
 
-function makeBillId(suffix) {
-  const ts = new Date().toISOString().replace(/[-:T.Z]/g, "").slice(4, 12); // MMDDHHmm
-  return `${PAYMINT_CORP_NUM}-${ts}${suffix}`;
+function makeBillId(suffix2) {
+  // 20자리: 사업자번호(10) + MMDDHHmmss(10) → suffix2로 마지막 2자리 차별화
+  const ts = new Date().toISOString().replace(/[-:T.Z]/g, "").slice(4, 14); // MMDDHHmmss(10)
+  return `${PAYMINT_CORP_NUM}${ts.slice(0, 8)}${suffix2}`;
 }
 
 async function tryFormula(label, billId, phone, price, hashFn) {
