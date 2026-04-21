@@ -3,7 +3,7 @@
 // body: { studentId, studentName, phone, price }
 //
 // Paymint 2.1 발송요청: POST {PAYMINT_BASE_URL}/if/bill/send
-// Hash: SHA-256 of (bill_id)*[(phone)*](price)
+// Hash: SHA-256 of (bill_id)*price  (phone 미포함 공식)
 
 import crypto from "crypto";
 
@@ -37,13 +37,6 @@ function generateBillId(studentId) {
   return (ts + suffix).slice(0, 20);
 }
 
-function computeHash(billId, phone, price) {
-  const raw = phone
-    ? `${billId}*${phone}*${price}`
-    : `${billId}*${price}`;
-  return crypto.createHash("sha256").update(raw).digest("hex");
-}
-
 export async function OPTIONS() {
   return new Response(null, { status: 204, headers: CORS_HEADERS });
 }
@@ -70,7 +63,12 @@ export async function POST(request) {
     const priceStr = String(priceNum);
     const billId = generateBillId(studentId);
     const cleanPhone = (phone || "").replace(/[^0-9]/g, "");
-    const hash = computeHash(billId, cleanPhone || null, priceStr);
+
+    // Hash: phone 미포함 공식 — SHA-256(bill_id*price)
+    const hash = crypto
+      .createHash("sha256")
+      .update(`${billId}*${priceStr}`)
+      .digest("hex");
 
     // 유효기간: 발송일 기준 +1개월
     const expire = new Date();
@@ -78,13 +76,12 @@ export async function POST(request) {
     const expireStr = expire.toISOString().slice(0, 10);
 
     const payload = {
-      apiKey: PAYMINT_APIKEY,
+      apikey: PAYMINT_APIKEY,
       member: PAYMINT_MEMBER,
       merchant: PAYMINT_MERCHANT,
       bill: {
         bill_id: billId,
         product_nm: "수강료 결제 안내",
-        ...(cleanPhone ? { phone: cleanPhone } : {}),
         message: `${studentName} 학생의 수강료 ${priceNum.toLocaleString()}원 결제 안내입니다.`,
         member_nm: studentName,
         member_ref: cleanPhone,
@@ -98,8 +95,7 @@ export async function POST(request) {
     const paymintRes = await fetch(`${PAYMINT_BASE_URL}/if/bill/send`, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
-        charset: "UTF-8",
+        "Content-Type": "application/json; charset=utf-8",
       },
       body: JSON.stringify(payload),
     });
