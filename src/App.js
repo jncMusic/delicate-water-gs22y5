@@ -344,8 +344,11 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
   const allPayments = (student.paymentHistory || []).sort((a, b) =>
     a.date.localeCompare(b.date)
   );
-  const totalPaidCapacity = allPayments.reduce(
-    (sum, p) => sum + (p.totalSessions || sessionUnit), 0
+  const sortedAllPayments = [...allPayments].sort((a, b) => a.date.localeCompare(b.date));
+  const scheduleBasedUnit = Object.keys(student.schedules || {}).length >= 2 ? 8 : 4;
+  const legacyFallback = sortedAllPayments.find(p => p.totalSessions > 0)?.totalSessions || scheduleBasedUnit;
+  const totalPaidCapacity = sortedAllPayments.reduce(
+    (sum, p) => sum + (p.totalSessions || legacyFallback), 0
   );
   const lastPayment =
     allPayments.length > 0
@@ -6331,6 +6334,9 @@ const StudentModal = ({
       ...formData,
       grade: isAdult ? "성인" : formData.grade,
       schedules: schedule, // 스케줄 포함
+      classDays: Object.keys(schedule || {}),
+      className: Object.keys(schedule || {})[0] || "",
+      time: Object.values(schedule || {})[0] || "",
       attendanceHistory: attHistory,
       paymentHistory: payHistory,
       updatedAt: new Date().toISOString(),
@@ -7162,7 +7168,8 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
       .filter((s) => {
         // 1. 재원생 & 오늘 수업 여부
         const hasSchedule =
-          s.status === "재원" && s.schedules && s.schedules[dayName];
+          s.status === "재원" &&
+          (s.schedules ? !!s.schedules[dayName] : s.className === dayName);
 
         // 2. 강사 필터링 (Admin은 선택, Teacher는 본인만)
         const isTeacherMatch =
