@@ -3,7 +3,7 @@
 // body: { studentId, studentName, phone, price }
 //
 // Paymint 2.1 발송요청: POST {PAYMINT_BASE_URL}/if/bill/send
-// Hash: SHA-256 of (bill_id)*price  (phone 미포함 공식)
+// Hash: phone 있으면 SHA-256(bill_id*phone*price), 없으면 SHA-256(bill_id*price)
 
 import crypto from "crypto";
 
@@ -25,15 +25,16 @@ const CORS_HEADERS = {
 };
 
 function generateBillId(studentId) {
-  // 20자리: YYYYMMDDHHmmss(14) + studentId 끝 6자리
+  // 20자리: YYYYMMDDHHmmss(14) + 숫자 6자리 (대소문자 혼재 방지)
   const ts = new Date()
     .toISOString()
     .replace(/[-:T.Z]/g, "")
     .slice(0, 14);
-  const suffix = (studentId || "")
-    .replace(/[^A-Za-z0-9]/g, "")
-    .slice(-6)
-    .padStart(6, "0");
+  // studentId에서 숫자만 추출, 없으면 랜덤 6자리
+  const digits = (studentId || "").replace(/[^0-9]/g, "").slice(-6);
+  const suffix = digits.length >= 6
+    ? digits
+    : String(Date.now()).slice(-6);
   return (ts + suffix).slice(0, 20);
 }
 
@@ -92,7 +93,6 @@ export async function POST(request) {
         phone: cleanPhone,
         message: `${studentName} 학생의 수강료 ${priceNum.toLocaleString()}원 결제 안내입니다.`,
         member_nm: studentName,
-        member_ref: cleanPhone,
         price: priceStr,
         hash,
         expire_dt: expireStr,
@@ -101,9 +101,12 @@ export async function POST(request) {
     };
 
     const hashInput = cleanPhone ? `${billId}*${cleanPhone}*${priceStr}` : `${billId}*${priceStr}`;
-    console.log("[paymint] hash_input:", hashInput);
-    console.log("[paymint] hash:", hash);
-    console.log("[paymint] payload:", JSON.stringify(payload));
+    console.log("[paymint/send] bill_id:", billId);
+    console.log("[paymint/send] cleanPhone:", cleanPhone);
+    console.log("[paymint/send] priceStr:", priceStr);
+    console.log("[paymint/send] hash_input:", hashInput);
+    console.log("[paymint/send] hash:", hash);
+    console.log("[paymint/send] payload:", JSON.stringify(payload));
 
     const paymintRes = await fetch(`${PAYMINT_BASE_URL}/if/bill/send`, {
       method: "POST",
