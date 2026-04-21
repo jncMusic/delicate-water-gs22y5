@@ -93,6 +93,11 @@ export async function POST(request) {
       },
     };
 
+    const hashInput = cleanPhone ? `${billId}*${cleanPhone}*${priceStr}` : `${billId}*${priceStr}`;
+    console.log("[paymint] hash_input:", hashInput);
+    console.log("[paymint] hash:", hash);
+    console.log("[paymint] payload:", JSON.stringify(payload));
+
     const paymintRes = await fetch(`${PAYMINT_BASE_URL}/if/bill/send`, {
       method: "POST",
       headers: {
