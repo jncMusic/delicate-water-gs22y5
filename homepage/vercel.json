@@ -1,0 +1,10 @@
+{
+  "redirects": [
+    {
+      "source": "/(.*)",
+      "has": [{ "type": "host", "value": "www.jncmusic.kr" }],
+      "destination": "https://jncmusic.kr/$1",
+      "permanent": true
+    }
+  ]
+}
