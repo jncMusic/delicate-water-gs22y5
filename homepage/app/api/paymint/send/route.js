@@ -82,6 +82,7 @@ export async function POST(request) {
       bill: {
         bill_id: billId,
         product_nm: "수강료 결제 안내",
+        phone: cleanPhone,
         message: `${studentName} 학생의 수강료 ${priceNum.toLocaleString()}원 결제 안내입니다.`,
         member_nm: studentName,
         member_ref: cleanPhone,
