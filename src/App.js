@@ -116,7 +116,7 @@ const sendAligoSms = async (receiver, msg) => {
 // =================================================================
 // 1-2. 결제선생(Paymint) 청구서 발송 헬퍼
 // =================================================================
-const PAYMINT_SEND_URL = process.env.REACT_APP_PAYMINT_API_URL || "/api/paymint/send";
+const PAYMINT_SEND_URL = process.env.REACT_APP_PAYMINT_API_URL || "https://jncmusic.kr/api/paymint/send";
 
 // student: { id, name, phone, tuitionFee }
 const sendKyuljesaengnim = async (student) => {
