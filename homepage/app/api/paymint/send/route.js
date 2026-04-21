@@ -17,6 +17,9 @@ const PAYMINT_MERCHANT =
   process.env.PAYMINT_MERCHANT || "TEST-MERCHANT-FOR-API";
 const CALLBACK_URL =
   process.env.PAYMINT_CALLBACK_URL || "https://jncmusic.kr/api/paymint/callback";
+// 개발: bill_id = 사업자번호(10자리) + 10자리 자유롭게 (총 20자리)
+// 운영: Vercel 환경변수 PAYMINT_CORP_NUM에 실제 사업자번호 설정
+const PAYMINT_CORP_NUM = process.env.PAYMINT_CORP_NUM || "2208875476";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -24,18 +27,14 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
-function generateBillId(studentId) {
-  // 20자리: YYYYMMDDHHmmss(14) + 숫자 6자리 (대소문자 혼재 방지)
+function generateBillId() {
+  // 개발: 사업자번호(10자리) + MMDDHHmmss(10자리) = 20자리
+  // 운영: 동일 구조, PAYMINT_CORP_NUM만 실제 사업자번호로 교체
   const ts = new Date()
     .toISOString()
     .replace(/[-:T.Z]/g, "")
-    .slice(0, 14);
-  // studentId에서 숫자만 추출, 없으면 랜덤 6자리
-  const digits = (studentId || "").replace(/[^0-9]/g, "").slice(-6);
-  const suffix = digits.length >= 6
-    ? digits
-    : String(Date.now()).slice(-6);
-  return (ts + suffix).slice(0, 20);
+    .slice(4, 14); // MMDDHHmmss
+  return PAYMINT_CORP_NUM + ts;
 }
 
 export async function OPTIONS() {
@@ -62,7 +61,7 @@ export async function POST(request) {
     }
 
     const priceStr = String(priceNum);
-    const billId = generateBillId(studentId);
+    const billId = generateBillId();
     const cleanPhone = (phone || "").replace(/[^0-9]/g, "");
 
     if (!cleanPhone) {
