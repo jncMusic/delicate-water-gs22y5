@@ -67,12 +67,22 @@ export async function GET(request) {
   });
   report["청구서조회"] = { billId: newBillId, code: readRes.code, state: readRes.appr_state, msg: readRes.msg };
 
-  // 4. 청구서 파기
-  const destroyRes = await call("/if/bill/destroy", {
+  // 4. 청구서 파기 (hash = SHA-256(bill_id) 또는 SHA-256(bill_id,phone,price) 시도)
+  const destroyHash1 = crypto.createHash("sha256").update(newBillId).digest("hex");
+  const destroyHash2 = crypto.createHash("sha256").update(`${newBillId},${phone},${price}`).digest("hex");
+  let destroyRes = await call("/if/bill/destroy", {
     apikey: PAYMINT_APIKEY, member: PAYMINT_MEMBER, merchant: PAYMINT_MERCHANT,
-    bill_id: newBillId,
+    bill_id: newBillId, hash: destroyHash1,
   });
-  report["청구서파기"] = { billId: newBillId, code: destroyRes.code, msg: destroyRes.msg };
+  let destroyHashUsed = "SHA256(bill_id)";
+  if (destroyRes.code !== "0000") {
+    const destroyRes2 = await call("/if/bill/destroy", {
+      apikey: PAYMINT_APIKEY, member: PAYMINT_MEMBER, merchant: PAYMINT_MERCHANT,
+      bill_id: newBillId, hash: destroyHash2,
+    });
+    if (destroyRes2.code === "0000") { destroyRes = destroyRes2; destroyHashUsed = "SHA256(bill_id,phone,price)"; }
+  }
+  report["청구서파기"] = { billId: newBillId, code: destroyRes.code, msg: destroyRes.msg, hashUsed: destroyHashUsed };
 
   // 5. 승인취소 - state가 이미 "C"이면 이미 완료된 것으로 처리
   if (approvedBillId) {
