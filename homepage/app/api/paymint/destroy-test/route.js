@@ -43,7 +43,26 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const phone = searchParams.get("phone") || "01040289803";
   const price = parseInt(searchParams.get("price") || "100000", 10);
+  const existingBillId = searchParams.get("billId");
   const base = { apikey: PAYMINT_APIKEY, member: PAYMINT_MEMBER, merchant: PAYMINT_MERCHANT };
+
+  // 기존 billId 제공 시 send 단계 스킵, 바로 파기 시도
+  if (existingBillId) {
+    const destroyHash = sha256(`${existingBillId},${price}`);
+    const destroyResult = await callPaymint("/if/bill/destroy", {
+      ...base,
+      bill_id: existingBillId,
+      price,
+      hash: destroyHash,
+    });
+    return Response.json({
+      SUCCESS: destroyResult.data?.code === "0000",
+      billId: existingBillId,
+      price,
+      destroyHash,
+      destroyResponse: destroyResult.data,
+    });
+  }
 
   // 신규 청구서 발송
   const billId = makeBillId();
