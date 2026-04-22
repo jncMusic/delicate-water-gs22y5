@@ -5,6 +5,19 @@ import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { db, PRACTICE_ROOMS_COLLECTION } from '../lib/firebase';
 import { ExternalLink } from 'lucide-react';
 
+// 예약 URL에서 날짜 파라미터 제거 (저장된 URL에 날짜가 고정된 경우 자동 정리)
+const cleanBookingUrl = (url) => {
+  if (!url) return url;
+  try {
+    const u = new URL(url);
+    u.searchParams.delete('startDate');
+    u.searchParams.delete('date');
+    return u.toString();
+  } catch {
+    return url;
+  }
+};
+
 export default function PracticeRoomSection() {
   const [rooms, setRooms]   = useState([]);
   const [loaded, setLoaded] = useState(false);
@@ -61,7 +74,7 @@ export default function PracticeRoomSection() {
                 )}
                 {room.bookingUrl ? (
                   <a
-                    href={room.bookingUrl}
+                    href={cleanBookingUrl(room.bookingUrl)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center justify-center gap-2 w-full bg-[#03c75a] hover:bg-[#02b350] text-white font-bold py-3 rounded-xl transition-colors text-sm"
