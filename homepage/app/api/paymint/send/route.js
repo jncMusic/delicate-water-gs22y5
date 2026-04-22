@@ -72,10 +72,11 @@ export async function POST(request) {
       );
     }
 
-    // Hash: phone 있으면 SHA-256(bill_id*phone*price), 없으면 SHA-256(bill_id*price)
+    // Hash: phone 있으면 SHA-256(bill_id,phone,price), 없으면 SHA-256(bill_id,price)
+    // 구분자는 쉼표(,) — 문서의 "*" 표기는 실제로 "," (Paymint 확인)
     const hash = crypto
       .createHash("sha256")
-      .update(cleanPhone ? `${billId}*${cleanPhone}*${priceStr}` : `${billId}*${priceStr}`)
+      .update(cleanPhone ? `${billId},${cleanPhone},${priceStr}` : `${billId},${priceStr}`)
       .digest("hex");
 
     // 유효기간: 발송일 기준 +1개월
@@ -100,7 +101,7 @@ export async function POST(request) {
       },
     };
 
-    const hashInput = cleanPhone ? `${billId}*${cleanPhone}*${priceStr}` : `${billId}*${priceStr}`;
+    const hashInput = cleanPhone ? `${billId},${cleanPhone},${priceStr}` : `${billId},${priceStr}`;
     console.log("[paymint/send] bill_id:", billId);
     console.log("[paymint/send] cleanPhone:", cleanPhone);
     console.log("[paymint/send] priceStr:", priceStr);
