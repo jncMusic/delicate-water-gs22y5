@@ -45,7 +45,11 @@ export async function GET(request) {
   // 2. 청구서 파기용 신규 청구서 발송
   const newBillId = makeBillId();
   const price = "20000";
-  const phone = "01000000000"; // 파기용이므로 실제 발송 불필요한 번호
+  const rawPhone = new URL(request.url).searchParams.get("phone") || "";
+  const phone = rawPhone.replace(/[^0-9]/g, "");
+  if (!phone) {
+    return Response.json({ error: "phone 파라미터 필요 (?phone=010XXXXXXXX)" }, { status: 400 });
+  }
   const hash = crypto.createHash("sha256").update(`${newBillId},${phone},${price}`).digest("hex");
   const sendRes = await call("/if/bill/send", {
     apikey: PAYMINT_APIKEY, member: PAYMINT_MEMBER, merchant: PAYMINT_MERCHANT,
@@ -70,13 +74,17 @@ export async function GET(request) {
   });
   report["청구서파기"] = { billId: newBillId, code: destroyRes.code, msg: destroyRes.msg };
 
-  // 5. 승인취소 (결제완료 건에만 가능)
+  // 5. 승인취소 - state가 이미 "C"이면 이미 완료된 것으로 처리
   if (approvedBillId) {
-    const cancelRes = await call("/if/bill/cancel", {
-      apikey: PAYMINT_APIKEY, member: PAYMINT_MEMBER, merchant: PAYMINT_MERCHANT,
-      bill_id: approvedBillId,
-    });
-    report["승인취소"] = { billId: approvedBillId, code: cancelRes.code, msg: cancelRes.msg };
+    if (report["결제승인"]?.state === "C") {
+      report["승인취소"] = { billId: approvedBillId, note: "이미 취소 완료 (state=C)", code: "0000" };
+    } else {
+      const cancelRes = await call("/if/bill/cancel", {
+        apikey: PAYMINT_APIKEY, member: PAYMINT_MEMBER, merchant: PAYMINT_MERCHANT,
+        bill_id: approvedBillId,
+      });
+      report["승인취소"] = { billId: approvedBillId, code: cancelRes.code, msg: cancelRes.msg };
+    }
   } else {
     report["승인취소"] = { note: "approvedBillId 파라미터 필요" };
   }
