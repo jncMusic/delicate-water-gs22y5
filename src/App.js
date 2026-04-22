@@ -118,7 +118,7 @@ const sendAligoSms = async (receiver, msg) => {
 // =================================================================
 const PAYMINT_SEND_URL = process.env.REACT_APP_PAYMINT_API_URL || "https://jncmusic.kr/api/paymint/send";
 
-// student: { id, name, phone, tuitionFee }
+// student: { id, name, phone, tuitionFee, subject, totalSessions, lastPaymentDate }
 const sendKyuljesaengnim = async (student) => {
   const res = await fetch(PAYMINT_SEND_URL, {
     method: "POST",
@@ -128,6 +128,9 @@ const sendKyuljesaengnim = async (student) => {
       studentName: student.name,
       phone: student.phone || "",
       price: String(student.tuitionFee || 0),
+      subject: student.subject || "",
+      totalSessions: student.totalSessions || 4,
+      lastPaymentDate: student.lastPaymentDate || "",
     }),
   });
   const data = await res.json();
@@ -909,13 +912,32 @@ const StudentEditModal = ({ student, teachers, onClose, onUpdate, user, onUpdate
     const className = days.length > 0 ? days[0] : "";
     const time = days.length > 0 ? cleanSchedules[days[0]] || "" : "";
 
-    onUpdate(student.id, {
+    const updates = {
       ...formData,
       schedules: cleanSchedules,
       classDays: days,
       className,
       time,
-    });
+    };
+
+    // 강사 변경 시 이력 기록 (급여 정산 기준일 분리를 위해)
+    if (formData.teacher && formData.teacher !== student.teacher) {
+      const today = new Date().toISOString().split("T")[0];
+      const existingHistory = student.teacherHistory || [];
+      if (existingHistory.length === 0 && student.teacher) {
+        updates.teacherHistory = [
+          { teacher: student.teacher, from: student.registrationDate || "2020-01-01", to: today },
+          { teacher: formData.teacher, from: today, to: null },
+        ];
+      } else {
+        updates.teacherHistory = [
+          ...existingHistory.map((h) => (h.to === null ? { ...h, to: today } : h)),
+          { teacher: formData.teacher, from: today, to: null },
+        ];
+      }
+    }
+
+    onUpdate(student.id, updates);
   };
 
   return (
@@ -2439,8 +2461,18 @@ const ReportView = ({
     return `${parseInt(s[0])}년 ${parseInt(s[1])}월 ${parseInt(s[2])}일 ~ ${parseInt(e[0])}년 ${parseInt(e[1])}월 ${parseInt(e[2])}일`;
   };
 
-  // 수업일 추출 (총 회차 포함, 당일취소=0.5회)
-  const getAttendanceDates = (student) => {
+  // 특정 날짜에 해당 학생의 담당 강사 조회 (강사 변경 이력 반영)
+  const getTeacherOnDate = (student, date) => {
+    const history = student.teacherHistory;
+    if (!history || history.length === 0) return student.teacher || "";
+    const entry = [...history]
+      .sort((a, b) => b.from.localeCompare(a.from))
+      .find((h) => h.from <= date && (h.to === null || h.to >= date));
+    return entry ? entry.teacher : (student.teacher || "");
+  };
+
+  // 수업일 추출 (총 회차 포함, 당일취소=0.5회, 강사 필터 적용)
+  const getAttendanceDates = (student, teacherName) => {
     if (!student) return "";
 
     const filtered = (student.attendanceHistory || [])
@@ -2448,7 +2480,8 @@ const ReportView = ({
         (h) =>
           h.date >= customStart &&
           h.date <= customEnd &&
-          (h.status === "present" || h.status === "canceled")
+          (h.status === "present" || h.status === "canceled") &&
+          (!teacherName || getTeacherOnDate(student, h.date) === teacherName)
       )
       .sort((a, b) => a.date.localeCompare(b.date));
 
@@ -2470,11 +2503,16 @@ const ReportView = ({
     return `${dateStr} (총 ${totalCount}회)`;
   };
 
-  // 강사별 총 시수 계산 (당일취소=0.5회 포함)
-  const getTeacherTotalHours = (teacherStudents) => {
+  // 강사별 총 시수 계산 (당일취소=0.5회 포함, 강사 이력 기반 필터)
+  const getTeacherTotalHours = (teacherStudents, teacherName) => {
     return teacherStudents.reduce((total, s) => {
       return total + (s.attendanceHistory || [])
-        .filter(h => h.date >= customStart && h.date <= customEnd)
+        .filter((h) =>
+          h.date >= customStart &&
+          h.date <= customEnd &&
+          (h.status === "present" || h.status === "canceled") &&
+          (!teacherName || getTeacherOnDate(s, h.date) === teacherName)
+        )
         .reduce((sum, h) => {
           if (h.status === "present") return sum + (h.count || 1);
           if (h.status === "canceled") return sum + 0.5;
@@ -2505,18 +2543,18 @@ const ReportView = ({
     const teacherName = user.role === "teacher" ? user.name : selectedTeacher;
     if (teacherName === "전체") return [];
     return students.filter((s) => {
-      if (s.teacher !== teacherName) return false;
-      if (s.status === "재원") return true;
-      // 휴원/퇴원생: 해당 기간에 출석 이력이 있으면 보고서에 포함
-      return (
-        ["휴원", "퇴원"].includes(s.status) &&
-        (s.attendanceHistory || []).some(
-          (h) =>
-            h.date >= customStart &&
-            h.date <= customEnd &&
-            h.status === "present"
-        )
+      // 해당 기간에 이 강사가 담당한 출석 이력이 있으면 포함 (강사 변경 이력 반영)
+      const hadAttendance = (s.attendanceHistory || []).some(
+        (h) =>
+          h.date >= customStart &&
+          h.date <= customEnd &&
+          (h.status === "present" || h.status === "canceled") &&
+          getTeacherOnDate(s, h.date) === teacherName
       );
+      if (hadAttendance) return true;
+      // 현재 담당 강사이고 재원 중이면 포함 (출석 없어도)
+      if (s.teacher === teacherName && s.status === "재원") return true;
+      return false;
     });
   }, [students, user, selectedTeacher, customStart, customEnd]);
 
@@ -2636,13 +2674,13 @@ const ReportView = ({
               <span className="text-sm font-bold text-slate-600">담당 원생</span>
               <span className="text-sm px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-full font-bold border border-indigo-100">{myStudents.length}명</span>
               <span className="text-sm px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-full font-bold border border-emerald-100">
-                총 {getTeacherTotalHours(myStudents)}회
+                총 {getTeacherTotalHours(myStudents, user.name)}회
               </span>
             </div>
             <div className="grid grid-cols-1 gap-4">
               {myStudents.length > 0 ? (
                 myStudents.map((s) => {
-                  const dates = getAttendanceDates(s);
+                  const dates = getAttendanceDates(s, user.name);
                   const sData = studentReports[s.id] || {
                     note: "",
                     feedbackSent: false,
@@ -2750,16 +2788,19 @@ const ReportView = ({
           {filteredReports.length > 0
             ? filteredReports.map((report) => {
                 const studentList = students.filter((s) => {
-                  if (s.teacher !== report.teacherName) return false;
-                  if (s.status === "재원") return true;
-                  return (
-                    ["휴원", "퇴원"].includes(s.status) &&
-                    (s.attendanceHistory || []).some(
-                      (h) => h.date >= customStart && h.date <= customEnd && h.status === "present"
-                    )
+                  // 강사 변경 이력 반영: 해당 기간에 이 강사가 담당한 출석이 있으면 포함
+                  const hadAttendance = (s.attendanceHistory || []).some(
+                    (h) =>
+                      h.date >= customStart &&
+                      h.date <= customEnd &&
+                      (h.status === "present" || h.status === "canceled") &&
+                      getTeacherOnDate(s, h.date) === report.teacherName
                   );
+                  if (hadAttendance) return true;
+                  if (s.teacher === report.teacherName && s.status === "재원") return true;
+                  return false;
                 });
-                const teacherTotalHours = getTeacherTotalHours(studentList);
+                const teacherTotalHours = getTeacherTotalHours(studentList, report.teacherName);
                 return (
                   <div
                     key={report.id}
@@ -2814,7 +2855,7 @@ const ReportView = ({
                       {studentList.length > 0 ? (
                         studentList.map((s) => {
                           const sData = (report.data || {})[s.id] || {};
-                          const dates = getAttendanceDates(s);
+                          const dates = getAttendanceDates(s, report.teacherName);
                           return (
                             <div
                               key={s.id}
@@ -9632,6 +9673,12 @@ const PaymentView = ({
     return logs.length > 0 ? logs[0].sentAt : null;
   };
 
+  // 이번달 발송 여부 (이번달 vs 지난달 이전 구분용)
+  const isThisMonth = (dateStr) => {
+    if (!dateStr) return false;
+    return dateStr.slice(0, 7) === new Date().toISOString().slice(0, 7);
+  };
+
   // 체크박스 토글
   const toggleSelect = (id) => {
     setSelectedIds((prev) =>
@@ -10208,9 +10255,13 @@ const PaymentView = ({
                     <>
                       <td className="py-3 px-4 text-xs">
                         {notifSt === "done" ? (
-                          <span className="text-emerald-600 font-medium">🟢 {lastNotif}</span>
+                          <span className={`font-medium ${isThisMonth(lastNotif) ? "text-emerald-600" : "text-emerald-400"}`}>
+                            🟢 {lastNotif}{!isThisMonth(lastNotif) && " (지난달)"}
+                          </span>
                         ) : notifSt === "sms-only" ? (
-                          <span className="text-amber-600 font-medium">🟡 {lastNotif}</span>
+                          <span className={`font-medium ${isThisMonth(lastNotif) ? "text-amber-600" : "text-amber-400"}`}>
+                            🟡 {lastNotif}{!isThisMonth(lastNotif) && " (지난달)"}
+                          </span>
                         ) : (
                           <span className="text-rose-400">🔴 미발송</span>
                         )}
