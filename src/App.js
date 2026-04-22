@@ -2461,8 +2461,10 @@ const ReportView = ({
     return `${parseInt(s[0])}년 ${parseInt(s[1])}월 ${parseInt(s[2])}일 ~ ${parseInt(e[0])}년 ${parseInt(e[1])}월 ${parseInt(e[2])}일`;
   };
 
-  // 특정 날짜에 해당 학생의 담당 강사 조회 (강사 변경 이력 반영)
-  const getTeacherOnDate = (student, date) => {
+  // 특정 날짜에 해당 학생의 담당 강사 조회
+  // 우선순위: 출석 기록의 teacher 필드 → teacherHistory 이력 → 현재 teacher
+  const getTeacherOnDate = (student, date, attendanceRecord) => {
+    if (attendanceRecord?.teacher) return attendanceRecord.teacher;
     const history = student.teacherHistory;
     if (!history || history.length === 0) return student.teacher || "";
     const entry = [...history]
@@ -2481,7 +2483,7 @@ const ReportView = ({
           h.date >= customStart &&
           h.date <= customEnd &&
           (h.status === "present" || h.status === "canceled") &&
-          (!teacherName || getTeacherOnDate(student, h.date) === teacherName)
+          (!teacherName || getTeacherOnDate(student, h.date, h) === teacherName)
       )
       .sort((a, b) => a.date.localeCompare(b.date));
 
@@ -2511,7 +2513,7 @@ const ReportView = ({
           h.date >= customStart &&
           h.date <= customEnd &&
           (h.status === "present" || h.status === "canceled") &&
-          (!teacherName || getTeacherOnDate(s, h.date) === teacherName)
+          (!teacherName || getTeacherOnDate(s, h.date, h) === teacherName)
         )
         .reduce((sum, h) => {
           if (h.status === "present") return sum + (h.count || 1);
@@ -2549,7 +2551,7 @@ const ReportView = ({
           h.date >= customStart &&
           h.date <= customEnd &&
           (h.status === "present" || h.status === "canceled") &&
-          getTeacherOnDate(s, h.date) === teacherName
+          getTeacherOnDate(s, h.date, h) === teacherName
       );
       if (hadAttendance) return true;
       // 현재 담당 강사이고 재원 중이면 포함 (출석 없어도)
@@ -2794,7 +2796,7 @@ const ReportView = ({
                       h.date >= customStart &&
                       h.date <= customEnd &&
                       (h.status === "present" || h.status === "canceled") &&
-                      getTeacherOnDate(s, h.date) === report.teacherName
+                      getTeacherOnDate(s, h.date, h) === report.teacherName
                   );
                   if (hadAttendance) return true;
                   if (s.teacher === report.teacherName && s.status === "재원") return true;
@@ -3792,6 +3794,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
           date: date,
           status: status,
           reason: reason,
+          teacher: student.teacher || "",
           timestamp: new Date().toISOString(),
         };
         if (status === "present") record.count = prevCount;
@@ -6004,7 +6007,7 @@ const FastAttendanceModal = ({ student, onClose, onSave }) => {
     const exists = tempHistory.find((h) => h.date === dateStr);
     if (!exists) {
       // 없음 → 출석 1회
-      setTempHistory([...tempHistory, { date: dateStr, status: "present", count: 1, reason: "초기입력", timestamp: new Date().toISOString() }]);
+      setTempHistory([...tempHistory, { date: dateStr, status: "present", count: 1, teacher: student.teacher || "", reason: "초기입력", timestamp: new Date().toISOString() }]);
     } else if ((exists.count || 1) === 1) {
       // 1회 → 연강 2회
       setTempHistory(tempHistory.map((h) => h.date === dateStr ? { ...h, count: 2 } : h));
