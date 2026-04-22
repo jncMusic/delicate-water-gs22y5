@@ -1,5 +1,5 @@
 // [Paymint 다중 해시 공식 실전 테스트 - 배포 후 삭제]
-// GET /api/paymint/send-test
+// GET /api/paymint/send-test?phone=010XXXXXXXX
 // 여러 hash 공식으로 실제 Paymint API에 전송해 어떤 공식이 통과되는지 확인
 
 import crypto from "crypto";
@@ -13,20 +13,17 @@ const PAYMINT_CORP_NUM = process.env.PAYMINT_CORP_NUM || "2208875476";
 const CALLBACK_URL =
   process.env.PAYMINT_CALLBACK_URL || "https://jncmusic.kr/api/paymint/callback";
 
-function sha256(s) {
-  return crypto.createHash("sha256").update(s).digest("hex");
-}
-function hmac(key, s) {
-  return crypto.createHmac("sha256", key).update(s).digest("hex");
-}
+const sha256lower = (s) => crypto.createHash("sha256").update(s).digest("hex");
+const sha256upper = (s) => crypto.createHash("sha256").update(s).digest("hex").toUpperCase();
+const hmacLower = (key, s) => crypto.createHmac("sha256", key).update(s).digest("hex");
 
 function makeBillId(suffix2) {
-  // 20자리: 사업자번호(10) + MMDDHHmmss(10) → suffix2로 마지막 2자리 차별화
-  const ts = new Date().toISOString().replace(/[-:T.Z]/g, "").slice(4, 14); // MMDDHHmmss(10)
+  const ts = new Date().toISOString().replace(/[-:T.Z]/g, "").slice(4, 14);
   return `${PAYMINT_CORP_NUM}${ts.slice(0, 8)}${suffix2}`;
 }
 
 async function tryFormula(label, billId, phone, price, hashFn) {
+  const hashInput = hashFn._input ? hashFn._input(billId, phone, price) : "?";
   const hash = hashFn(billId, phone, price);
   const payload = {
     apikey: PAYMINT_APIKEY,
@@ -51,66 +48,41 @@ async function tryFormula(label, billId, phone, price, hashFn) {
       body: JSON.stringify(payload),
     });
     const data = await res.json();
-    return { label, billId, hashInput: `[${label}]`, hash, code: data.code, msg: data.msg, ok: data.code === "0000" };
+    return { label, billId, hashInput, hash, code: data.code, msg: data.msg, ok: data.code === "0000" };
   } catch (e) {
-    return { label, billId, hash, error: e.message, ok: false };
+    return { label, billId, hashInput, hash, error: e.message, ok: false };
   }
 }
 
+function fn(fn_, inputFn) { fn_._input = inputFn; return fn_; }
+
 export async function GET(request) {
   const phone = new URL(request.url).searchParams.get("phone") || "01000000000";
-  const price = "25000"; // 테스트 최소금액 2만원 이상
+  const price = "25000";
 
   const results = [];
 
-  // 공식 1: SHA-256(bill_id*price) — phone 없이
-  results.push(await tryFormula(
-    "sha256_no_phone",
-    makeBillId("01"),
-    phone, price,
-    (bid, _ph, pr) => sha256(`${bid}*${pr}`)
-  ));
+  // 소문자
+  results.push(await tryFormula("lower_no_phone",   makeBillId("01"), phone, price,
+    fn((b,_,p) => sha256lower(`${b}*${p}`),        (b,_,p) => `${b}*${p}`)));
+  results.push(await tryFormula("lower_with_phone", makeBillId("02"), phone, price,
+    fn((b,ph,p) => sha256lower(`${b}*${ph}*${p}`), (b,ph,p) => `${b}*${ph}*${p}`)));
 
-  // 공식 2: SHA-256(bill_id*phone*price) — 현재 방식
-  results.push(await tryFormula(
-    "sha256_with_phone",
-    makeBillId("02"),
-    phone, price,
-    (bid, ph, pr) => sha256(`${bid}*${ph}*${pr}`)
-  ));
+  // 대문자 (UPPERCASE)
+  results.push(await tryFormula("upper_no_phone",   makeBillId("03"), phone, price,
+    fn((b,_,p) => sha256upper(`${b}*${p}`),        (b,_,p) => `${b}*${p}`)));
+  results.push(await tryFormula("upper_with_phone", makeBillId("04"), phone, price,
+    fn((b,ph,p) => sha256upper(`${b}*${ph}*${p}`), (b,ph,p) => `${b}*${ph}*${p}`)));
 
-  // 공식 3: SHA-256(price*bill_id) — 역순
-  results.push(await tryFormula(
-    "sha256_price_bid",
-    makeBillId("03"),
-    phone, price,
-    (bid, _ph, pr) => sha256(`${pr}*${bid}`)
-  ));
+  // HMAC (소문자)
+  results.push(await tryFormula("hmac_no_phone",    makeBillId("05"), phone, price,
+    fn((b,_,p) => hmacLower(PAYMINT_APIKEY, `${b}*${p}`),        (b,_,p) => `HMAC(${b}*${p})`)));
+  results.push(await tryFormula("hmac_with_phone",  makeBillId("06"), phone, price,
+    fn((b,ph,p) => hmacLower(PAYMINT_APIKEY, `${b}*${ph}*${p}`), (b,ph,p) => `HMAC(${b}*${ph}*${p})`)));
 
-  // 공식 4: HMAC-SHA256(apikey, bill_id*price)
-  results.push(await tryFormula(
-    "hmac_apikey_no_phone",
-    makeBillId("04"),
-    phone, price,
-    (bid, _ph, pr) => hmac(PAYMINT_APIKEY, `${bid}*${pr}`)
-  ));
-
-  // 공식 5: HMAC-SHA256(apikey, bill_id*phone*price)
-  results.push(await tryFormula(
-    "hmac_apikey_with_phone",
-    makeBillId("05"),
-    phone, price,
-    (bid, ph, pr) => hmac(PAYMINT_APIKEY, `${bid}*${ph}*${pr}`)
-  ));
-
-  // 공식 6: SHA-256(bill_id*phone*price) — 하이픈 없는 bill_id
-  const nohyphenBid = `${PAYMINT_CORP_NUM}0421${String(Date.now()).slice(-6)}`;
-  results.push(await tryFormula(
-    "sha256_nohyphen_with_phone",
-    nohyphenBid,
-    phone, price,
-    (bid, ph, pr) => sha256(`${bid}*${ph}*${pr}`)
-  ));
+  // 역순
+  results.push(await tryFormula("lower_price_first", makeBillId("07"), phone, price,
+    fn((b,_,p) => sha256lower(`${p}*${b}`), (b,_,p) => `${p}*${b}`)));
 
   const winner = results.find((r) => r.ok);
   return Response.json({ winner: winner?.label ?? "none", results });
