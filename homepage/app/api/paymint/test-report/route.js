@@ -67,12 +67,15 @@ export async function GET(request) {
   });
   report["청구서조회"] = { billId: newBillId, code: readRes.code, state: readRes.appr_state, msg: readRes.msg };
 
-  // 4. 청구서 파기 - 4가지 구조 순차 시도
+  // 4. 청구서 파기 - reason 포함 여러 구조 순차 시도
+  const dh = crypto.createHash("sha256").update(newBillId).digest("hex");
   const destroyAttempts = [
-    { label: "flat+noHash",   body: { apikey: PAYMINT_APIKEY, member: PAYMINT_MEMBER, merchant: PAYMINT_MERCHANT, bill_id: newBillId } },
-    { label: "nested+noHash", body: { apikey: PAYMINT_APIKEY, member: PAYMINT_MEMBER, merchant: PAYMINT_MERCHANT, bill: { bill_id: newBillId } } },
-    { label: "flat+hash",     body: { apikey: PAYMINT_APIKEY, member: PAYMINT_MEMBER, merchant: PAYMINT_MERCHANT, bill_id: newBillId, hash: crypto.createHash("sha256").update(newBillId).digest("hex") } },
-    { label: "nested+hash",   body: { apikey: PAYMINT_APIKEY, member: PAYMINT_MEMBER, merchant: PAYMINT_MERCHANT, bill: { bill_id: newBillId, hash: crypto.createHash("sha256").update(newBillId).digest("hex") } } },
+    { label: "flat+reason",          body: { apikey: PAYMINT_APIKEY, member: PAYMINT_MEMBER, merchant: PAYMINT_MERCHANT, bill_id: newBillId, reason: "검수테스트" } },
+    { label: "nested+reason",        body: { apikey: PAYMINT_APIKEY, member: PAYMINT_MEMBER, merchant: PAYMINT_MERCHANT, bill: { bill_id: newBillId, reason: "검수테스트" } } },
+    { label: "flat+cancel_reason",   body: { apikey: PAYMINT_APIKEY, member: PAYMINT_MEMBER, merchant: PAYMINT_MERCHANT, bill_id: newBillId, cancel_reason: "검수테스트" } },
+    { label: "nested+cancel_reason", body: { apikey: PAYMINT_APIKEY, member: PAYMINT_MEMBER, merchant: PAYMINT_MERCHANT, bill: { bill_id: newBillId, cancel_reason: "검수테스트" } } },
+    { label: "flat+reason+hash",     body: { apikey: PAYMINT_APIKEY, member: PAYMINT_MEMBER, merchant: PAYMINT_MERCHANT, bill_id: newBillId, reason: "검수테스트", hash: dh } },
+    { label: "flat+noExtra",         body: { apikey: PAYMINT_APIKEY, member: PAYMINT_MEMBER, merchant: PAYMINT_MERCHANT, bill_id: newBillId } },
   ];
   let destroyFinal = { code: "9999", msg: "모두 실패" };
   let destroyLabel = "";
