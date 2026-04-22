@@ -1,5 +1,7 @@
-// 청구서파기 파라미터 탐색용 임시 GET 라우트 (검수 후 삭제)
-// GET /api/paymint/destroy-test?phone=YYY&price=ZZZ&mode=read|send|destroy
+// 청구서파기 검증용 임시 GET 라우트 (검수 후 삭제)
+// GET /api/paymint/destroy-test?phone=YYY&price=ZZZ
+
+import { createHash } from "crypto";
 
 const PAYMINT_BASE_URL =
   process.env.PAYMINT_BASE_URL || "https://stg.paymint.co.kr/partner";
@@ -9,9 +11,7 @@ const PAYMINT_MERCHANT =
   process.env.PAYMINT_MERCHANT || "TEST-MERCHANT-FOR-API";
 const PAYMINT_CORP_NUM = process.env.PAYMINT_CORP_NUM || "2208875476";
 
-import { createHash } from "crypto";
-
-function sha256hex(str) {
+function sha256(str) {
   return createHash("sha256").update(str, "utf8").digest("hex");
 }
 
@@ -43,90 +43,43 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const phone = searchParams.get("phone") || "01040289803";
   const price = parseInt(searchParams.get("price") || "100000", 10);
-  const mode = searchParams.get("mode") || "full";
-  const existingBillId = searchParams.get("billId");
-
   const base = { apikey: PAYMINT_APIKEY, member: PAYMINT_MEMBER, merchant: PAYMINT_MERCHANT };
-
-  // mode=read: 기존 billId로 조회해서 전체 응답 확인
-  if (mode === "read" && existingBillId) {
-    const r1 = await callPaymint("/if/bill/read", { ...base, bill_id: existingBillId });
-    const r2 = await callPaymint("/if/bill/read", { ...base, billId: existingBillId });
-    return Response.json({ mode: "read", billId: existingBillId, snake: r1, camel: r2 });
-  }
 
   // 신규 청구서 발송
   const billId = makeBillId();
-  const hash = sha256hex(`${billId},${phone},${price}`);
-  const sendBody = {
+  const sendHash = sha256(`${billId},${phone},${price}`);
+  const sendResult = await callPaymint("/if/bill/send", {
     ...base,
     corp_num: PAYMINT_CORP_NUM,
     phone,
     price,
     bill_id: billId,
-    hash,
+    hash: sendHash,
     msg: "검수테스트",
     name: "검수",
-  };
-  const sendResult = await callPaymint("/if/bill/send", sendBody);
-
-  if (mode === "send") {
-    return Response.json({ mode: "send", billId, sendResult });
-  }
+  });
 
   if (!sendResult.data || sendResult.data.code !== "0000") {
     return Response.json({ SUCCESS: false, step: "send", billId, sendResult });
   }
 
-  // 발송 성공 → Paymint가 반환한 전체 데이터 확인 후 파기 시도
-  const paymintData = sendResult.data;
+  // 파기: SHA-256(bill_id + "," + price) — Paymint 확인된 공식
+  const destroyHash = sha256(`${billId},${price}`);
+  const destroyResult = await callPaymint("/if/bill/destroy", {
+    ...base,
+    bill_id: billId,
+    price,
+    hash: destroyHash,
+  });
 
-  // paymintData에서 추출 가능한 ID 필드들
-  const ids = {
-    ourBillId: billId,
-    paymintBillId: paymintData.bill_id,
-    paymintBillIdCamel: paymintData.billId,
-    paymintBillKey: paymintData.bill_key,
-    paymintBillSeq: paymintData.bill_seq,
-    paymintBillSeqCamel: paymintData.billSeq,
-    paymintId: paymintData.id,
-  };
-
-  if (mode === "inspect") {
-    return Response.json({ mode: "inspect", billId, paymintData, ids });
-  }
-
-  // destroy 시도: camelCase billId 우선, 그 다음 Paymint 응답의 ID들
-  const destroyVariants = [
-    { label: "camel_our", body: { ...base, billId } },
-    { label: "snake_our", body: { ...base, bill_id: billId } },
-    ...(paymintData.bill_id ? [{ label: "snake_paymint", body: { ...base, bill_id: paymintData.bill_id } }] : []),
-    ...(paymintData.billId ? [{ label: "camel_paymint", body: { ...base, billId: paymintData.billId } }] : []),
-    ...(paymintData.bill_seq ? [{ label: "billSeq_snake", body: { ...base, bill_seq: paymintData.bill_seq } }] : []),
-    ...(paymintData.billSeq ? [{ label: "billSeq_camel", body: { ...base, billSeq: paymintData.billSeq } }] : []),
-    { label: "camel+corp", body: { ...base, billId, corp_num: PAYMINT_CORP_NUM } },
-    { label: "camel+phone+price", body: { ...base, billId, phone, price } },
-    { label: "camel+hash", body: { ...base, billId, hash: sha256hex(billId) } },
-    { label: "camel+hash2", body: { ...base, billId, hash: sha256hex(`${billId},${phone},${price}`) } },
-  ];
-
-  const destroyResults = [];
-  let winner = null;
-  for (const v of destroyVariants) {
-    const r = await callPaymint("/if/bill/destroy", v.body);
-    destroyResults.push({ label: v.label, ...r });
-    if (r.data && r.data.code === "0000") {
-      winner = { label: v.label, body: v.body, response: r };
-      break;
-    }
-  }
+  const success = destroyResult.data && destroyResult.data.code === "0000";
 
   return Response.json({
-    SUCCESS: !!winner,
+    SUCCESS: success,
     billId,
-    paymintSendData: paymintData,
-    ids,
-    winner,
-    destroyResults,
+    price,
+    destroyHash,
+    sendResponse: sendResult.data,
+    destroyResponse: destroyResult.data,
   });
 }

@@ -1,6 +1,8 @@
 // [결제선생 청구서 파기 - Paymint 2.4]
 // POST /api/paymint/destroy
-// body: { billId }
+// body: { billId, price }
+
+import { createHash } from "crypto";
 
 const PAYMINT_BASE_URL =
   process.env.PAYMINT_BASE_URL || "https://stg.paymint.co.kr/partner";
@@ -21,7 +23,7 @@ export async function OPTIONS() {
 
 export async function POST(request) {
   try {
-    const { billId } = await request.json();
+    const { billId, price } = await request.json();
 
     if (!billId) {
       return Response.json(
@@ -29,6 +31,17 @@ export async function POST(request) {
         { status: 400, headers: CORS_HEADERS }
       );
     }
+    if (!price) {
+      return Response.json(
+        { success: false, error: "price가 필요합니다." },
+        { status: 400, headers: CORS_HEADERS }
+      );
+    }
+
+    // hash: SHA-256(bill_id + "," + price)
+    const hash = createHash("sha256")
+      .update(`${billId},${price}`, "utf8")
+      .digest("hex");
 
     const paymintRes = await fetch(`${PAYMINT_BASE_URL}/if/bill/destroy`, {
       method: "POST",
@@ -38,11 +51,13 @@ export async function POST(request) {
         member: PAYMINT_MEMBER,
         merchant: PAYMINT_MERCHANT,
         bill_id: billId,
+        price,
+        hash,
       }),
     });
 
     const data = await paymintRes.json();
-    console.log("[paymint/destroy] bill_id:", billId, "response:", JSON.stringify(data));
+    console.log("[paymint/destroy] bill_id:", billId, "price:", price, "response:", JSON.stringify(data));
 
     if (data.code !== "0000") {
       return Response.json(
