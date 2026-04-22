@@ -67,22 +67,21 @@ export async function GET(request) {
   });
   report["청구서조회"] = { billId: newBillId, code: readRes.code, state: readRes.appr_state, msg: readRes.msg };
 
-  // 4. 청구서 파기 (hash = SHA-256(bill_id) 또는 SHA-256(bill_id,phone,price) 시도)
-  const destroyHash1 = crypto.createHash("sha256").update(newBillId).digest("hex");
-  const destroyHash2 = crypto.createHash("sha256").update(`${newBillId},${phone},${price}`).digest("hex");
-  let destroyRes = await call("/if/bill/destroy", {
-    apikey: PAYMINT_APIKEY, member: PAYMINT_MEMBER, merchant: PAYMINT_MERCHANT,
-    bill_id: newBillId, hash: destroyHash1,
-  });
-  let destroyHashUsed = "SHA256(bill_id)";
-  if (destroyRes.code !== "0000") {
-    const destroyRes2 = await call("/if/bill/destroy", {
-      apikey: PAYMINT_APIKEY, member: PAYMINT_MEMBER, merchant: PAYMINT_MERCHANT,
-      bill_id: newBillId, hash: destroyHash2,
-    });
-    if (destroyRes2.code === "0000") { destroyRes = destroyRes2; destroyHashUsed = "SHA256(bill_id,phone,price)"; }
+  // 4. 청구서 파기 - 4가지 구조 순차 시도
+  const destroyAttempts = [
+    { label: "flat+noHash",   body: { apikey: PAYMINT_APIKEY, member: PAYMINT_MEMBER, merchant: PAYMINT_MERCHANT, bill_id: newBillId } },
+    { label: "nested+noHash", body: { apikey: PAYMINT_APIKEY, member: PAYMINT_MEMBER, merchant: PAYMINT_MERCHANT, bill: { bill_id: newBillId } } },
+    { label: "flat+hash",     body: { apikey: PAYMINT_APIKEY, member: PAYMINT_MEMBER, merchant: PAYMINT_MERCHANT, bill_id: newBillId, hash: crypto.createHash("sha256").update(newBillId).digest("hex") } },
+    { label: "nested+hash",   body: { apikey: PAYMINT_APIKEY, member: PAYMINT_MEMBER, merchant: PAYMINT_MERCHANT, bill: { bill_id: newBillId, hash: crypto.createHash("sha256").update(newBillId).digest("hex") } } },
+  ];
+  let destroyFinal = { code: "9999", msg: "모두 실패" };
+  let destroyLabel = "";
+  for (const attempt of destroyAttempts) {
+    const r = await call("/if/bill/destroy", attempt.body);
+    if (r.code === "0000") { destroyFinal = r; destroyLabel = attempt.label; break; }
+    destroyLabel += `[${attempt.label}:${r.msg}] `;
   }
-  report["청구서파기"] = { billId: newBillId, code: destroyRes.code, msg: destroyRes.msg, hashUsed: destroyHashUsed };
+  report["청구서파기"] = { billId: newBillId, code: destroyFinal.code, msg: destroyFinal.msg, tried: destroyLabel.trim() };
 
   // 5. 승인취소 - state가 이미 "C"이면 이미 완료된 것으로 처리
   if (approvedBillId) {
