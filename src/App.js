@@ -9493,6 +9493,7 @@ const PaymentView = ({
   // 결제 완료 간편 입력 state
   const [quickPayStudent, setQuickPayStudent] = useState(null);
   const [quickPayDate, setQuickPayDate] = useState("");
+  const [quickPayMethod, setQuickPayMethod] = useState("");
 
   // 결제 처리 탭 state
   const [processMode, setProcessMode] = useState(false);
@@ -9558,13 +9559,15 @@ const PaymentView = ({
     return Array.from(set).sort();
   }, [students]);
 
-  // 발송 상태 3단계: none / sms-only / done (구버전 channel 문자열 하위 호환)
+  // 발송 상태 4단계: none / sms-only / done / paid (구버전 channel 문자열 하위 호환)
+  // paid: 직전 안내 후 결제까지 완료 (messageLog에 paidAt 마킹됨)
   const getNotifStatus = (studentId) => {
     const logs = messageLogs
       .filter((l) => l.studentId === studentId)
       .sort((a, b) => b.sentAt.localeCompare(a.sentAt));
     if (!logs.length) return "none";
     const latest = logs[0];
+    if (latest.paidAt) return "paid";
     const ch = latest.channels || (latest.channel ? ["sms"] : []);
     if (ch.includes("결제선생")) return "done";
     if (ch.includes("sms")) return "sms-only";
@@ -9636,6 +9639,20 @@ const PaymentView = ({
     [students]
   );
 
+  // 안내 발송 탭: 오늘 결제 완료자 (당일 수금 점검용)
+  const todayPayments = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const results = [];
+    students.filter((s) => s.status === "재원").forEach((s) => {
+      (s.paymentHistory || []).forEach((p) => {
+        if (p.date === today) results.push({ student: s, payment: p });
+      });
+    });
+    return results.sort((a, b) =>
+      (b.payment.createdAt || "").localeCompare(a.payment.createdAt || "")
+    );
+  }, [students]);
+
   // 결제 처리 탭: 결제 완료자 명단
   const recentlyPaidList = useMemo(() => {
     const now = new Date();
@@ -9689,18 +9706,22 @@ const PaymentView = ({
     );
   };
 
-  // 결제 완료 간편 저장
+  // 결제 완료 간편 저장 (결제방법 포함 - lastPaymentMethod 기본 재활용)
   const handleQuickPaySave = async () => {
     if (!quickPayStudent || !quickPayDate) return;
     try {
+      const method = quickPayMethod || quickPayStudent.lastPaymentMethod || "";
       await onSavePayment(
         quickPayStudent.id,
         quickPayDate,
         parseInt(quickPayStudent.tuitionFee || 0),
-        quickPayDate
+        quickPayDate,
+        method
       );
+      showToast(`${quickPayStudent.name} 수납 완료${method ? ` (${method})` : ""}`, "success");
       setQuickPayStudent(null);
       setQuickPayDate("");
+      setQuickPayMethod("");
     } catch (e) {
       showToast("저장 오류: " + e.message, "error");
     }
@@ -9825,8 +9846,35 @@ const PaymentView = ({
                 {Number(quickPayStudent.tuitionFee || 0).toLocaleString()}원
               </div>
             </div>
+            <div className="mb-4">
+              <label className="block text-xs font-bold text-slate-500 mb-1">
+                결제방법
+                {quickPayStudent.lastPaymentMethod && (
+                  <span className="ml-2 text-[10px] text-slate-400 font-normal">
+                    (이전: {quickPayStudent.lastPaymentMethod})
+                  </span>
+                )}
+              </label>
+              <div className="flex flex-wrap gap-1">
+                {["현장", "계좌이체", "기타", "결제선생"].map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setQuickPayMethod(m)}
+                    className={`px-3 py-1.5 text-xs rounded-lg border font-medium transition-all ${
+                      quickPayMethod === m
+                        ? m === "결제선생"
+                          ? "bg-blue-600 text-white border-blue-600"
+                          : "bg-indigo-600 text-white border-indigo-600"
+                        : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
+                    }`}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="flex gap-2 justify-end mt-4">
-              <button onClick={() => { setQuickPayStudent(null); setQuickPayDate(""); }} className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg font-bold">취소</button>
+              <button onClick={() => { setQuickPayStudent(null); setQuickPayDate(""); setQuickPayMethod(""); }} className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg font-bold">취소</button>
               <button
                 onClick={handleQuickPaySave}
                 disabled={!quickPayDate}
@@ -9999,6 +10047,43 @@ const PaymentView = ({
           </button>
         </div>
       </div>
+
+      {/* 안내 발송 모드: 오늘 결제 완료 요약 (당일 수금 확인) */}
+      {notifMode && todayPayments.length > 0 && (
+        <div className="mb-2 shrink-0 bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5">
+          <div className="flex items-center gap-2 flex-wrap text-xs">
+            <CheckCircle size={14} className="text-blue-600 shrink-0" />
+            <span className="font-bold text-blue-700">
+              오늘 결제 완료 {todayPayments.length}건
+            </span>
+            <span className="text-slate-400">|</span>
+            <span className="text-slate-600">
+              총{" "}
+              <span className="font-bold text-blue-700">
+                {todayPayments
+                  .reduce((sum, { payment }) => sum + (Number(payment.amount) || 0), 0)
+                  .toLocaleString()}
+                원
+              </span>
+            </span>
+            <div className="flex flex-wrap gap-1 mt-0.5">
+              {todayPayments.map(({ student, payment }, i) => (
+                <span
+                  key={`${student.id}-${i}`}
+                  className="px-2 py-0.5 rounded-full bg-white border border-blue-200 text-blue-700 font-medium"
+                >
+                  {student.name}
+                  {payment.method && (
+                    <span className="text-[10px] text-slate-400 ml-1">
+                      · {payment.method}
+                    </span>
+                  )}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 안내 발송 모드: 일괄 액션 바 */}
       {notifMode && (
@@ -10257,7 +10342,11 @@ const PaymentView = ({
                   {notifMode ? (
                     <>
                       <td className="py-3 px-4 text-xs">
-                        {notifSt === "done" ? (
+                        {notifSt === "paid" ? (
+                          <span className="font-medium text-blue-600">
+                            ✅ {lastNotif} 결제완료
+                          </span>
+                        ) : notifSt === "done" ? (
                           <span className={`font-medium ${isThisMonth(lastNotif) ? "text-emerald-600" : "text-emerald-400"}`}>
                             🟢 {lastNotif}{!isThisMonth(lastNotif) && " (지난달)"}
                           </span>
@@ -10270,15 +10359,22 @@ const PaymentView = ({
                         )}
                       </td>
                       <td className="py-3 px-4 text-center" onClick={(e) => e.stopPropagation()}>
-                        <button
-                          onClick={() => {
-                            setQuickPayStudent(s);
-                            setQuickPayDate(new Date().toISOString().split("T")[0]);
-                          }}
-                          className="px-2 py-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 font-medium"
-                        >
-                          결제 완료
-                        </button>
+                        {notifSt === "paid" ? (
+                          <span className="px-2 py-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-lg font-medium">
+                            ✅ 결제완료
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setQuickPayStudent(s);
+                              setQuickPayDate(new Date().toISOString().split("T")[0]);
+                              setQuickPayMethod(s.lastPaymentMethod || "");
+                            }}
+                            className="px-2 py-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 font-medium"
+                          >
+                            결제 완료
+                          </button>
+                        )}
                       </td>
                     </>
                   ) : (
@@ -10819,16 +10915,26 @@ export default function App() {
         ...(method && { lastPaymentMethod: method }),
       });
 
-      // 결제 완료 시 해당 학생의 메시지 발송 이력 초기화 (다음 주기에 미발송으로 표시)
+      // 결제 완료 시 미결제(paidAt 없는) 메시지 로그에만 paidAt 마킹 (이력 보존)
+      // 다음 결제 주기에는 sessionStartDate 기준으로 새 로그가 "미발송"으로 분류됨
       try {
         const logsRef = collection(db, "artifacts", safeAppId, "public", "data", "messageLogs");
         const logsQuery = query(logsRef, where("studentId", "==", studentId));
         const logSnap = await getDocs(logsQuery);
         const batch = writeBatch(db);
-        logSnap.forEach((d) => batch.delete(d.ref));
+        logSnap.forEach((d) => {
+          const data = d.data();
+          if (!data.paidAt) {
+            batch.update(d.ref, {
+              paidAt: realSessionStartDate,
+              paidAmount: amount,
+              ...(method && { paidMethod: method }),
+            });
+          }
+        });
         await batch.commit();
       } catch (logErr) {
-        console.error("메시지 이력 초기화 오류:", logErr);
+        console.error("메시지 이력 마킹 오류:", logErr);
       }
 
       showToast("결제 완료", "success");
