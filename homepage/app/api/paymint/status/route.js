@@ -3,11 +3,11 @@
 // 테스트 계정의 개시 상태 확인 (0000=개시, 1010=미신청/심사중, 1700=기가입)
 
 const PAYMINT_BASE_URL =
-  process.env.PAYMINT_BASE_URL || "https://stg.paymint.co.kr/partner";
-const PAYMINT_APIKEY = process.env.PAYMINT_APIKEY || "TEST-API-KEY-TALK";
-const PAYMINT_MEMBER = process.env.PAYMINT_MEMBER || "TEST-MEMBER-FOR-API";
+  process.env.PAYMINT_BASE_URL || "https://erp-api.payssam.kr";
+const PAYMINT_APIKEY = process.env.PAYMINT_APIKEY || "54C5SW2AWEYB0MVJ";
+const PAYMINT_MEMBER = process.env.PAYMINT_MEMBER || "jncmusic";
 const PAYMINT_MERCHANT =
-  process.env.PAYMINT_MERCHANT || "TEST-MERCHANT-FOR-API";
+  process.env.PAYMINT_MERCHANT || "jncmusic";
 const CALLBACK_URL =
   process.env.PAYMINT_CALLBACK_URL || "https://jncmusic.kr/api/paymint/callback";
 
