@@ -717,6 +717,55 @@ export const PaymentView = ({
       .map((g) => ({ ...g, label: formatLabel(g.key) }));
   }, [students, historyPeriod]);
 
+  // ── 발송 히스토리 데이터 (결제선생 채널 필터) ──────────────────
+  const sendHistoryData = useMemo(() => {
+    const DAYS_KO = ["일", "월", "화", "수", "목", "금", "토"];
+    const getMondayStr = (dateStr) => {
+      const d = new Date(dateStr + "T00:00:00");
+      const day = d.getDay();
+      const diff = day === 0 ? -6 : 1 - day;
+      d.setDate(d.getDate() + diff);
+      return toLocalDateStr(d);
+    };
+    const formatLabel = (key) => {
+      if (historyPeriod === "month") {
+        const [y, m] = key.split("-");
+        return `${y}년 ${parseInt(m)}월`;
+      } else if (historyPeriod === "week") {
+        const d = new Date(key + "T00:00:00");
+        const end = new Date(d);
+        end.setDate(end.getDate() + 6);
+        const fmt = (dt) => `${dt.getMonth() + 1}/${dt.getDate()}`;
+        return `${fmt(d)} ~ ${fmt(end)}`;
+      } else {
+        const d = new Date(key + "T00:00:00");
+        return `${d.getMonth() + 1}/${d.getDate()} (${DAYS_KO[d.getDay()]})`;
+      }
+    };
+
+    const groups = {};
+    (messageLogs || []).forEach((log) => {
+      const date = log.sentAt;
+      if (!date) return;
+      let key;
+      if (historyPeriod === "month") key = date.substring(0, 7);
+      else if (historyPeriod === "week") key = getMondayStr(date);
+      else key = date;
+
+      if (!groups[key]) groups[key] = { key, items: [] };
+      groups[key].items.push(log);
+    });
+
+    return Object.values(groups)
+      .sort((a, b) => b.key.localeCompare(a.key))
+      .map((g) => ({
+        ...g,
+        label: formatLabel(g.key),
+        kyuljeCount: g.items.filter((l) => (l.channels || []).includes("결제선생")).length,
+        smsCount: g.items.filter((l) => (l.channels || []).includes("sms")).length,
+      }));
+  }, [messageLogs, historyPeriod]);
+
   // ── 이벤트 핸들러 ─────────────────────────────────────────────
   const toggleSelect = (id) =>
     setSelectedIds((prev) =>
@@ -1610,70 +1659,132 @@ export const PaymentView = ({
               </div>
             </div>
 
-            {/* 기간별 목록 */}
-            {historyData.length === 0 ? (
-              <div className="flex-1 flex items-center justify-center text-slate-400">
-                수납 내역이 없습니다.
+            {/* ── 수납 히스토리 ── */}
+            <div className="border rounded-xl overflow-hidden">
+              <div className="bg-indigo-50 px-4 py-2.5 flex items-center gap-2 border-b">
+                <CreditCard size={14} className="text-indigo-600" />
+                <span className="font-bold text-indigo-700 text-sm">수납 내역</span>
+                <span className="text-xs text-indigo-400">{historyData.reduce((s, g) => s + g.items.length, 0)}건</span>
+                <span className="ml-auto font-bold text-indigo-700 text-sm">
+                  합계 {historyData.reduce((s, g) => s + g.total, 0).toLocaleString()}원
+                </span>
               </div>
-            ) : (
-              <div className="flex flex-col gap-3">
-                {historyData.map((group) => {
-                  const methodColors = {
-                    현장: "bg-indigo-100 text-indigo-700",
-                    계좌이체: "bg-emerald-100 text-emerald-700",
-                    결제선생: "bg-blue-100 text-blue-700",
-                    기타: "bg-slate-100 text-slate-600",
-                  };
-                  return (
-                    <div key={group.key} className="border rounded-xl overflow-hidden">
-                      {/* 기간 헤더 */}
-                      <div className="bg-slate-50 px-4 py-2.5 flex items-center gap-3 border-b">
-                        <span className="font-bold text-slate-700 text-sm">{group.label}</span>
+              {historyData.length === 0 ? (
+                <div className="py-10 text-center text-slate-400 text-sm">수납 내역이 없습니다.</div>
+              ) : (
+                <div className="flex flex-col divide-y">
+                  {historyData.map((group) => {
+                    const methodColors = {
+                      현장: "bg-indigo-100 text-indigo-700",
+                      계좌이체: "bg-emerald-100 text-emerald-700",
+                      결제선생: "bg-blue-100 text-blue-700",
+                      기타: "bg-slate-100 text-slate-600",
+                    };
+                    return (
+                      <details key={group.key} className="group">
+                        <summary className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-slate-50 list-none">
+                          <ChevronRight size={14} className="text-slate-400 group-open:rotate-90 transition-transform shrink-0" />
+                          <span className="font-semibold text-slate-700 text-sm">{group.label}</span>
+                          <span className="text-xs text-slate-400">{group.items.length}건</span>
+                          <span className="ml-auto font-bold text-indigo-700 text-sm">{group.total.toLocaleString()}원</span>
+                          <div className="flex gap-1 flex-wrap">
+                            {Object.entries(group.methods).map(([m, amt]) => (
+                              <span key={m} className={`text-xs px-2 py-0.5 rounded-full font-medium ${methodColors[m] || "bg-slate-100 text-slate-600"}`}>
+                                {m} {amt.toLocaleString()}원
+                              </span>
+                            ))}
+                          </div>
+                        </summary>
+                        <table className="w-full text-sm border-t">
+                          <tbody className="divide-y divide-slate-100 bg-white">
+                            {group.items
+                              .sort((a, b) => b.payment.date.localeCompare(a.payment.date))
+                              .map(({ student: s, payment: p }, i) => (
+                                <tr key={`${s.id}-${p.date}-${i}`} className="hover:bg-slate-50">
+                                  <td className="py-2 px-6 font-medium">
+                                    {s.name}
+                                    {s.subject && <span className="text-xs text-slate-400 ml-1">({s.subject})</span>}
+                                  </td>
+                                  <td className="py-2 px-4 text-slate-500">{s.teacher || "-"}</td>
+                                  <td className="py-2 px-4 text-slate-500 text-xs">{p.date}</td>
+                                  <td className="py-2 px-4 text-right font-bold text-indigo-600">
+                                    {Number(p.amount || 0).toLocaleString()}원
+                                  </td>
+                                  <td className="py-2 px-4">
+                                    {p.method ? (
+                                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${methodColors[p.method] || "bg-slate-100 text-slate-600"}`}>
+                                        {p.method}
+                                      </span>
+                                    ) : <span className="text-slate-300 text-xs">-</span>}
+                                  </td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      </details>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* ── 결제선생 발송 히스토리 ── */}
+            <div className="border rounded-xl overflow-hidden">
+              <div className="bg-blue-50 px-4 py-2.5 flex items-center gap-2 border-b">
+                <Send size={14} className="text-blue-600" />
+                <span className="font-bold text-blue-700 text-sm">결제선생 발송 내역</span>
+                <span className="text-xs text-blue-400">
+                  {sendHistoryData.reduce((s, g) => s + g.kyuljeCount, 0)}건 결제선생
+                  {sendHistoryData.reduce((s, g) => s + g.smsCount, 0) > 0 &&
+                    ` · ${sendHistoryData.reduce((s, g) => s + g.smsCount, 0)}건 SMS`}
+                </span>
+              </div>
+              {sendHistoryData.length === 0 ? (
+                <div className="py-10 text-center text-slate-400 text-sm">발송 내역이 없습니다.</div>
+              ) : (
+                <div className="flex flex-col divide-y">
+                  {sendHistoryData.map((group) => (
+                    <details key={group.key} className="group">
+                      <summary className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-slate-50 list-none">
+                        <ChevronRight size={14} className="text-slate-400 group-open:rotate-90 transition-transform shrink-0" />
+                        <span className="font-semibold text-slate-700 text-sm">{group.label}</span>
                         <span className="text-xs text-slate-400">{group.items.length}건</span>
-                        <span className="ml-auto font-bold text-indigo-700 text-sm">
-                          {group.total.toLocaleString()}원
-                        </span>
-                        {/* 결제방법별 소계 */}
-                        <div className="flex gap-1 flex-wrap">
-                          {Object.entries(group.methods).map(([m, amt]) => (
-                            <span key={m} className={`text-xs px-2 py-0.5 rounded-full font-medium ${methodColors[m] || "bg-slate-100 text-slate-600"}`}>
-                              {m} {amt.toLocaleString()}원
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                      {/* 건별 목록 */}
-                      <table className="w-full text-sm">
+                        {group.kyuljeCount > 0 && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">결제선생 {group.kyuljeCount}건</span>
+                        )}
+                        {group.smsCount > 0 && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 font-medium">SMS {group.smsCount}건</span>
+                        )}
+                      </summary>
+                      <table className="w-full text-sm border-t">
                         <tbody className="divide-y divide-slate-100 bg-white">
                           {group.items
-                            .sort((a, b) => b.payment.date.localeCompare(a.payment.date))
-                            .map(({ student: s, payment: p }, i) => (
-                              <tr key={`${s.id}-${p.date}-${i}`} className="hover:bg-slate-50">
-                                <td className="py-2.5 px-4 font-medium">
-                                  {s.name}
-                                  {s.subject && <span className="text-xs text-slate-400 ml-1">({s.subject})</span>}
-                                </td>
-                                <td className="py-2.5 px-4 text-slate-500">{s.teacher || "-"}</td>
-                                <td className="py-2.5 px-4 text-slate-500 text-xs">{p.date}</td>
-                                <td className="py-2.5 px-4 text-right font-bold text-indigo-600">
-                                  {Number(p.amount || 0).toLocaleString()}원
-                                </td>
-                                <td className="py-2.5 px-4">
-                                  {p.method ? (
-                                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${methodColors[p.method] || "bg-slate-100 text-slate-600"}`}>
-                                      {p.method}
+                            .sort((a, b) => b.sentAt.localeCompare(a.sentAt))
+                            .map((log, i) => {
+                              const isKyulje = (log.channels || []).includes("결제선생");
+                              return (
+                                <tr key={`${log.studentId}-${log.sentAt}-${i}`} className="hover:bg-slate-50">
+                                  <td className="py-2 px-6 font-medium">{log.studentName || "-"}</td>
+                                  <td className="py-2 px-4 text-slate-500 text-xs">{log.sentAt}</td>
+                                  <td className="py-2 px-4">
+                                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isKyulje ? "bg-blue-100 text-blue-700" : "bg-violet-100 text-violet-700"}`}>
+                                      {isKyulje ? "결제선생" : "SMS"}
                                     </span>
-                                  ) : <span className="text-slate-300 text-xs">-</span>}
-                                </td>
-                              </tr>
-                            ))}
+                                  </td>
+                                  <td className="py-2 px-4 text-slate-400 text-xs">{log.sentBy || "-"}</td>
+                                  {log.shortURL && (
+                                    <td className="py-2 px-4 text-xs text-blue-500 truncate max-w-[160px]">{log.shortURL}</td>
+                                  )}
+                                </tr>
+                              );
+                            })}
                         </tbody>
                       </table>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+                    </details>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
