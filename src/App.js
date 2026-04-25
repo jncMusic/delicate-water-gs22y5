@@ -5,6 +5,7 @@ import React, {
   useCallback,
   useRef,
 } from "react";
+import { PaymentView as PaymentViewNew, BulkMessageModal as BulkMessageModalNew } from "./PaymentView";
 import { initializeApp } from "firebase/app";
 import { getAuth, signInAnonymously } from "firebase/auth";
 import {
@@ -10669,6 +10670,7 @@ export default function App() {
   const [showMemoPopup, setShowMemoPopup] = useState(false);
   const [today, setToday] = useState(new Date());
   const [targetConsultation, setTargetConsultation] = useState(null);
+  const [payDetailStudent, setPayDetailStudent] = useState(null);
 
   useEffect(() => {
     setToday(new Date());
@@ -11550,17 +11552,31 @@ export default function App() {
             />
           )}
           {activeTab === "payments" && currentUser.role === "admin" && (
-            <PaymentView
-              students={students}
-              showToast={showToast}
-              onSavePayment={handleSavePayment}
-              onUpdatePaymentHistory={handleUpdatePaymentHistory}
-              onUpdateStudent={handleUpdateStudent}
-              messageLogs={messageLogs}
-              onSaveMessageLog={handleSaveMessageLog}
-              paymentUrl={paymentUrl}
-              user={currentUser}
-            />
+            <>
+              <PaymentViewNew
+                students={students}
+                showToast={showToast}
+                onSavePayment={handleSavePayment}
+                onUpdatePaymentHistory={handleUpdatePaymentHistory}
+                onUpdateStudent={handleUpdateStudent}
+                messageLogs={messageLogs}
+                onSaveMessageLog={handleSaveMessageLog}
+                paymentUrl={paymentUrl}
+                user={currentUser}
+                generatePaymentMessage={generatePaymentMessage}
+                onOpenStudentDetail={(student) => setPayDetailStudent(student)}
+              />
+              {payDetailStudent && (
+                <PaymentDetailModal
+                  student={payDetailStudent}
+                  onClose={() => setPayDetailStudent(null)}
+                  onSavePayment={handleSavePayment}
+                  onUpdatePaymentHistory={handleUpdatePaymentHistory}
+                  onUpdateStudent={handleUpdateStudent}
+                  showToast={showToast}
+                />
+              )}
+            </>
           )}
           {activeTab === "consultations" && currentUser.role === "admin" && (
             <ConsultationView
