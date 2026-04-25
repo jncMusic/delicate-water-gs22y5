@@ -6113,6 +6113,76 @@ const AttendanceActionModal = ({ student, date, onClose, onSelectStatus, current
   );
 };
 
+// [Helper: RescheduleModal] - 출석부(AttendanceView) 보강 일정 등록용
+const RescheduleModal = ({ student, date, existingMakeupDate, existingReason, onClose, onSave }) => {
+  const [makeupDate, setMakeupDate] = React.useState(existingMakeupDate || "");
+  const [reason, setReason] = React.useState(existingReason || "강사 사정");
+  const isEdit = !!existingMakeupDate;
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-xl shadow-2xl w-full max-w-xs p-4 animate-in fade-in zoom-in-95 duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="font-bold text-center mb-1">🔄 보강 일정 {isEdit ? "수정" : "등록"}</h3>
+        <p className="text-xs text-center text-slate-500 mb-4">{student.name} — {date}</p>
+        <div className="flex flex-col gap-3">
+          <div>
+            <label className="block text-xs font-bold text-slate-500 mb-1">보강 날짜</label>
+            <input
+              type="date"
+              value={makeupDate}
+              onChange={(e) => setMakeupDate(e.target.value)}
+              min={date}
+              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-500 mb-1">사유</label>
+            <div className="flex gap-2">
+              {["강사 사정", "학생 사정", "기타"].map((r) => (
+                <button
+                  key={r}
+                  onClick={() => setReason(r)}
+                  className={`flex-1 py-1.5 text-xs rounded-lg border font-medium transition-colors ${
+                    reason === r
+                      ? "bg-blue-100 border-blue-400 text-blue-700"
+                      : "bg-slate-50 border-slate-200 text-slate-500 hover:bg-blue-50"
+                  }`}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={onClose}
+              className="flex-1 py-2 text-sm text-slate-500 hover:bg-slate-100 rounded-lg font-bold border"
+            >
+              취소
+            </button>
+            <button
+              onClick={() => {
+                if (!makeupDate) return;
+                onSave(makeupDate, reason);
+              }}
+              disabled={!makeupDate}
+              className="flex-1 py-2 text-sm bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 disabled:opacity-40"
+            >
+              보강 저장
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // [Helper: DateDetailModal]
 const DateDetailModal = ({ date, students, onClose, onStudentClick }) => (
   <div
@@ -7476,33 +7546,46 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
     ["일", "월", "화", "수", "목", "금", "토"][date.getDay()];
   const formatDate = (date) => toLocalDateStr(date);
 
-  // [기능 보존] 오늘 수업 대상자 필터링 (강사 필터링 로직 포함)
+  // [기능 보존] 오늘 수업 대상자 필터링 (강사 필터링 로직 포함, 보강 대상 포함)
   const todayStudents = useMemo(() => {
     const dayName = getDayOfWeek(selectedDate);
-    return students
+    const dateStr = toLocalDateStr(selectedDate);
+    const isTeacherOk = (s) =>
+      user.role === "admin"
+        ? selectedTeacher === "" || s.teacher === selectedTeacher
+        : s.teacher === user.name;
+
+    // 정규 수업 학생
+    const regular = students
       .filter((s) => {
-        // 1. 재원생 & 오늘 수업 여부
         const hasSchedule =
           s.status === "재원" &&
           (s.schedules ? !!s.schedules[dayName] : s.className === dayName);
-
-        // 2. 강사 필터링 (Admin은 선택, Teacher는 본인만)
-        const isTeacherMatch =
-          user.role === "admin"
-            ? selectedTeacher === "" || s.teacher === selectedTeacher
-            : s.teacher === user.name;
-
-        return hasSchedule && isTeacherMatch;
+        return hasSchedule && isTeacherOk(s);
       })
       .sort((a, b) =>
-        (a.schedules[dayName] || "00:00").localeCompare(
-          b.schedules[dayName] || "00:00"
+        (a.schedules?.[dayName] || "00:00").localeCompare(
+          b.schedules?.[dayName] || "00:00"
         )
       );
+
+    // 보강 수업 학생 (다른 날 reschedule → makeupDate = 오늘)
+    const makeup = students.filter((s) => {
+      if (!isTeacherOk(s) || s.status !== "재원") return false;
+      if (regular.find((r) => r.id === s.id)) return false; // 이미 포함된 경우 제외
+      return s.attendanceHistory?.some(
+        (h) => h.status === "reschedule" && h.makeupDate === dateStr
+      );
+    });
+
+    return [...regular, ...makeup.map((s) => ({ ...s, _isMakeup: true }))];
   }, [students, selectedDate, selectedTeacher, user]);
 
+  // 보강 모달 상태
+  const [rescheduleModal, setRescheduleModal] = useState(null); // { student }
+
   // DB 업데이트 및 횟수 재계산 로직
-  const saveAttendanceToDB = async (student, status, detail = "") => {
+  const saveAttendanceToDB = async (student, status, detail = "", makeupDate = "") => {
     const dateStr = formatDate(selectedDate);
     try {
       const studentRef = doc(
@@ -7520,6 +7603,18 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
       // 삭제 모드
       if (status === "delete") {
         if (existingIdx > -1) history.splice(existingIdx, 1);
+      } else if (status === "reschedule") {
+        // 보강 등록: makeupDate와 reason(=detail) 저장
+        const record = {
+          date: dateStr,
+          status: "reschedule",
+          makeupDate,
+          reason: detail,
+          teacher: student.teacher || "",
+          timestamp: new Date().toISOString(),
+        };
+        if (existingIdx > -1) history[existingIdx] = record;
+        else history.push(record);
       } else {
         // 추가/수정 모드 (기존 count 값 보존)
         const prevCount = existingIdx > -1 ? (history[existingIdx].count || 1) : 1;
@@ -7568,13 +7663,13 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
       let msg = "";
       if (status === "delete") msg = "기록이 삭제되었습니다.";
       else if (status === "present") msg = `${student.name}님 출석 처리됨`;
-      else if (status === "absent")
-        msg = `${student.name}님 결석(보강대상) 처리됨`;
-      else if (status === "canceled")
-        msg = `${student.name}님 당일취소(${detail}) 처리됨`;
+      else if (status === "absent") msg = `${student.name}님 결석(보강대상) 처리됨`;
+      else if (status === "canceled") msg = `${student.name}님 당일취소(${detail}) 처리됨`;
+      else if (status === "reschedule") msg = `${student.name}님 보강 등록 (${makeupDate})`;
 
       showToast(msg);
-      setModalConfig(null); // 모달 닫기
+      setModalConfig(null);
+      setRescheduleModal(null);
     } catch (e) {
       console.error(e);
       showToast("저장 실패", "error");
@@ -7639,6 +7734,8 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
       if (window.confirm("이 출석 기록을 삭제하시겠습니까?")) {
         saveAttendanceToDB(student, "delete");
       }
+    } else if (action === "reschedule") {
+      setRescheduleModal({ student });
     } else {
       // 결석(absent)이나 당일취소(canceled)는 모달 띄우기
       setModalConfig({ type: action, student });
@@ -7681,6 +7778,25 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
           }
         />
       )}
+
+      {/* 보강 모달 */}
+      {rescheduleModal && (() => {
+        const existingRecord = rescheduleModal.student.attendanceHistory?.find(
+          (h) => h.date === formatDate(selectedDate) && h.status === "reschedule"
+        );
+        return (
+          <RescheduleModal
+            student={rescheduleModal.student}
+            date={formatDate(selectedDate)}
+            existingMakeupDate={existingRecord?.makeupDate || ""}
+            existingReason={existingRecord?.reason || "강사 사정"}
+            onClose={() => setRescheduleModal(null)}
+            onSave={(makeupDate, reason) =>
+              saveAttendanceToDB(rescheduleModal.student, "reschedule", reason, makeupDate)
+            }
+          />
+        );
+      })()}
 
       {/* 2. 상단 컨트롤러 (날짜 + 강사필터) */}
       <div className="bg-white p-6 rounded-2xl shadow-sm border flex flex-col md:flex-row justify-between items-center gap-4">
@@ -7784,9 +7900,19 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
                     ? "border-rose-500 bg-rose-50/30"
                     : status === "absent"
                     ? "border-amber-500 bg-amber-50/30"
+                    : status === "reschedule"
+                    ? "border-blue-400 bg-blue-50/30"
+                    : s._isMakeup
+                    ? "border-sky-400 bg-sky-50/30"
                     : "border-slate-100 shadow-sm"
                 }`}
               >
+                {/* 보강 수업 배지 */}
+                {s._isMakeup && (
+                  <div className="flex items-center gap-1 mb-2">
+                    <span className="text-xs bg-sky-500 text-white px-2 py-0.5 rounded-full font-bold">🔄 보강 수업</span>
+                  </div>
+                )}
                 <div className="flex justify-between items-start mb-4">
                   <div>
                     <div className="flex items-center gap-2">
@@ -7803,8 +7929,12 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
                     <p className="text-xs text-slate-500 mt-1 font-medium">
                       {s.subject} · {s.teacher} 선생님
                     </p>
+                    {/* 보강 예정일 표시 */}
+                    {status === "reschedule" && record?.makeupDate && (
+                      <p className="text-xs text-blue-600 font-bold mt-0.5">🔄 보강 예정: {record.makeupDate} ({record.reason})</p>
+                    )}
                   </div>
-                  {status && (
+                  {status && status !== "reschedule" && (
                     <div className="text-right">
                       <span
                         className={`text-[10px] font-bold px-2 py-1 rounded-lg block w-fit ml-auto mb-1 ${
@@ -7828,10 +7958,13 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
                       )}
                     </div>
                   )}
+                  {status === "reschedule" && (
+                    <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-blue-500 text-white">보강등록</span>
+                  )}
                 </div>
 
                 {/* 액션 버튼 그룹 */}
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-5 gap-1.5">
                   <button
                     onClick={() => onActionClick(s, "present")}
                     className={`col-span-2 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-1 transition-all ${
@@ -7864,6 +7997,20 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
                       당일
                       <br />
                       취소
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => onActionClick(s, "reschedule")}
+                    className={`col-span-1 py-2.5 rounded-xl font-bold text-xs flex flex-col items-center justify-center gap-0.5 transition-all ${
+                      status === "reschedule"
+                        ? "bg-blue-500 text-white shadow-lg shadow-blue-200"
+                        : "bg-slate-50 text-slate-400 hover:bg-blue-50 hover:text-blue-600 border border-slate-100"
+                    }`}
+                  >
+                    <span className="leading-tight">
+                      🔄
+                      <br />
+                      보강
                     </span>
                   </button>
                 </div>
