@@ -37,17 +37,28 @@ const sendAligoSms = async (receiver, msg) => {
 };
 
 const sendKyuljesaengnim = async (student) => {
+  const sessions = getEffectiveSessions(student);
+  // 이름: [J&C]과목-이름 형식
+  const formattedName = `[J&C]${student.subject || ""}-${student.name}`;
+  // 과정명: 1:1 개인레슨 N회 형식
+  const formattedSubject = `1:1 개인레슨 ${sessions}회`;
+  // 안내 메시지: 최종 결제일 포함
+  const lastPayStr = student.lastPaymentDate
+    ? `최종 결제일: ${student.lastPaymentDate}`
+    : "";
+  const note = `${student.name} 학생의 ${student.subject || ""} 1:1 개인레슨 ${sessions}회분 ${Number(student.tuitionFee || 0).toLocaleString()}원 결제 안내입니다.${lastPayStr ? `\n${lastPayStr}` : ""}`;
   const res = await fetch(PAYMINT_SEND_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       studentId: student.id,
-      studentName: student.name,
+      studentName: formattedName,
       phone: student.phone || "",
       price: String(student.tuitionFee || 0),
-      subject: student.subject || "",
-      totalSessions: student.totalSessions || 4,
+      subject: formattedSubject,
+      totalSessions: sessions,
       lastPaymentDate: student.lastPaymentDate || "",
+      note,
     }),
   });
   const data = await res.json();
@@ -528,7 +539,7 @@ export const PaymentView = ({
   };
 
   // ── 오늘 회차 완료 학생 (수납현황 탭) ────────────────────────
-  // 오늘 출석 기록이 있고, 해당 출석으로 결제 주기(4회/8회)가 꽉 찬 학생
+  // getStudentProgress 기반: 결제 이력 반영 → 결제 후 즉시 목록에서 제거됨
   const todayCycleComplete = useMemo(() => {
     const todayStr = toLocalDateStr();
     return students.filter((s) => {
@@ -538,18 +549,8 @@ export const PaymentView = ({
         (h) => h.date === todayStr && (h.status === "present" || h.status === "canceled")
       );
       if (!todayRecord) return false;
-      const total = getEffectiveSessions(s);
-      const sessions = history
-        .filter((h) => h.status === "present" || h.status === "canceled")
-        .sort((a, b) => a.date.localeCompare(b.date));
-      let cumulative = 0;
-      for (const h of sessions) {
-        const cnt = h.status === "canceled" ? 1 : (h.count || 1);
-        cumulative += cnt;
-        if (h.date === todayStr) return cumulative % total === 0;
-        if (h.date > todayStr) break;
-      }
-      return false;
+      const { isCompleted, isOverdue } = getStudentProgress(s);
+      return isCompleted || isOverdue;
     });
   }, [students]);
 
@@ -671,8 +672,10 @@ export const PaymentView = ({
     setShowMsgPreview(true);
   };
 
+  const [quickPaySaving, setQuickPaySaving] = useState(false);
   const handleQuickPaySave = async () => {
-    if (!quickPayStudent || !quickPayDate) return;
+    if (!quickPayStudent || !quickPayDate || quickPaySaving) return;
+    setQuickPaySaving(true);
     try {
       await onSavePayment(
         quickPayStudent.id,
@@ -685,6 +688,8 @@ export const PaymentView = ({
       setQuickPayDate("");
     } catch (e) {
       showToast("저장 오류: " + e.message, "error");
+    } finally {
+      setQuickPaySaving(false);
     }
   };
 
@@ -822,8 +827,10 @@ export const PaymentView = ({
             <div className="flex gap-2 justify-end mt-4">
               <button onClick={() => { setQuickPayStudent(null); setQuickPayDate(""); }}
                 className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg font-bold">취소</button>
-              <button onClick={handleQuickPaySave} disabled={!quickPayDate}
-                className="px-6 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 shadow-md disabled:opacity-40">저장</button>
+              <button onClick={handleQuickPaySave} disabled={!quickPayDate || quickPaySaving}
+                className="px-6 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 shadow-md disabled:opacity-40">
+                {quickPaySaving ? "저장 중..." : "저장"}
+              </button>
             </div>
           </div>
         </div>
@@ -952,10 +959,15 @@ export const PaymentView = ({
             {/* 오늘 회차 완료 → 결제 안내 대상 */}
             <div className="border rounded-xl overflow-hidden">
               <div className="bg-amber-50 px-4 py-2.5 flex items-center justify-between border-b">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <Bell size={15} className="text-amber-600" />
                   <span className="font-bold text-amber-700 text-sm">오늘 회차 완료 — 결제 안내 대상</span>
                   <span className="bg-amber-200 text-amber-800 text-xs px-1.5 py-0.5 rounded-full">{todayCycleComplete.length}명</span>
+                  {todayCycleComplete.length > 0 && (
+                    <span className="text-amber-900 font-bold text-sm">
+                      총 {todayCycleComplete.reduce((sum, s) => sum + (Number(s.tuitionFee) || 0), 0).toLocaleString()}원
+                    </span>
+                  )}
                 </div>
                 {todayCycleComplete.length > 0 && (
                   <button

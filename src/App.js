@@ -121,17 +121,28 @@ const PAYMINT_SEND_URL = process.env.REACT_APP_PAYMINT_API_URL || "https://jncmu
 
 // student: { id, name, phone, tuitionFee, subject, totalSessions, lastPaymentDate }
 const sendKyuljesaengnim = async (student) => {
+  const sessions = getEffectiveSessions(student);
+  // 이름: [J&C]과목-이름 형식
+  const formattedName = `[J&C]${student.subject || ""}-${student.name}`;
+  // 과정명: 1:1 개인레슨 N회 형식
+  const formattedSubject = `1:1 개인레슨 ${sessions}회`;
+  // 안내 메시지: 최종 결제일 포함
+  const lastPayStr = student.lastPaymentDate
+    ? `최종 결제일: ${student.lastPaymentDate}`
+    : "";
+  const note = `${student.name} 학생의 ${student.subject || ""} 1:1 개인레슨 ${sessions}회분 ${Number(student.tuitionFee || 0).toLocaleString()}원 결제 안내입니다.${lastPayStr ? `\n${lastPayStr}` : ""}`;
   const res = await fetch(PAYMINT_SEND_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       studentId: student.id,
-      studentName: student.name,
+      studentName: formattedName,
       phone: student.phone || "",
       price: String(student.tuitionFee || 0),
-      subject: student.subject || "",
-      totalSessions: student.totalSessions || 4,
+      subject: formattedSubject,
+      totalSessions: sessions,
       lastPaymentDate: student.lastPaymentDate || "",
+      note,
     }),
   });
   const data = await res.json();
@@ -11521,19 +11532,15 @@ export default function App() {
 
   // 4. [정의] 학생 삭제
   const handleDeleteStudent = async (studentId) => {
-    if (window.confirm("정말 삭제하시겠습니까? (복구 불가)")) {
-      try {
-        const safeAppId = APP_ID || "jnc-music-v2";
-
-        await deleteDoc(
-          doc(db, "artifacts", safeAppId, "public", "data", "students", studentId)
-        );
-        // onSnapshot이 자동으로 상태를 동기화합니다
-        showToast("삭제되었습니다.", "success");
-      } catch (e) {
-        console.error(e);
-        showToast("삭제 실패: " + e.message, "error");
-      }
+    try {
+      const safeAppId = APP_ID || "jnc-music-v2";
+      await deleteDoc(
+        doc(db, "artifacts", safeAppId, "public", "data", "students", studentId)
+      );
+      showToast("삭제되었습니다.", "success");
+    } catch (e) {
+      console.error(e);
+      showToast("삭제 실패: " + e.message, "error");
     }
   };
 
