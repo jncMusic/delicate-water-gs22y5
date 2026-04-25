@@ -1998,6 +1998,49 @@ const DashboardView = ({
     return { weeklyPaymentTotal, weeklyPaymentCount, weeklyNewStudents, weeklyConsultations, weekLabel };
   }, [students, consultations, user]);
 
+  // 오늘 회차 완료 학생 (관리자 — 결제 안내 자동화)
+  const todayCycleComplete = useMemo(() => {
+    if (user.role !== "admin") return [];
+    const todayStr = toLocalDateStr();
+    return students.filter((s) => {
+      if (s.status !== "재원") return false;
+      const history = s.attendanceHistory || [];
+      const todayRecord = history.find(
+        (h) => h.date === todayStr && (h.status === "present" || h.status === "canceled")
+      );
+      if (!todayRecord) return false;
+      const total = getEffectiveSessions(s);
+      const sessions = history
+        .filter((h) => h.status === "present" || h.status === "canceled")
+        .sort((a, b) => a.date.localeCompare(b.date));
+      let cumulative = 0;
+      for (const h of sessions) {
+        const cnt = h.status === "canceled" ? 1 : (h.count || 1);
+        cumulative += cnt;
+        if (h.date === todayStr) return cumulative % total === 0;
+        if (h.date > todayStr) break;
+      }
+      return false;
+    });
+  }, [students, user]);
+
+  // 오늘의 수업 목록 (강사 전용)
+  const todaySchedule = useMemo(() => {
+    if (user.role !== "teacher") return { regular: [], makeup: [] };
+    const todayStr = toLocalDateStr();
+    const todayDate = new Date();
+    const dayName = ["일", "월", "화", "수", "목", "금", "토"][todayDate.getDay()];
+    const regular = myStudents.filter((s) =>
+      s.schedules ? !!s.schedules[dayName] : s.className === dayName
+    );
+    const makeup = students.filter((s) =>
+      s.teacher === user.name &&
+      s.status === "재원" &&
+      s.attendanceHistory?.some((h) => h.status === "reschedule" && h.makeupDate === todayStr)
+    );
+    return { regular, makeup };
+  }, [myStudents, students, user]);
+
   // 5. 원생 추이 (관리자 전용, 최근 12개월)
   const trendData = useMemo(() => {
     if (user.role !== "admin") return [];
@@ -2166,6 +2209,75 @@ const DashboardView = ({
               <p className="text-xs text-slate-400 mt-1">이번 주 상담</p>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* 관리자: 오늘 결제 안내 필요 학생 카드 */}
+      {user.role === "admin" && todayCycleComplete.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-bold text-amber-800 flex items-center gap-2 text-sm">
+              <Bell size={16} className="text-amber-600" />
+              오늘 회차 완료 — 결제 안내 필요
+              <span className="bg-amber-200 text-amber-800 text-xs px-1.5 py-0.5 rounded-full font-bold">
+                {todayCycleComplete.length}명
+              </span>
+            </h3>
+            <button
+              onClick={() => onNavigate("payments")}
+              className="text-xs font-bold text-amber-700 hover:bg-amber-100 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 border border-amber-300"
+            >
+              수납센터 이동 →
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {todayCycleComplete.map((s) => (
+              <div key={s.id} className="flex items-center gap-2 bg-white border border-amber-200 rounded-xl px-3 py-2 text-sm">
+                <span className="font-bold text-slate-800">{s.name}</span>
+                <span className="text-xs text-slate-400">{s.subject}</span>
+                <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-bold">
+                  {getEffectiveSessions(s)}회차 완료
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 강사: 오늘의 수업 목록 */}
+      {user.role === "teacher" && (todaySchedule.regular.length > 0 || todaySchedule.makeup.length > 0) && (
+        <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
+          <h3 className="font-bold text-slate-700 flex items-center gap-2 text-sm mb-3">
+            <CalendarIcon size={16} className="text-indigo-500" />
+            오늘의 수업 ({todaySchedule.regular.length + todaySchedule.makeup.length}명)
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            {todaySchedule.regular.map((s) => {
+              const today = toLocalDateStr();
+              const record = s.attendanceHistory?.find((h) => h.date === today);
+              const statusLabel = record?.status === "present" ? "✓ 출석" : record?.status === "absent" ? "✗ 결석" : record?.status === "canceled" ? "취소" : null;
+              return (
+                <div key={s.id} className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm border ${record?.status === "present" ? "bg-emerald-50 border-emerald-200" : record?.status === "absent" ? "bg-rose-50 border-rose-200 opacity-70" : "bg-slate-50 border-slate-200"}`}>
+                  <span className="font-bold text-slate-800">{s.name}</span>
+                  <span className="text-xs text-slate-400">{s.subject}</span>
+                  {statusLabel && <span className={`text-xs font-bold ${record?.status === "present" ? "text-emerald-600" : record?.status === "absent" ? "text-rose-500" : "text-slate-400"}`}>{statusLabel}</span>}
+                </div>
+              );
+            })}
+            {todaySchedule.makeup.map((s) => (
+              <div key={`makeup-${s.id}`} className="flex items-center gap-2 bg-sky-50 border border-sky-200 rounded-xl px-3 py-2 text-sm">
+                <span className="font-bold text-slate-800">{s.name}</span>
+                <span className="text-xs text-slate-400">{s.subject}</span>
+                <span className="text-xs bg-sky-500 text-white px-1.5 py-0.5 rounded-full font-bold">보강</span>
+              </div>
+            ))}
+          </div>
+          <button
+            onClick={() => onNavigate("attendance")}
+            className="mt-3 text-xs text-indigo-600 hover:underline font-bold"
+          >
+            출석부 바로가기 →
+          </button>
         </div>
       )}
 
