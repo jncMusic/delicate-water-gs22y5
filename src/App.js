@@ -3918,7 +3918,8 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
     status,
     reason = "",
     memo = "",
-    makeupDate = ""
+    makeupDate = "",
+    makeupTime = ""
   ) => {
     if (!auth.currentUser) return;
     try {
@@ -3947,6 +3948,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
           date,
           status: "reschedule",
           makeupDate,
+          makeupTime,
           reason,
           teacher: student.teacher || "",
           timestamp: new Date().toISOString(),
@@ -3997,7 +3999,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
     }
   };
 
-  const handleStatusSelect = (status, memo = "", makeupDate = "") => {
+  const handleStatusSelect = (status, memo = "", makeupDate = "", makeupTime = "") => {
     if (status === "reschedule") {
       handleCalendarAttendance(
         attendanceMenu.student,
@@ -4005,7 +4007,8 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
         "reschedule",
         memo,   // reason 전달
         "",
-        makeupDate
+        makeupDate,
+        makeupTime
       );
       setAttendanceMenu(null);
     } else if (status === "present" || status === "delete" || status === "double") {
@@ -4222,7 +4225,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                           {isDoubleLesson && <div className="text-[9px] text-indigo-600 font-medium">✓ 연강 출석</div>}
                           {isAbsent && <div className="text-[9px] text-rose-500">✗ 결석</div>}
                           {isCanceled && <div className="text-[9px] text-slate-400">취소</div>}
-                          {isReschedule && <div className="text-[9px] text-blue-500">🔄 보강 예정: {record.makeupDate}</div>}
+                          {isReschedule && <div className="text-[9px] text-blue-500">🔄 보강 예정: {record.makeupDate?.replace(/-/g,'/')}{record.makeupTime ? ' ' + record.makeupTime : ''}</div>}
                           {isMakeup && <div className="text-[9px] text-sky-600 font-medium">🔄 보강 수업</div>}
                         </div>
                       );
@@ -5972,6 +5975,9 @@ const AttendanceActionModal = ({ student, date, onClose, onSelectStatus, current
   const [makeupDate, setMakeupDate] = React.useState(
     currentRecord?.makeupDate || ""
   );
+  const [makeupTime, setMakeupTime] = React.useState(
+    currentRecord?.makeupTime || ""
+  );
   const [rescheduleReason, setRescheduleReason] = React.useState(
     currentRecord?.reason || "강사 사정"
   );
@@ -5998,6 +6004,15 @@ const AttendanceActionModal = ({ student, date, onClose, onSelectStatus, current
                 type="date"
                 value={makeupDate}
                 onChange={(e) => setMakeupDate(e.target.value)}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1">보강 시간</label>
+              <input
+                type="time"
+                value={makeupTime}
+                onChange={(e) => setMakeupTime(e.target.value)}
                 className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
               />
             </div>
@@ -6029,7 +6044,7 @@ const AttendanceActionModal = ({ student, date, onClose, onSelectStatus, current
               <button
                 onClick={() => {
                   if (!makeupDate) return;
-                  onSelectStatus("reschedule", rescheduleReason, makeupDate);
+                  onSelectStatus("reschedule", rescheduleReason, makeupDate, makeupTime);
                 }}
                 disabled={!makeupDate}
                 className="flex-1 py-2 text-sm bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 disabled:opacity-40"
@@ -6103,7 +6118,7 @@ const AttendanceActionModal = ({ student, date, onClose, onSelectStatus, current
                 : "bg-blue-50 text-blue-600 hover:bg-blue-100"
             }`}
           >
-            🔄 {isReschedule ? `보강 예정 (${currentRecord.makeupDate}) — 수정` : "보강 일정 등록"}
+            🔄 {isReschedule ? `보강 예정 (${currentRecord.makeupDate?.replace(/-/g, '/')}${currentRecord.makeupTime ? ' ' + currentRecord.makeupTime : ''}) — 수정` : "보강 일정 등록"}
           </button>
           {/* 메모 입력 */}
           <div className="border-t pt-2 mt-1">
@@ -6144,8 +6159,9 @@ const AttendanceActionModal = ({ student, date, onClose, onSelectStatus, current
 };
 
 // [Helper: RescheduleModal] - 출석부(AttendanceView) 보강 일정 등록용
-const RescheduleModal = ({ student, date, existingMakeupDate, existingReason, onClose, onSave }) => {
+const RescheduleModal = ({ student, date, existingMakeupDate, existingMakeupTime, existingReason, onClose, onSave }) => {
   const [makeupDate, setMakeupDate] = React.useState(existingMakeupDate || "");
+  const [makeupTime, setMakeupTime] = React.useState(existingMakeupTime || "");
   const [reason, setReason] = React.useState(existingReason || "강사 사정");
   const isEdit = !!existingMakeupDate;
 
@@ -6161,14 +6177,25 @@ const RescheduleModal = ({ student, date, existingMakeupDate, existingReason, on
         <h3 className="font-bold text-center mb-1">🔄 보강 일정 {isEdit ? "수정" : "등록"}</h3>
         <p className="text-xs text-center text-slate-500 mb-4">{student.name} — {date}</p>
         <div className="flex flex-col gap-3">
-          <div>
-            <label className="block text-xs font-bold text-slate-500 mb-1">보강 날짜</label>
-            <input
-              type="date"
-              value={makeupDate}
-              onChange={(e) => setMakeupDate(e.target.value)}
-              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
-            />
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <label className="block text-xs font-bold text-slate-500 mb-1">보강 날짜</label>
+              <input
+                type="date"
+                value={makeupDate}
+                onChange={(e) => setMakeupDate(e.target.value)}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+              />
+            </div>
+            <div className="w-28">
+              <label className="block text-xs font-bold text-slate-500 mb-1">시간</label>
+              <input
+                type="time"
+                value={makeupTime}
+                onChange={(e) => setMakeupTime(e.target.value)}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+              />
+            </div>
           </div>
           <div>
             <label className="block text-xs font-bold text-slate-500 mb-1">사유</label>
@@ -6198,7 +6225,7 @@ const RescheduleModal = ({ student, date, existingMakeupDate, existingReason, on
             <button
               onClick={() => {
                 if (!makeupDate) return;
-                onSave(makeupDate, reason);
+                onSave(makeupDate, reason, makeupTime);
               }}
               disabled={!makeupDate}
               className="flex-1 py-2 text-sm bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 disabled:opacity-40"
@@ -7614,7 +7641,7 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
   const [rescheduleModal, setRescheduleModal] = useState(null); // { student }
 
   // DB 업데이트 및 횟수 재계산 로직
-  const saveAttendanceToDB = async (student, status, detail = "", makeupDate = "") => {
+  const saveAttendanceToDB = async (student, status, detail = "", makeupDate = "", makeupTime = "") => {
     const dateStr = formatDate(selectedDate);
     try {
       const studentRef = doc(
@@ -7633,11 +7660,12 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
       if (status === "delete") {
         if (existingIdx > -1) history.splice(existingIdx, 1);
       } else if (status === "reschedule") {
-        // 보강 등록: makeupDate와 reason(=detail) 저장
+        // 보강 등록: makeupDate, makeupTime, reason(=detail) 저장
         const record = {
           date: dateStr,
           status: "reschedule",
           makeupDate,
+          makeupTime,
           reason: detail,
           teacher: student.teacher || "",
           timestamp: new Date().toISOString(),
@@ -7818,10 +7846,11 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
             student={rescheduleModal.student}
             date={formatDate(selectedDate)}
             existingMakeupDate={existingRecord?.makeupDate || ""}
+            existingMakeupTime={existingRecord?.makeupTime || ""}
             existingReason={existingRecord?.reason || "강사 사정"}
             onClose={() => setRescheduleModal(null)}
-            onSave={(makeupDate, reason) =>
-              saveAttendanceToDB(rescheduleModal.student, "reschedule", reason, makeupDate)
+            onSave={(makeupDate, reason, makeupTime) =>
+              saveAttendanceToDB(rescheduleModal.student, "reschedule", reason, makeupDate, makeupTime)
             }
           />
         );
@@ -7960,7 +7989,7 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
                     </p>
                     {/* 보강 예정일 표시 */}
                     {status === "reschedule" && record?.makeupDate && (
-                      <p className="text-xs text-blue-600 font-bold mt-0.5">🔄 보강 예정: {record.makeupDate} ({record.reason})</p>
+                      <p className="text-xs text-blue-600 font-bold mt-0.5">🔄 보강 예정: {record.makeupDate?.replace(/-/g,'/')}{record.makeupTime ? ' ' + record.makeupTime : ''} ({record.reason})</p>
                     )}
                   </div>
                   {status && status !== "reschedule" && (
