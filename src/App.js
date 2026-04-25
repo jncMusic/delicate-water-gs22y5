@@ -91,6 +91,7 @@ import {
   ChevronDown,
   Tablet, // 🔥 키오스크 단말기 아이콘
   Send,
+  Bell,
 } from "lucide-react";
 import html2canvas from "html2canvas"; // 🔥 이미지 저장 라이브러리 추가
 
