@@ -7957,6 +7957,12 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
               (h) => h.date === formatDate(selectedDate)
             );
             const status = record?.status;
+            // 보강 수업인 경우: makeupDate가 오늘인 reschedule 원본 기록에서 시간 추출
+            const makeupRecord = s._isMakeup
+              ? (s.attendanceHistory || []).find(
+                  (h) => h.status === "reschedule" && h.makeupDate === formatDate(selectedDate)
+                )
+              : null;
             // 상세 정보 (결석 사유 or 취소 유형)
             const detailInfo = record?.reason || record?.subType || "";
 
@@ -7981,6 +7987,9 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
                 {s._isMakeup && (
                   <div className="flex items-center gap-1 mb-2">
                     <span className="text-xs bg-sky-500 text-white px-2 py-0.5 rounded-full font-bold">🔄 보강 수업</span>
+                    {makeupRecord?.makeupTime && (
+                      <span className="text-xs bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full font-bold">{makeupRecord.makeupTime}</span>
+                    )}
                   </div>
                 )}
                 <div className="flex justify-between items-start mb-4">
