@@ -1063,10 +1063,11 @@ export const PaymentView = ({
             - 오늘 결제 완료 목록
         ============================================================ */}
         {activeTab === "today" && (
-          <div className="flex-1 overflow-auto p-5 flex flex-col gap-5 min-h-0">
+          <div className="flex-1 min-h-0 overflow-auto">
+          <div className="p-5 flex flex-col gap-5">
             {/* 오늘 회차 완료 → 결제 안내 대상 */}
-            <div className="border rounded-xl overflow-hidden">
-              <div className="bg-amber-50 px-4 py-2.5 flex items-center justify-between border-b">
+            <div className="border rounded-xl overflow-hidden flex flex-col">
+              <div className="bg-amber-50 px-4 py-2.5 flex items-center justify-between border-b shrink-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <Bell size={15} className="text-amber-600" />
                   <span className="font-bold text-amber-700 text-sm">오늘 회차 완료 — 결제 안내 대상</span>
@@ -1095,8 +1096,9 @@ export const PaymentView = ({
                   오늘 회차가 완료된 학생이 없습니다.
                 </div>
               ) : (
+                <div className="overflow-auto max-h-72">
                 <table className="w-full text-sm">
-                  <thead className="bg-slate-50 border-b text-xs text-slate-400 uppercase">
+                  <thead className="sticky top-0 bg-slate-50 border-b text-xs text-slate-400 uppercase">
                     <tr>
                       <th className="py-2.5 px-4 text-left">이름 / 과목</th>
                       <th className="py-2.5 px-4 text-left">강사</th>
@@ -1167,12 +1169,13 @@ export const PaymentView = ({
                     })}
                   </tbody>
                 </table>
+                </div>
               )}
             </div>
 
             {/* 오늘 결제 완료 목록 */}
-            <div className="border rounded-xl overflow-hidden">
-              <div className="bg-emerald-50 px-4 py-2.5 flex items-center gap-2 border-b">
+            <div className="border rounded-xl overflow-hidden flex flex-col">
+              <div className="bg-emerald-50 px-4 py-2.5 flex items-center gap-2 border-b shrink-0">
                 <CheckCircle size={15} className="text-emerald-600" />
                 <span className="font-bold text-emerald-700 text-sm">오늘 결제 완료</span>
                 <span className="bg-emerald-200 text-emerald-800 text-xs px-1.5 py-0.5 rounded-full">{todayPaidList.length}건</span>
@@ -1180,8 +1183,9 @@ export const PaymentView = ({
               {todayPaidList.length === 0 ? (
                 <div className="py-8 text-center text-slate-400 text-sm">오늘 결제 완료된 내역이 없습니다.</div>
               ) : (
+                <div className="overflow-auto max-h-60">
                 <table className="w-full text-sm">
-                  <thead className="bg-slate-50 border-b text-xs text-slate-400 uppercase">
+                  <thead className="sticky top-0 bg-slate-50 border-b text-xs text-slate-400 uppercase">
                     <tr>
                       <th className="py-2.5 px-4 text-left">이름 / 과목</th>
                       <th className="py-2.5 px-4 text-left">강사</th>
@@ -1214,8 +1218,10 @@ export const PaymentView = ({
                     ))}
                   </tbody>
                 </table>
+                </div>
               )}
             </div>
+          </div>
           </div>
         )}
 
