@@ -11070,7 +11070,11 @@ export default function App() {
   const [showMemoPopup, setShowMemoPopup] = useState(false);
   const [today, setToday] = useState(new Date());
   const [targetConsultation, setTargetConsultation] = useState(null);
-  const [payDetailStudent, setPayDetailStudent] = useState(null);
+  const [payDetailStudentId, setPayDetailStudentId] = useState(null);
+  // students onSnapshot 업데이트 시 모달 데이터도 실시간 반영
+  const payDetailStudent = payDetailStudentId
+    ? students.find((s) => s.id === payDetailStudentId) ?? null
+    : null;
 
   useEffect(() => {
     setToday(new Date());
@@ -11964,12 +11968,12 @@ export default function App() {
                 paymentUrl={paymentUrl}
                 user={currentUser}
                 generatePaymentMessage={generatePaymentMessage}
-                onOpenStudentDetail={(student) => setPayDetailStudent(student)}
+                onOpenStudentDetail={(student) => setPayDetailStudentId(student.id)}
               />
               {payDetailStudent && (
                 <PaymentDetailModal
                   student={payDetailStudent}
-                  onClose={() => setPayDetailStudent(null)}
+                  onClose={() => setPayDetailStudentId(null)}
                   onSavePayment={handleSavePayment}
                   onUpdatePaymentHistory={handleUpdatePaymentHistory}
                   onUpdateStudent={handleUpdateStudent}
