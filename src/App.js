@@ -6,6 +6,25 @@ import React, {
   useRef,
 } from "react";
 import { PaymentView as PaymentViewNew, BulkMessageModal as BulkMessageModalNew } from "./PaymentView";
+
+// 에러 바운더리 — 렌더 에러를 잡아 화면에 표시
+export class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: 24, fontFamily: "monospace", background: "#fff0f0", minHeight: "100vh" }}>
+          <h2 style={{ color: "red" }}>⚠️ 렌더 에러 (개발용)</h2>
+          <pre style={{ whiteSpace: "pre-wrap", fontSize: 13 }}>{String(this.state.error)}</pre>
+          <pre style={{ whiteSpace: "pre-wrap", fontSize: 12, color: "#666" }}>{this.state.error?.stack}</pre>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 import { initializeApp } from "firebase/app";
 import { getAuth, signInAnonymously } from "firebase/auth";
 import {
