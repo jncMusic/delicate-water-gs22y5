@@ -11618,8 +11618,8 @@ export default function App() {
   // ▲▲▲▲▲ [여기까지] return ( 바로 위에 있어야 합니다 ▲▲▲▲▲
   return (
     <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
-      {/* 키오스크 모드: 전체화면 오버레이 */}
-      {activeTab === "kiosk" && (
+      {/* 키오스크 모드: 전체화면 오버레이 (관리자 전용) */}
+      {activeTab === "kiosk" && currentUser?.role === "admin" && (
         <KioskView
           students={students}
           onExitKiosk={() => setActiveTab("dashboard")}
@@ -11753,6 +11753,7 @@ export default function App() {
               setIsSidebarOpen(false);
             }}
           />
+          {currentUser.role === "admin" && (
           <SidebarItem
             icon={Tablet}
             label="출석 단말기"
@@ -11762,6 +11763,7 @@ export default function App() {
               setIsSidebarOpen(false);
             }}
           />
+          )}
           <SidebarItem
             icon={BookOpen}
             label="수업 일지"
@@ -11923,7 +11925,7 @@ export default function App() {
             />
           )}
           {activeTab === "timetable" && (
-            <TeacherTimetableView students={students} teachers={teachers} />
+            <TeacherTimetableView students={students} teachers={teachers} user={currentUser} />
           )}
           {activeTab === "subject_timetable" && (
             <SubjectTimetableView
