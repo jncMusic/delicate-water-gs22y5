@@ -980,6 +980,7 @@ export const PaymentView = ({
                       <th className="py-2.5 px-4 text-left">강사</th>
                       <th className="py-2.5 px-4 text-center">완료 회차</th>
                       <th className="py-2.5 px-4 text-right">원비</th>
+                      <th className="py-2.5 px-4 text-left">최종결제일</th>
                       <th className="py-2.5 px-4 text-center">안내 발송</th>
                       <th className="py-2.5 px-4 text-center">결제 완료</th>
                     </tr>
@@ -1002,6 +1003,11 @@ export const PaymentView = ({
                           </td>
                           <td className="py-3 px-4 text-right font-bold text-indigo-600">
                             {Number(s.tuitionFee || 0).toLocaleString()}원
+                          </td>
+                          <td className="py-3 px-4 text-xs text-slate-500">
+                            {s.lastPaymentDate
+                              ? `${parseInt(s.lastPaymentDate.slice(5, 7))}월 ${parseInt(s.lastPaymentDate.slice(8, 10))}일`
+                              : <span className="text-slate-300">없음</span>}
                           </td>
                           <td className="py-3 px-4 text-center">
                             <div className="flex items-center justify-center gap-1">
@@ -1170,6 +1176,7 @@ export const PaymentView = ({
                     <th className="py-3 px-4 text-left">강사</th>
                     <th className="py-3 px-4 text-right">원비</th>
                     <th className="py-3 px-4 text-left">상태</th>
+                    <th className="py-3 px-4 text-left">최종결제일</th>
                     <th className="py-3 px-4 text-left">마지막 안내</th>
                     <th className="py-3 px-4 text-center">액션</th>
                   </tr>
@@ -1204,6 +1211,11 @@ export const PaymentView = ({
                         </td>
                         <td className="py-3 px-4">
                           <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColor}`}>{displayStatus}</span>
+                        </td>
+                        <td className="py-3 px-4 text-xs text-slate-500">
+                          {s.lastPaymentDate
+                            ? `${parseInt(s.lastPaymentDate.slice(5,7))}/${parseInt(s.lastPaymentDate.slice(8,10))}`
+                            : <span className="text-slate-300">-</span>}
                         </td>
                         <td className="py-3 px-4 text-xs">
                           {notifSt === "done" ? (
@@ -1251,7 +1263,7 @@ export const PaymentView = ({
                   })}
                   {sendList.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="py-12 text-center text-slate-400">
+                      <td colSpan={8} className="py-12 text-center text-slate-400">
                         결제 안내가 필요한 학생이 없습니다.
                       </td>
                     </tr>
