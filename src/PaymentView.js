@@ -1636,7 +1636,8 @@ export const PaymentView = ({
             - 일간/주간/월간 기간별 수납 합계 + 건수 + 결제방법 분류
         ============================================================ */}
         {activeTab === "history" && (
-          <div className="flex-1 overflow-auto p-5 flex flex-col gap-4 min-h-0">
+          <div className="flex-1 overflow-auto min-h-0">
+          <div className="p-5 flex flex-col gap-4">
             {/* 기간 선택 + 전체 총액 */}
             <div className="flex items-center justify-between flex-wrap gap-3">
               <div className="flex rounded-lg overflow-hidden border border-slate-200 text-sm">
@@ -1757,11 +1758,24 @@ export const PaymentView = ({
                         )}
                       </summary>
                       <table className="w-full text-sm border-t">
+                        <thead className="bg-slate-50 text-xs text-slate-400 uppercase">
+                          <tr>
+                            <th className="py-2 px-6 text-left">이름</th>
+                            <th className="py-2 px-4 text-left">발송일</th>
+                            <th className="py-2 px-4 text-left">채널</th>
+                            <th className="py-2 px-4 text-left">발송자</th>
+                            <th className="py-2 px-4 text-left">결제확인</th>
+                          </tr>
+                        </thead>
                         <tbody className="divide-y divide-slate-100 bg-white">
                           {group.items
                             .sort((a, b) => b.sentAt.localeCompare(a.sentAt))
                             .map((log, i) => {
                               const isKyulje = (log.channels || []).includes("결제선생");
+                              const student = students.find((s) => s.id === log.studentId);
+                              const paidAfterSend = student
+                                ? (student.paymentHistory || []).find((p) => p.date >= log.sentAt)
+                                : null;
                               return (
                                 <tr key={`${log.studentId}-${log.sentAt}-${i}`} className="hover:bg-slate-50">
                                   <td className="py-2 px-6 font-medium">{log.studentName || "-"}</td>
@@ -1772,9 +1786,15 @@ export const PaymentView = ({
                                     </span>
                                   </td>
                                   <td className="py-2 px-4 text-slate-400 text-xs">{log.sentBy || "-"}</td>
-                                  {log.shortURL && (
-                                    <td className="py-2 px-4 text-xs text-blue-500 truncate max-w-[160px]">{log.shortURL}</td>
-                                  )}
+                                  <td className="py-2 px-4">
+                                    {paidAfterSend ? (
+                                      <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">
+                                        ✅ {paidAfterSend.date} {Number(paidAfterSend.amount || 0).toLocaleString()}원
+                                      </span>
+                                    ) : (
+                                      <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-600 font-medium">⏳ 미확인</span>
+                                    )}
+                                  </td>
                                 </tr>
                               );
                             })}
@@ -1785,6 +1805,7 @@ export const PaymentView = ({
                 </div>
               )}
             </div>
+          </div>
           </div>
         )}
       </div>
