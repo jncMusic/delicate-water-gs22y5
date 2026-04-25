@@ -5999,22 +5999,29 @@ const AttendanceActionModal = ({ student, date, onClose, onSelectStatus, current
           <p className="text-xs text-center text-slate-500 mb-4">{student.name} — {date}</p>
           <div className="flex flex-col gap-3">
             <div>
-              <label className="block text-xs font-bold text-slate-500 mb-1">보강 날짜</label>
-              <input
-                type="date"
-                value={makeupDate}
-                onChange={(e) => setMakeupDate(e.target.value)}
-                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-500 mb-1">보강 시간</label>
-              <input
-                type="time"
-                value={makeupTime}
-                onChange={(e) => setMakeupTime(e.target.value)}
-                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
-              />
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-bold text-slate-500">보강 날짜 / 시간</label>
+                {makeupDate && (
+                  <span className="text-xs font-bold text-blue-600">
+                    {makeupDate.replace(/-/g, '/')}{makeupTime ? ' ' + makeupTime : ''}
+                  </span>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="date"
+                  lang="ko-KR"
+                  value={makeupDate}
+                  onChange={(e) => setMakeupDate(e.target.value)}
+                  className="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+                <input
+                  type="time"
+                  value={makeupTime}
+                  onChange={(e) => setMakeupTime(e.target.value)}
+                  className="w-28 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+              </div>
             </div>
             <div>
               <label className="block text-xs font-bold text-slate-500 mb-1">사유</label>
@@ -6177,23 +6184,28 @@ const RescheduleModal = ({ student, date, existingMakeupDate, existingMakeupTime
         <h3 className="font-bold text-center mb-1">🔄 보강 일정 {isEdit ? "수정" : "등록"}</h3>
         <p className="text-xs text-center text-slate-500 mb-4">{student.name} — {date}</p>
         <div className="flex flex-col gap-3">
-          <div className="flex gap-2">
-            <div className="flex-1">
-              <label className="block text-xs font-bold text-slate-500 mb-1">보강 날짜</label>
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-bold text-slate-500">보강 날짜 / 시간</label>
+              {makeupDate && (
+                <span className="text-xs font-bold text-blue-600">
+                  {makeupDate.replace(/-/g, '/')}{makeupTime ? ' ' + makeupTime : ''}
+                </span>
+              )}
+            </div>
+            <div className="flex gap-2">
               <input
                 type="date"
+                lang="ko-KR"
                 value={makeupDate}
                 onChange={(e) => setMakeupDate(e.target.value)}
-                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                className="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
               />
-            </div>
-            <div className="w-28">
-              <label className="block text-xs font-bold text-slate-500 mb-1">시간</label>
               <input
                 type="time"
                 value={makeupTime}
                 onChange={(e) => setMakeupTime(e.target.value)}
-                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                className="w-28 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
               />
             </div>
           </div>
