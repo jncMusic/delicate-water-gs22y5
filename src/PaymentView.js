@@ -938,7 +938,9 @@ export const PaymentView = ({
       </div>
 
       {/* ── 탭 콘텐츠 ─────────────────────────────────────────── */}
-      <div className="flex-1 overflow-auto p-5 min-h-0 flex flex-col gap-5">
+      {/* today/confirm: 카드 스택 → 내부 overflow-auto로 스크롤  */}
+      {/* send/manage: 테이블 고정 높이 → flex-col + 테이블 overflow-auto */}
+      <div className="flex-1 min-h-0 flex flex-col">
 
         {/* ============================================================
             탭 1: 수납현황 (today)
@@ -946,7 +948,7 @@ export const PaymentView = ({
             - 오늘 결제 완료 목록
         ============================================================ */}
         {activeTab === "today" && (
-          <>
+          <div className="flex-1 overflow-auto p-5 flex flex-col gap-5 min-h-0">
             {/* 오늘 회차 완료 → 결제 안내 대상 */}
             <div className="border rounded-xl overflow-hidden">
               <div className="bg-amber-50 px-4 py-2.5 flex items-center justify-between border-b">
@@ -1094,7 +1096,7 @@ export const PaymentView = ({
                 </table>
               )}
             </div>
-          </>
+          </div>
         )}
 
         {/* ============================================================
@@ -1104,7 +1106,7 @@ export const PaymentView = ({
             - 개별 row → 미리보기 / 결제선생 직발송
         ============================================================ */}
         {activeTab === "send" && (
-          <>
+          <div className="flex-1 flex flex-col min-h-0 p-5 gap-3">
             {/* 필터 바 */}
             <div className="flex flex-wrap items-center gap-2 shrink-0">
               <button
@@ -1160,7 +1162,7 @@ export const PaymentView = ({
             )}
 
             {/* 학생 목록 */}
-            <div className="border rounded-xl overflow-hidden flex-1 min-h-0">
+            <div className="border rounded-xl overflow-auto flex-1 min-h-0">
               <table className="w-full text-sm min-w-[600px]">
                 <thead className="sticky top-0 bg-slate-50 border-b">
                   <tr className="text-slate-400 text-xs uppercase">
@@ -1271,7 +1273,7 @@ export const PaymentView = ({
                 </tbody>
               </table>
             </div>
-          </>
+          </div>
         )}
 
         {/* ============================================================
@@ -1280,7 +1282,7 @@ export const PaymentView = ({
             - 결제 완료자 (기간별 필터)
         ============================================================ */}
         {activeTab === "confirm" && (
-          <>
+          <div className="flex-1 overflow-auto p-5 flex flex-col gap-5 min-h-0">
             {/* 결제 예정자 */}
             <div className="border rounded-xl overflow-hidden shrink-0">
               <div className="bg-rose-50 px-4 py-2.5 flex items-center gap-2 border-b">
@@ -1423,7 +1425,7 @@ export const PaymentView = ({
                 </tbody>
               </table>
             </div>
-          </>
+          </div>
         )}
 
         {/* ============================================================
@@ -1432,7 +1434,8 @@ export const PaymentView = ({
             - 행 클릭 → onOpenStudentDetail (App.js의 PaymentDetailModal)
         ============================================================ */}
         {activeTab === "manage" && (
-          <div className="border rounded-xl overflow-hidden flex-1 min-h-0">
+          <div className="flex-1 flex flex-col min-h-0 p-5">
+          <div className="border rounded-xl overflow-auto flex-1 min-h-0">
             <div className="bg-slate-50 px-4 py-2.5 flex items-center gap-2 border-b">
               <Users size={15} className="text-slate-600" />
               <span className="font-bold text-slate-700 text-sm">재원생 수납 현황</span>
@@ -1494,6 +1497,7 @@ export const PaymentView = ({
                 )}
               </tbody>
             </table>
+          </div>
           </div>
         )}
       </div>
