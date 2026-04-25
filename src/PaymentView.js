@@ -758,12 +758,17 @@ export const PaymentView = ({
 
     return Object.values(groups)
       .sort((a, b) => b.key.localeCompare(a.key))
-      .map((g) => ({
-        ...g,
-        label: formatLabel(g.key),
-        kyuljeCount: g.items.filter((l) => (l.channels || []).includes("결제선생")).length,
-        smsCount: g.items.filter((l) => (l.channels || []).includes("sms")).length,
-      }));
+      .map((g) => {
+        // 채널별 실제 발송 횟수 (한 로그에 두 채널이 있으면 각각 1씩 카운트)
+        let kyuljeCount = 0;
+        let smsCount = 0;
+        g.items.forEach((l) => {
+          const ch = l.channels || [];
+          if (ch.includes("결제선생")) kyuljeCount++;
+          if (ch.includes("sms")) smsCount++;
+        });
+        return { ...g, label: formatLabel(g.key), kyuljeCount, smsCount };
+      });
   }, [messageLogs, historyPeriod]);
 
   // ── 이벤트 핸들러 ─────────────────────────────────────────────
@@ -1737,14 +1742,20 @@ export const PaymentView = ({
 
             {/* ── 결제선생 발송 히스토리 ── */}
             <div className="border rounded-xl overflow-hidden">
-              <div className="bg-blue-50 px-4 py-2.5 flex items-center gap-2 border-b">
+              <div className="bg-blue-50 px-4 py-2.5 flex items-center gap-2 border-b flex-wrap">
                 <Send size={14} className="text-blue-600" />
-                <span className="font-bold text-blue-700 text-sm">결제선생 발송 내역</span>
-                <span className="text-xs text-blue-400">
-                  {sendHistoryData.reduce((s, g) => s + g.kyuljeCount, 0)}건 결제선생
-                  {sendHistoryData.reduce((s, g) => s + g.smsCount, 0) > 0 &&
-                    ` · ${sendHistoryData.reduce((s, g) => s + g.smsCount, 0)}건 SMS`}
-                </span>
+                <span className="font-bold text-blue-700 text-sm">발송 내역</span>
+                <span className="text-xs text-blue-400">{sendHistoryData.reduce((s, g) => s + g.items.length, 0)}건 발송</span>
+                {sendHistoryData.reduce((s, g) => s + g.kyuljeCount, 0) > 0 && (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">
+                    결제선생 {sendHistoryData.reduce((s, g) => s + g.kyuljeCount, 0)}건
+                  </span>
+                )}
+                {sendHistoryData.reduce((s, g) => s + g.smsCount, 0) > 0 && (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 font-medium">
+                    SMS {sendHistoryData.reduce((s, g) => s + g.smsCount, 0)}건
+                  </span>
+                )}
               </div>
               {sendHistoryData.length === 0 ? (
                 <div className="py-10 text-center text-slate-400 text-sm">발송 내역이 없습니다.</div>
@@ -1755,12 +1766,12 @@ export const PaymentView = ({
                       <summary className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-slate-50 list-none">
                         <ChevronRight size={14} className="text-slate-400 group-open:rotate-90 transition-transform shrink-0" />
                         <span className="font-semibold text-slate-700 text-sm">{group.label}</span>
-                        <span className="text-xs text-slate-400">{group.items.length}건</span>
+                        <span className="text-xs text-slate-400">{group.items.length}건 발송</span>
                         {group.kyuljeCount > 0 && (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">결제선생 {group.kyuljeCount}건</span>
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">결제선생 {group.kyuljeCount}</span>
                         )}
                         {group.smsCount > 0 && (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 font-medium">SMS {group.smsCount}건</span>
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 font-medium">SMS {group.smsCount}</span>
                         )}
                       </summary>
                       <table className="w-full text-sm border-t">
@@ -1777,7 +1788,9 @@ export const PaymentView = ({
                           {group.items
                             .sort((a, b) => b.sentAt.localeCompare(a.sentAt))
                             .map((log, i) => {
-                              const isKyulje = (log.channels || []).includes("결제선생");
+                              const channels = log.channels || [];
+                              const hasKyulje = channels.includes("결제선생");
+                              const hasSms = channels.includes("sms");
                               const student = students.find((s) => s.id === log.studentId);
                               const paidAfterSend = student
                                 ? (student.paymentHistory || []).find((p) => p.date >= log.sentAt)
@@ -1787,9 +1800,17 @@ export const PaymentView = ({
                                   <td className="py-2 px-6 font-medium">{log.studentName || "-"}</td>
                                   <td className="py-2 px-4 text-slate-500 text-xs">{log.sentAt}</td>
                                   <td className="py-2 px-4">
-                                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isKyulje ? "bg-blue-100 text-blue-700" : "bg-violet-100 text-violet-700"}`}>
-                                      {isKyulje ? "결제선생" : "SMS"}
-                                    </span>
+                                    <div className="flex gap-1 flex-wrap">
+                                      {hasKyulje && (
+                                        <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-100 text-blue-700">결제선생</span>
+                                      )}
+                                      {hasSms && (
+                                        <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-violet-100 text-violet-700">SMS</span>
+                                      )}
+                                      {!hasKyulje && !hasSms && (
+                                        <span className="text-xs text-slate-300">-</span>
+                                      )}
+                                    </div>
                                   </td>
                                   <td className="py-2 px-4 text-slate-400 text-xs">{log.sentBy || "-"}</td>
                                   <td className="py-2 px-4">
