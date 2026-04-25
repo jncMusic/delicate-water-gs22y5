@@ -762,14 +762,17 @@ export const PaymentView = ({
         // 채널별 실제 발송 횟수 (한 로그에 두 채널이 있으면 각각 1씩 카운트)
         let kyuljeCount = 0;
         let smsCount = 0;
+        let payCount = 0;
         g.items.forEach((l) => {
           const ch = l.channels || [];
           if (ch.includes("결제선생")) kyuljeCount++;
           if (ch.includes("sms")) smsCount++;
+          const st = students.find((s) => s.id === l.studentId);
+          if (st && (st.paymentHistory || []).find((p) => p.date >= l.sentAt)) payCount++;
         });
-        return { ...g, label: formatLabel(g.key), kyuljeCount, smsCount };
+        return { ...g, label: formatLabel(g.key), kyuljeCount, smsCount, payCount };
       });
-  }, [messageLogs, historyPeriod]);
+  }, [messageLogs, historyPeriod, students]);
 
   // ── 이벤트 핸들러 ─────────────────────────────────────────────
   const toggleSelect = (id) =>
@@ -1347,7 +1350,7 @@ export const PaymentView = ({
                         </td>
                         <td className="py-3 px-4 text-xs text-slate-500">
                           {s.lastPaymentDate
-                            ? `${parseInt(s.lastPaymentDate.slice(5,7))}/${parseInt(s.lastPaymentDate.slice(8,10))}`
+                            ? `${s.lastPaymentDate.slice(2,4)}/${s.lastPaymentDate.slice(5,7)}/${s.lastPaymentDate.slice(8,10)}`
                             : <span className="text-slate-300">-</span>}
                         </td>
                         <td className="py-3 px-4 text-xs">
@@ -1756,6 +1759,11 @@ export const PaymentView = ({
                     SMS {sendHistoryData.reduce((s, g) => s + g.smsCount, 0)}건
                   </span>
                 )}
+                {sendHistoryData.reduce((s, g) => s + g.payCount, 0) > 0 && (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">
+                    수납 {sendHistoryData.reduce((s, g) => s + g.payCount, 0)}건
+                  </span>
+                )}
               </div>
               {sendHistoryData.length === 0 ? (
                 <div className="py-10 text-center text-slate-400 text-sm">발송 내역이 없습니다.</div>
@@ -1772,6 +1780,9 @@ export const PaymentView = ({
                         )}
                         {group.smsCount > 0 && (
                           <span className="text-xs px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 font-medium">SMS {group.smsCount}</span>
+                        )}
+                        {group.payCount > 0 && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">수납 {group.payCount}</span>
                         )}
                       </summary>
                       <table className="w-full text-sm border-t">

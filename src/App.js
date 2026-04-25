@@ -7842,7 +7842,7 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
           </button>
           <div className="text-center">
             <h2 className="text-2xl font-bold text-slate-800">
-              {selectedDate.toLocaleDateString()} ({getDayOfWeek(selectedDate)})
+              {`${String(selectedDate.getFullYear()).slice(-2)}/${String(selectedDate.getMonth()+1).padStart(2,'0')}/${String(selectedDate.getDate()).padStart(2,'0')}`} ({getDayOfWeek(selectedDate)})
             </h2>
             <p className="text-sm text-indigo-600 font-medium">
               오늘 레슨 대상: {todayStudents.length}명
