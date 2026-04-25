@@ -3754,8 +3754,16 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
       if (s.status !== "재원") return false;
       return s.attendanceHistory?.some((h) => h.date === dateStr);
     });
+    // 보강 예정일에 해당하는 학생 (다른 날짜에 reschedule 등록 → makeupDate가 dateStr인 경우)
+    const makeup = students.filter((s) => {
+      if (s.teacher !== teacherName) return false;
+      if (s.status !== "재원") return false;
+      return s.attendanceHistory?.some(
+        (h) => h.status === "reschedule" && h.makeupDate === dateStr
+      );
+    });
     const merged = [...scheduled];
-    attended.forEach((s) => {
+    [...attended, ...makeup].forEach((s) => {
       if (!merged.find((m) => m.id === s.id)) merged.push(s);
     });
     return merged;
@@ -3766,7 +3774,8 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
     date,
     status,
     reason = "",
-    memo = ""
+    memo = "",
+    makeupDate = ""
   ) => {
     if (!auth.currentUser) return;
     try {
@@ -3789,6 +3798,18 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
           const cur = history[existingIdx].count || 1;
           history[existingIdx] = { ...history[existingIdx], count: cur === 1 ? 2 : 1 };
         }
+      } else if (status === "reschedule") {
+        // 보강: 원래 날짜에 reschedule 기록 저장
+        const record = {
+          date,
+          status: "reschedule",
+          makeupDate,
+          reason,
+          teacher: student.teacher || "",
+          timestamp: new Date().toISOString(),
+        };
+        if (existingIdx > -1) history[existingIdx] = record;
+        else history.push(record);
       } else {
         const prevCount = existingIdx > -1 ? (history[existingIdx].count || 1) : 1;
         const record = {
@@ -3803,11 +3824,12 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
         if (existingIdx > -1) history[existingIdx] = record;
         else history.push(record);
       }
+      // reschedule은 세션 차감 안 함 (보강 완료 시 present로 별도 처리)
       const lastPayment = student.lastPaymentDate || "0000-00-00";
       const sessionsCompleted = history.reduce((sum, h) => {
         if (h.date < lastPayment) return sum;
         if (h.status === "present") return sum + (h.count || 1);
-        if (h.status === "canceled") return sum + 1; // 당일취소는 학생 1회 차감 (강사 시수는 별도 0.5회 적용)
+        if (h.status === "canceled") return sum + 1;
         return sum;
       }, 0);
       await updateDoc(studentRef, {
@@ -3822,6 +3844,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
       showToast(
         status === "delete" ? "기록 삭제됨"
         : status === "double" ? `연강 ${doubleCount === 2 ? "처리(2회)" : "해제(1회)"}`
+        : status === "reschedule" ? `보강 등록: ${makeupDate}`
         : "저장됨",
         "success"
       );
@@ -3831,8 +3854,18 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
     }
   };
 
-  const handleStatusSelect = (status, memo = "") => {
-    if (status === "present" || status === "delete" || status === "double") {
+  const handleStatusSelect = (status, memo = "", makeupDate = "") => {
+    if (status === "reschedule") {
+      handleCalendarAttendance(
+        attendanceMenu.student,
+        attendanceMenu.date,
+        "reschedule",
+        memo,   // reason 전달
+        "",
+        makeupDate
+      );
+      setAttendanceMenu(null);
+    } else if (status === "present" || status === "delete" || status === "double") {
       handleCalendarAttendance(
         attendanceMenu.student,
         attendanceMenu.date,
@@ -4002,7 +4035,11 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                     )}
                     {cellStudents.map((s, idx) => {
                       const record = s.attendanceHistory?.find((h) => h.date === dateStr);
-                      const status = record ? record.status : "scheduled";
+                      // 보강 예정일인지: 다른 날짜 reschedule의 makeupDate가 오늘
+                      const makeupRecord = !record
+                        ? s.attendanceHistory?.find((h) => h.status === "reschedule" && h.makeupDate === dateStr)
+                        : null;
+                      const status = record ? record.status : makeupRecord ? "makeup" : "scheduled";
                       const isDoubleLesson = status === "present" && (record?.count || 1) === 2;
                       const sessionNum = getSessionCount(s, dateStr);
                       const isLast = status === "present" && isLastSessionOfCycle(s, dateStr);
@@ -4010,6 +4047,8 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                       const tc = teacherColorMap[s.teacher] ?? TEACHER_COLOR_PALETTE[0];
                       const isAbsent = status === "absent";
                       const isCanceled = status === "canceled";
+                      const isReschedule = status === "reschedule";
+                      const isMakeup = status === "makeup";
                       return (
                         <div
                           key={idx}
@@ -4019,22 +4058,29 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                               ? "bg-slate-100 border-l-slate-400 opacity-60"
                               : isCanceled
                               ? "bg-slate-50 border-l-slate-300 opacity-50"
+                              : isReschedule
+                              ? "bg-blue-50 border-l-blue-400 opacity-80"
+                              : isMakeup
+                              ? "bg-sky-50 border-l-sky-500 ring-1 ring-sky-300"
                               : isUnprocessed
                               ? `${tc.bg} border-l-amber-500 ring-1 ring-amber-400`
                               : `${tc.bg} ${tc.border}`}`}
                         >
-                          <div className={`text-xs font-bold flex items-center gap-1 ${isAbsent || isCanceled ? "text-slate-400" : tc.text}`}>
+                          <div className={`text-xs font-bold flex items-center gap-1 ${isAbsent || isCanceled ? "text-slate-400" : isReschedule || isMakeup ? "text-blue-700" : tc.text}`}>
                             <span className="truncate">{s.name}</span>
                             {sessionNum > 0 && <span className="shrink-0 text-[9px] opacity-60 font-normal">({sessionNum})</span>}
                             {isDoubleLesson && <span className="shrink-0 text-[8px] bg-indigo-700 text-white px-1 rounded leading-tight">×2</span>}
                             {isLast && <span className="shrink-0 text-[10px]">💳</span>}
                             {isUnprocessed && <span className="shrink-0 text-amber-500 font-bold">!</span>}
+                            {isMakeup && <span className="shrink-0 text-[9px] bg-sky-500 text-white px-1 rounded leading-tight">보강</span>}
                           </div>
                           <div className="text-[10px] text-slate-500 truncate">{s.teacher} · {s.subject}</div>
                           {status === "present" && !isDoubleLesson && <div className="text-[9px] text-emerald-600 font-medium">✓ 출석</div>}
                           {isDoubleLesson && <div className="text-[9px] text-indigo-600 font-medium">✓ 연강 출석</div>}
                           {isAbsent && <div className="text-[9px] text-rose-500">✗ 결석</div>}
                           {isCanceled && <div className="text-[9px] text-slate-400">취소</div>}
+                          {isReschedule && <div className="text-[9px] text-blue-500">🔄 보강 예정: {record.makeupDate}</div>}
+                          {isMakeup && <div className="text-[9px] text-sky-600 font-medium">🔄 보강 수업</div>}
                         </div>
                       );
                     })}
@@ -5777,8 +5823,92 @@ const ReasonInputModal = ({ student, status, onClose, onSave }) => {
 const MEMO_PRESETS = ["결제 요청", "보강 예정", "연락 바람", "다음 수업 확인"];
 const AttendanceActionModal = ({ student, date, onClose, onSelectStatus, currentRecord }) => {
   const [memo, setMemo] = React.useState(currentRecord?.memo || "");
+  const [showReschedule, setShowReschedule] = React.useState(
+    currentRecord?.status === "reschedule"
+  );
+  const [makeupDate, setMakeupDate] = React.useState(
+    currentRecord?.makeupDate || ""
+  );
+  const [rescheduleReason, setRescheduleReason] = React.useState(
+    currentRecord?.reason || "강사 사정"
+  );
   const isPresent = currentRecord?.status === "present";
   const isDouble = isPresent && (currentRecord.count || 1) === 2;
+  const isReschedule = currentRecord?.status === "reschedule";
+
+  if (showReschedule) {
+    return (
+      <div
+        className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
+        onClick={onClose}
+      >
+        <div
+          className="bg-white rounded-xl shadow-2xl w-full max-w-xs p-4 animate-in fade-in zoom-in-95 duration-200"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <h3 className="font-bold text-center mb-1">🔄 보강 일정</h3>
+          <p className="text-xs text-center text-slate-500 mb-4">{student.name} — {date}</p>
+          <div className="flex flex-col gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1">보강 날짜</label>
+              <input
+                type="date"
+                value={makeupDate}
+                onChange={(e) => setMakeupDate(e.target.value)}
+                min={date}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1">사유</label>
+              <div className="flex gap-2 mb-1">
+                {["강사 사정", "학생 사정", "기타"].map((r) => (
+                  <button
+                    key={r}
+                    onClick={() => setRescheduleReason(r)}
+                    className={`flex-1 py-1.5 text-xs rounded-lg border font-medium transition-colors ${
+                      rescheduleReason === r
+                        ? "bg-blue-100 border-blue-400 text-blue-700"
+                        : "bg-slate-50 border-slate-200 text-slate-500 hover:bg-blue-50"
+                    }`}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => setShowReschedule(false)}
+                className="flex-1 py-2 text-sm text-slate-500 hover:bg-slate-100 rounded-lg font-bold border"
+              >
+                취소
+              </button>
+              <button
+                onClick={() => {
+                  if (!makeupDate) return;
+                  onSelectStatus("reschedule", rescheduleReason, makeupDate);
+                }}
+                disabled={!makeupDate}
+                className="flex-1 py-2 text-sm bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 disabled:opacity-40"
+              >
+                보강 저장
+              </button>
+            </div>
+            {isReschedule && (
+              <button
+                onClick={() => onSelectStatus("delete", "")}
+                className="w-full py-2 text-xs text-rose-400 hover:text-rose-600 font-medium flex items-center justify-center gap-1"
+              >
+                <Trash2 size={14} /> 보강 기록 삭제
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
@@ -5821,6 +5951,17 @@ const AttendanceActionModal = ({ student, date, onClose, onSelectStatus, current
             className="w-full py-3 bg-slate-100 text-slate-700 rounded-lg font-bold hover:bg-slate-200"
           >
             당일 취소
+          </button>
+          {/* 보강 버튼 */}
+          <button
+            onClick={() => setShowReschedule(true)}
+            className={`w-full py-3 rounded-lg font-bold transition-colors flex items-center justify-center gap-2 ${
+              isReschedule
+                ? "bg-blue-100 text-blue-700 hover:bg-blue-200"
+                : "bg-blue-50 text-blue-600 hover:bg-blue-100"
+            }`}
+          >
+            🔄 {isReschedule ? `보강 예정 (${currentRecord.makeupDate}) — 수정` : "보강 일정 등록"}
           </button>
           {/* 메모 입력 */}
           <div className="border-t pt-2 mt-1">
