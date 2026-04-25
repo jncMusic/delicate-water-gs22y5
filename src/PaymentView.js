@@ -16,6 +16,8 @@ import {
   TrendingUp,
   Send,
   ChevronRight,
+  History,
+  CalendarDays,
 } from "lucide-react";
 
 // -----------------------------------------------------------------
@@ -463,6 +465,9 @@ export const PaymentView = ({
   const [quickPayStudent, setQuickPayStudent] = useState(null);
   const [quickPayDate, setQuickPayDate] = useState("");
 
+  // ── 히스토리(history) 탭 상태 ────────────────────────────────
+  const [historyPeriod, setHistoryPeriod] = useState("month"); // "day" | "week" | "month"
+
   // ── 수강 진척도 헬퍼 ──────────────────────────────────────────
   const getStudentProgress = (s) => {
     const totalAttended = (s.attendanceHistory || [])
@@ -659,6 +664,59 @@ export const PaymentView = ({
       .sort((a, b) => a.name.localeCompare(b.name, "ko"));
   }, [students, searchTerm, selectedTeacher]);
 
+  // ── 히스토리(history) 탭 데이터 ──────────────────────────────
+  const historyData = useMemo(() => {
+    const allPayments = [];
+    students.forEach((s) => {
+      (s.paymentHistory || []).forEach((p) => {
+        if (p.date) allPayments.push({ student: s, payment: p });
+      });
+    });
+
+    const DAYS_KO = ["일", "월", "화", "수", "목", "금", "토"];
+    const getMondayStr = (dateStr) => {
+      const d = new Date(dateStr + "T00:00:00");
+      const day = d.getDay();
+      const diff = day === 0 ? -6 : 1 - day;
+      d.setDate(d.getDate() + diff);
+      return toLocalDateStr(d);
+    };
+
+    const groups = {};
+    allPayments.forEach(({ student: s, payment: p }) => {
+      let key;
+      if (historyPeriod === "month") key = p.date.substring(0, 7);
+      else if (historyPeriod === "week") key = getMondayStr(p.date);
+      else key = p.date;
+
+      if (!groups[key]) groups[key] = { key, items: [], total: 0, methods: {} };
+      groups[key].items.push({ student: s, payment: p });
+      groups[key].total += Number(p.amount || 0);
+      const m = p.method || "기타";
+      groups[key].methods[m] = (groups[key].methods[m] || 0) + Number(p.amount || 0);
+    });
+
+    const formatLabel = (key) => {
+      if (historyPeriod === "month") {
+        const [y, m] = key.split("-");
+        return `${y}년 ${parseInt(m)}월`;
+      } else if (historyPeriod === "week") {
+        const d = new Date(key + "T00:00:00");
+        const end = new Date(d);
+        end.setDate(end.getDate() + 6);
+        const fmt = (dt) => `${dt.getMonth() + 1}/${dt.getDate()}`;
+        return `${fmt(d)} ~ ${fmt(end)}`;
+      } else {
+        const d = new Date(key + "T00:00:00");
+        return `${d.getMonth() + 1}/${d.getDate()} (${DAYS_KO[d.getDay()]})`;
+      }
+    };
+
+    return Object.values(groups)
+      .sort((a, b) => b.key.localeCompare(a.key))
+      .map((g) => ({ ...g, label: formatLabel(g.key) }));
+  }, [students, historyPeriod]);
+
   // ── 이벤트 핸들러 ─────────────────────────────────────────────
   const toggleSelect = (id) =>
     setSelectedIds((prev) =>
@@ -699,6 +757,7 @@ export const PaymentView = ({
     { id: "send", label: "발송센터", icon: <Send size={14} />, badge: sendList.filter(s => getNotifStatus(s.id) === "none").length || null },
     { id: "confirm", label: "결제확인", icon: <CreditCard size={14} />, badge: processableStudents.length || null },
     { id: "manage", label: "수납관리", icon: <Users size={14} />, badge: null },
+    { id: "history", label: "히스토리", icon: <History size={14} />, badge: null },
   ];
 
   // =================================================================
@@ -1301,6 +1360,11 @@ export const PaymentView = ({
                 <AlertCircle size={15} className="text-rose-600" />
                 <span className="font-bold text-rose-700 text-sm">결제 예정자</span>
                 <span className="bg-rose-200 text-rose-800 text-xs px-1.5 py-0.5 rounded-full">{processableStudents.length}명</span>
+                {processableStudents.length > 0 && (
+                  <span className="ml-auto text-rose-700 font-bold text-sm">
+                    총 {processableStudents.reduce((sum, s) => sum + Number(s.tuitionFee || 0), 0).toLocaleString()}원
+                  </span>
+                )}
               </div>
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 border-b text-xs text-slate-400 uppercase">
@@ -1382,6 +1446,11 @@ export const PaymentView = ({
                   <CheckCircle size={15} className="text-emerald-600" />
                   <span className="font-bold text-emerald-700 text-sm">결제 완료자</span>
                   <span className="bg-emerald-200 text-emerald-800 text-xs px-1.5 py-0.5 rounded-full">{recentlyPaidList.length}건</span>
+                  {recentlyPaidList.length > 0 && (
+                    <span className="text-emerald-700 font-bold text-sm">
+                      총 {recentlyPaidList.reduce((sum, { payment: p }) => sum + Number(p.amount || 0), 0).toLocaleString()}원
+                    </span>
+                  )}
                 </div>
                 <div className="flex rounded-lg overflow-hidden border border-emerald-200 text-xs">
                   {[["today", "오늘"], ["week", "이번 주"], ["month", "이번 달"]].map(([val, label]) => (
@@ -1510,6 +1579,101 @@ export const PaymentView = ({
               </tbody>
             </table>
           </div>
+          </div>
+        )}
+
+        {/* ============================================================
+            탭 5: 히스토리 (history)
+            - 일간/주간/월간 기간별 수납 합계 + 건수 + 결제방법 분류
+        ============================================================ */}
+        {activeTab === "history" && (
+          <div className="flex-1 overflow-auto p-5 flex flex-col gap-4 min-h-0">
+            {/* 기간 선택 + 전체 총액 */}
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div className="flex rounded-lg overflow-hidden border border-slate-200 text-sm">
+                {[["month", "월간"], ["week", "주간"], ["day", "일간"]].map(([val, label]) => (
+                  <button
+                    key={val}
+                    onClick={() => setHistoryPeriod(val)}
+                    className={`px-4 py-1.5 font-medium transition-colors ${historyPeriod === val ? "bg-indigo-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2 text-sm text-slate-600">
+                <CalendarDays size={15} className="text-indigo-500" />
+                <span>전체 {historyData.length}개 기간</span>
+                <span className="font-bold text-indigo-700">
+                  합계 {historyData.reduce((sum, g) => sum + g.total, 0).toLocaleString()}원
+                </span>
+              </div>
+            </div>
+
+            {/* 기간별 목록 */}
+            {historyData.length === 0 ? (
+              <div className="flex-1 flex items-center justify-center text-slate-400">
+                수납 내역이 없습니다.
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {historyData.map((group) => {
+                  const methodColors = {
+                    현장: "bg-indigo-100 text-indigo-700",
+                    계좌이체: "bg-emerald-100 text-emerald-700",
+                    결제선생: "bg-blue-100 text-blue-700",
+                    기타: "bg-slate-100 text-slate-600",
+                  };
+                  return (
+                    <div key={group.key} className="border rounded-xl overflow-hidden">
+                      {/* 기간 헤더 */}
+                      <div className="bg-slate-50 px-4 py-2.5 flex items-center gap-3 border-b">
+                        <span className="font-bold text-slate-700 text-sm">{group.label}</span>
+                        <span className="text-xs text-slate-400">{group.items.length}건</span>
+                        <span className="ml-auto font-bold text-indigo-700 text-sm">
+                          {group.total.toLocaleString()}원
+                        </span>
+                        {/* 결제방법별 소계 */}
+                        <div className="flex gap-1 flex-wrap">
+                          {Object.entries(group.methods).map(([m, amt]) => (
+                            <span key={m} className={`text-xs px-2 py-0.5 rounded-full font-medium ${methodColors[m] || "bg-slate-100 text-slate-600"}`}>
+                              {m} {amt.toLocaleString()}원
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      {/* 건별 목록 */}
+                      <table className="w-full text-sm">
+                        <tbody className="divide-y divide-slate-100 bg-white">
+                          {group.items
+                            .sort((a, b) => b.payment.date.localeCompare(a.payment.date))
+                            .map(({ student: s, payment: p }, i) => (
+                              <tr key={`${s.id}-${p.date}-${i}`} className="hover:bg-slate-50">
+                                <td className="py-2.5 px-4 font-medium">
+                                  {s.name}
+                                  {s.subject && <span className="text-xs text-slate-400 ml-1">({s.subject})</span>}
+                                </td>
+                                <td className="py-2.5 px-4 text-slate-500">{s.teacher || "-"}</td>
+                                <td className="py-2.5 px-4 text-slate-500 text-xs">{p.date}</td>
+                                <td className="py-2.5 px-4 text-right font-bold text-indigo-600">
+                                  {Number(p.amount || 0).toLocaleString()}원
+                                </td>
+                                <td className="py-2.5 px-4">
+                                  {p.method ? (
+                                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${methodColors[p.method] || "bg-slate-100 text-slate-600"}`}>
+                                      {p.method}
+                                    </span>
+                                  ) : <span className="text-slate-300 text-xs">-</span>}
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
       </div>

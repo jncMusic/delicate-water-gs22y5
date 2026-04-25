@@ -5998,7 +5998,6 @@ const AttendanceActionModal = ({ student, date, onClose, onSelectStatus, current
                 type="date"
                 value={makeupDate}
                 onChange={(e) => setMakeupDate(e.target.value)}
-                min={date}
                 className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
               />
             </div>
@@ -6168,7 +6167,6 @@ const RescheduleModal = ({ student, date, existingMakeupDate, existingReason, on
               type="date"
               value={makeupDate}
               onChange={(e) => setMakeupDate(e.target.value)}
-              min={date}
               className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
             />
           </div>
