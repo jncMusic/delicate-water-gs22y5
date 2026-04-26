@@ -92,6 +92,7 @@ import {
   Tablet, // 🔥 키오스크 단말기 아이콘
   Send,
   Bell,
+  Calculator,
 } from "lucide-react";
 import html2canvas from "html2canvas"; // 🔥 이미지 저장 라이브러리 추가
 
@@ -11873,6 +11874,15 @@ export default function App() {
                 }}
               />
               <SidebarItem
+                icon={Calculator}
+                label="강사료 계산"
+                active={activeTab === "instructorFee"}
+                onClick={() => {
+                  setActiveTab("instructorFee");
+                  setIsSidebarOpen(false);
+                }}
+              />
+              <SidebarItem
                 icon={Send}
                 label="공지 발송"
                 active={activeTab === "bulkSms"}
@@ -11952,6 +11962,8 @@ export default function App() {
               ? "상담 관리"
               : activeTab === "settings"
               ? "환경 설정"
+              : activeTab === "instructorFee"
+              ? "강사료 계산 센터"
               : "JnC Music"}
           </h2>
           <div className="text-sm font-bold text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
@@ -12101,11 +12113,621 @@ export default function App() {
               paymentUrl={paymentUrl}
             />
           )}
+          {activeTab === "instructorFee" && currentUser.role === "admin" && (
+            <InstructorFeeView
+              teachers={teachers}
+              students={students}
+              showToast={showToast}
+            />
+          )}
         </main>
       </div>
     </div>
   );
 }
+
+// =================================================================
+// [InstructorFeeView] - 강사료 계산 센터 (관리자 전용)
+// =================================================================
+
+// 출석 날짜 기준 실제 담당 강사 조회 (강사 변경 이력 반영)
+const resolveFeeTeacher = (student, date, record) => {
+  if (record?.teacher) return record.teacher;
+  const hist = student.teacherHistory;
+  if (!hist || !hist.length) return student.teacher || "";
+  const entry = [...hist]
+    .sort((a, b) => b.from.localeCompare(a.from))
+    .find((h) => h.from <= date && (h.to === null || h.to >= date));
+  return entry ? entry.teacher : student.teacher || "";
+};
+
+const InstructorFeeView = ({ teachers, students, showToast }) => {
+  const [subTab, setSubTab] = useState("calc");
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
+  const [selectedTeacherName, setSelectedTeacherName] = useState("");
+  const [showSlip, setShowSlip] = useState(false);
+  const [payDate, setPayDate] = useState(new Date().toISOString().slice(0, 10));
+  const [savingId, setSavingId] = useState(null);
+  const [editFeeData, setEditFeeData] = useState({});
+  const slipRef = useRef(null);
+
+  const teacherList = teachers.filter((t) => t.name && t.name.trim());
+
+  // 첫 강사 자동 선택
+  useEffect(() => {
+    if (!selectedTeacherName && teacherList.length > 0) {
+      setSelectedTeacherName(teacherList[0].name);
+    }
+  }, [teacherList.length]); // eslint-disable-line
+
+  // 단가 편집 데이터 초기화 (최초 1회)
+  useEffect(() => {
+    setEditFeeData((prev) => {
+      if (Object.keys(prev).length > 0) return prev;
+      const data = {};
+      teachers.forEach((t) => {
+        if (t.id)
+          data[t.id] = {
+            feeType: t.feeType || "perSession",
+            feeRate: t.feeRate != null ? String(t.feeRate) : "",
+          };
+      });
+      return Object.keys(data).length > 0 ? data : prev;
+    });
+  }, [teachers]);
+
+  // 정산 기간: 전월 24일 ~ 당월 23일
+  const period = useMemo(() => {
+    let py = selectedYear, pm = selectedMonth - 1;
+    if (pm === 0) { pm = 12; py = selectedYear - 1; }
+    return {
+      start: `${py}-${String(pm).padStart(2, "0")}-24`,
+      end: `${selectedYear}-${String(selectedMonth).padStart(2, "0")}-23`,
+    };
+  }, [selectedYear, selectedMonth]);
+
+  // 강사별 학생 수업 횟수 집계
+  const calcSessions = useCallback(
+    (teacherName) =>
+      students
+        .map((s) => {
+          const recs = (s.attendanceHistory || []).filter(
+            (h) =>
+              h.date >= period.start &&
+              h.date <= period.end &&
+              (h.status === "present" || h.status === "canceled") &&
+              resolveFeeTeacher(s, h.date, h) === teacherName
+          );
+          if (!recs.length) return null;
+          const sessions = recs.reduce((sum, h) => {
+            if (h.status === "present") return sum + (h.count || 1);
+            if (h.status === "canceled") return sum + 0.5;
+            return sum;
+          }, 0);
+          return { name: s.name, sessions };
+        })
+        .filter(Boolean)
+        .sort((a, b) => b.sessions - a.sessions),
+    [students, period]
+  );
+
+  // 강사료 계산 (회당 또는 월 고정)
+  const calcFee = (teacher, totalSessions) => {
+    if (!teacher) return 0;
+    const rate = Number(teacher.feeRate || 0);
+    if (teacher.feeType === "monthly") return rate;
+    return totalSessions * rate;
+  };
+
+  const currentTeacher = teacherList.find((t) => t.name === selectedTeacherName);
+  const sessionRows = useMemo(
+    () => (selectedTeacherName ? calcSessions(selectedTeacherName) : []),
+    [selectedTeacherName, calcSessions]
+  );
+  const totalSessions = sessionRows.reduce((s, r) => s + r.sessions, 0);
+  const grossFee = calcFee(currentTeacher, totalSessions);
+  const tax = Math.round(grossFee * 0.033);
+  const netFee = grossFee - tax;
+
+  const yearOptions = [
+    new Date().getFullYear() - 1,
+    new Date().getFullYear(),
+    new Date().getFullYear() + 1,
+  ];
+
+  // 단가 Firebase 저장
+  const handleSaveFeeRate = async (teacherId) => {
+    const data = editFeeData[teacherId];
+    if (!data) return;
+    setSavingId(teacherId);
+    try {
+      await updateDoc(
+        doc(db, "artifacts", APP_ID, "public", "data", "teachers", teacherId),
+        { feeType: data.feeType, feeRate: Number(data.feeRate) || 0 }
+      );
+      showToast("저장되었습니다.", "success");
+    } catch {
+      showToast("저장 실패", "error");
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  // 명세서 이미지 저장
+  const handleSaveSlipImage = async () => {
+    if (!slipRef.current) return;
+    try {
+      const canvas = await html2canvas(slipRef.current, {
+        scale: 2,
+        backgroundColor: "#ffffff",
+      });
+      const link = document.createElement("a");
+      link.download = `급여명세서_${selectedTeacherName}_${selectedYear}년${selectedMonth}월.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+      showToast("명세서가 저장되었습니다.", "success");
+    } catch {
+      showToast("이미지 저장 실패", "error");
+    }
+  };
+
+  // 월별 계산서 엑셀 다운로드
+  const handleCalcExcel = () => {
+    if (typeof window.XLSX === "undefined") {
+      showToast("잠시 후 다시 시도해주세요.", "error");
+      return;
+    }
+    const isPerSession = (currentTeacher?.feeType || "perSession") !== "monthly";
+    const wb = window.XLSX.utils.book_new();
+    const rows = [
+      [`${selectedYear}년 ${selectedMonth}월 강사료 계산서 — ${selectedTeacherName}`],
+      [`정산 기간: ${period.start} ~ ${period.end}`],
+      [],
+      ["학생명", "회차", "강사료(원)"],
+      ...sessionRows.map((r) => [
+        r.name,
+        r.sessions,
+        isPerSession ? r.sessions * Number(currentTeacher?.feeRate || 0) : "—",
+      ]),
+      [],
+      ["합계", totalSessions, grossFee],
+      ["세금 (3.3%)", "", -tax],
+      ["실지급액", "", netFee],
+    ];
+    const ws = window.XLSX.utils.aoa_to_sheet(rows);
+    window.XLSX.utils.book_append_sheet(wb, ws, "강사료계산서");
+    window.XLSX.writeFile(
+      wb,
+      `강사료_${selectedTeacherName}_${selectedYear}${String(selectedMonth).padStart(2, "0")}.xlsx`
+    );
+  };
+
+  // 세무 자료 엑셀 다운로드
+  const handleTaxExcel = () => {
+    if (typeof window.XLSX === "undefined") {
+      showToast("잠시 후 다시 시도해주세요.", "error");
+      return;
+    }
+    const wb = window.XLSX.utils.book_new();
+    const header = [
+      [`${selectedYear}년 ${selectedMonth}월 강사료 세무 자료`],
+      [`정산 기간: ${period.start} ~ ${period.end}`],
+      [],
+      ["연번", "강사명", "파트", "귀속월", "지급액(강사료)", "소득세(3%)", "지방소득세(0.3%)", "합계세액", "실지급액"],
+    ];
+    let seq = 0;
+    const dataRows = teacherList
+      .map((t) => {
+        const rows2 = calcSessions(t.name);
+        const sess = rows2.reduce((s, r) => s + r.sessions, 0);
+        if (!sess) return null;
+        const gross = calcFee(t, sess);
+        if (!gross) return null;
+        const it = Math.round(gross * 0.03);
+        const lt = Math.round(gross * 0.003);
+        seq++;
+        return [
+          seq,
+          t.name,
+          t.part || "",
+          `${selectedYear}-${String(selectedMonth).padStart(2, "0")}`,
+          gross,
+          it,
+          lt,
+          it + lt,
+          gross - it - lt,
+        ];
+      })
+      .filter(Boolean);
+    const ws = window.XLSX.utils.aoa_to_sheet([...header, ...dataRows]);
+    window.XLSX.utils.book_append_sheet(wb, ws, "세무자료");
+    window.XLSX.writeFile(wb, `세무자료_${selectedYear}년${selectedMonth}월.xlsx`);
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* 탭 바 */}
+      <div className="flex gap-0 border-b bg-white rounded-t-2xl">
+        {[
+          { id: "calc", label: "월별 계산서" },
+          { id: "settings", label: "단가 설정" },
+          { id: "tax", label: "세무 자료" },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setSubTab(tab.id)}
+            className={`px-5 py-3 text-sm font-bold border-b-2 transition-colors ${
+              subTab === tab.id
+                ? "border-indigo-600 text-indigo-600"
+                : "border-transparent text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── 탭 1: 월별 계산서 ── */}
+      {subTab === "calc" && (
+        <div className="space-y-4">
+          {/* 필터 컨트롤 */}
+          <div className="bg-white rounded-2xl border p-4 flex flex-wrap gap-3 items-end">
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">강사</label>
+              <select
+                value={selectedTeacherName}
+                onChange={(e) => setSelectedTeacherName(e.target.value)}
+                className="border rounded-lg px-3 py-2 text-sm"
+              >
+                {teacherList.map((t) => (
+                  <option key={t.id} value={t.name}>{t.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">연도</label>
+              <select
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(Number(e.target.value))}
+                className="border rounded-lg px-3 py-2 text-sm"
+              >
+                {yearOptions.map((y) => <option key={y} value={y}>{y}년</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">월</label>
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                className="border rounded-lg px-3 py-2 text-sm"
+              >
+                {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                  <option key={m} value={m}>{m}월</option>
+                ))}
+              </select>
+            </div>
+            <p className="text-xs text-slate-400 self-end pb-2">
+              집계 기간: {period.start} ~ {period.end}
+            </p>
+          </div>
+
+          {/* 단가 미설정 경고 */}
+          {currentTeacher && !currentTeacher.feeRate && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-700 flex items-center gap-2">
+              <AlertCircle size={15} />
+              단가가 설정되지 않았습니다. [단가 설정] 탭에서 먼저 입력해주세요.
+            </div>
+          )}
+
+          {/* 요약 카드 4개 */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[
+              { label: "담당 학생 수", value: `${sessionRows.length}명` },
+              { label: "총 수업 횟수", value: `${totalSessions}회` },
+              { label: "강사료", value: `${grossFee.toLocaleString()}원`, color: "text-indigo-600" },
+              { label: "지급액 (세후)", value: `${netFee.toLocaleString()}원`, color: "text-emerald-700" },
+            ].map((c) => (
+              <div key={c.label} className="bg-white rounded-2xl border p-4 text-center">
+                <p className="text-xs text-slate-500 mb-1">{c.label}</p>
+                <p className={`text-xl font-bold ${c.color || "text-slate-800"}`}>{c.value}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* 수업 내역 테이블 */}
+          <div className="bg-white rounded-2xl border overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3 border-b">
+              <h3 className="font-bold text-slate-700">수업 내역</h3>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleCalcExcel}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors"
+                >
+                  <Download size={13} /> 엑셀
+                </button>
+                <button
+                  onClick={() => setShowSlip(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors"
+                >
+                  <File size={13} /> 명세서
+                </button>
+              </div>
+            </div>
+            {sessionRows.length === 0 ? (
+              <div className="py-16 text-center text-slate-400 text-sm">
+                해당 기간의 수업 기록이 없습니다.
+              </div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-xs text-slate-500">
+                  <tr>
+                    <th className="px-5 py-3 text-left font-bold">학생명</th>
+                    <th className="px-5 py-3 text-center font-bold">회차</th>
+                    <th className="px-5 py-3 text-right font-bold">강사료</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sessionRows.map((row, i) => {
+                    const rowFee =
+                      (currentTeacher?.feeType || "perSession") === "monthly"
+                        ? null
+                        : row.sessions * Number(currentTeacher?.feeRate || 0);
+                    return (
+                      <tr key={i} className="border-t hover:bg-slate-50 transition-colors">
+                        <td className="px-5 py-3 font-medium">{row.name}</td>
+                        <td className="px-5 py-3 text-center">{row.sessions}회</td>
+                        <td className="px-5 py-3 text-right">
+                          {rowFee !== null ? `${rowFee.toLocaleString()}원` : "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 bg-slate-50 font-bold">
+                    <td className="px-5 py-3">합계</td>
+                    <td className="px-5 py-3 text-center">{totalSessions}회</td>
+                    <td className="px-5 py-3 text-right">{grossFee.toLocaleString()}원</td>
+                  </tr>
+                </tfoot>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── 탭 2: 단가 설정 ── */}
+      {subTab === "settings" && (
+        <div className="space-y-3">
+          <p className="text-xs text-slate-400 pb-1">
+            각 강사의 계약 조건에 따라 지급 단가를 설정합니다. 설정 내용은 관리자만 확인할 수 있습니다.
+          </p>
+          {teacherList.map((t) => {
+            const ed = editFeeData[t.id] || { feeType: "perSession", feeRate: "" };
+            return (
+              <div key={t.id} className="bg-white rounded-2xl border p-4 flex flex-wrap gap-3 items-center">
+                <div className="flex-1 min-w-[120px]">
+                  <p className="font-bold text-slate-800">{t.name}</p>
+                  <p className="text-xs text-slate-500">{t.part || "파트 미설정"}</p>
+                </div>
+                <select
+                  value={ed.feeType}
+                  onChange={(e) =>
+                    setEditFeeData((prev) => ({
+                      ...prev,
+                      [t.id]: { ...prev[t.id], feeType: e.target.value },
+                    }))
+                  }
+                  className="border rounded-lg px-3 py-2 text-sm"
+                >
+                  <option value="perSession">회당 지급</option>
+                  <option value="monthly">월 고정</option>
+                </select>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    value={ed.feeRate}
+                    onChange={(e) =>
+                      setEditFeeData((prev) => ({
+                        ...prev,
+                        [t.id]: { ...prev[t.id], feeRate: e.target.value },
+                      }))
+                    }
+                    placeholder={ed.feeType === "monthly" ? "월 고정액" : "회당 금액"}
+                    className="border rounded-lg px-3 py-2 text-sm w-36"
+                  />
+                  <span className="text-xs text-slate-500">원</span>
+                </div>
+                <button
+                  onClick={() => handleSaveFeeRate(t.id)}
+                  disabled={savingId === t.id}
+                  className="px-4 py-2 text-sm font-bold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                >
+                  {savingId === t.id ? "저장 중…" : "저장"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── 탭 3: 세무 자료 ── */}
+      {subTab === "tax" && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-2xl border p-4 flex flex-wrap gap-3 items-end">
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">연도</label>
+              <select
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(Number(e.target.value))}
+                className="border rounded-lg px-3 py-2 text-sm"
+              >
+                {yearOptions.map((y) => <option key={y} value={y}>{y}년</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">월</label>
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                className="border rounded-lg px-3 py-2 text-sm"
+              >
+                {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                  <option key={m} value={m}>{m}월</option>
+                ))}
+              </select>
+            </div>
+            <button
+              onClick={handleTaxExcel}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-bold bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
+            >
+              <Download size={15} /> 엑셀 다운로드
+            </button>
+          </div>
+          <p className="text-xs text-slate-400">집계 기간: {period.start} ~ {period.end}</p>
+
+          <div className="bg-white rounded-2xl border overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-xs text-slate-500">
+                <tr>
+                  <th className="px-4 py-3 text-left font-bold">강사명</th>
+                  <th className="px-4 py-3 text-left font-bold">파트</th>
+                  <th className="px-4 py-3 text-right font-bold">강사료</th>
+                  <th className="px-4 py-3 text-right font-bold">소득세 (3%)</th>
+                  <th className="px-4 py-3 text-right font-bold">지방소득세 (0.3%)</th>
+                  <th className="px-4 py-3 text-right font-bold">실지급액</th>
+                </tr>
+              </thead>
+              <tbody>
+                {teacherList
+                  .map((t) => {
+                    const rows2 = calcSessions(t.name);
+                    const sess = rows2.reduce((s, r) => s + r.sessions, 0);
+                    if (!sess) return null;
+                    const gross = calcFee(t, sess);
+                    if (!gross) return null;
+                    const it = Math.round(gross * 0.03);
+                    const lt = Math.round(gross * 0.003);
+                    return (
+                      <tr key={t.id} className="border-t hover:bg-slate-50 transition-colors">
+                        <td className="px-4 py-3 font-medium">{t.name}</td>
+                        <td className="px-4 py-3 text-slate-500">{t.part || "—"}</td>
+                        <td className="px-4 py-3 text-right">{gross.toLocaleString()}</td>
+                        <td className="px-4 py-3 text-right text-rose-600">{it.toLocaleString()}</td>
+                        <td className="px-4 py-3 text-right text-rose-500">{lt.toLocaleString()}</td>
+                        <td className="px-4 py-3 text-right font-bold text-emerald-700">
+                          {(gross - it - lt).toLocaleString()}
+                        </td>
+                      </tr>
+                    );
+                  })
+                  .filter(Boolean)}
+              </tbody>
+            </table>
+            {teacherList.every((t) => {
+              const rows2 = calcSessions(t.name);
+              const sess = rows2.reduce((s, r) => s + r.sessions, 0);
+              return !sess || !calcFee(t, sess);
+            }) && (
+              <div className="py-16 text-center text-slate-400 text-sm">
+                해당 기간에 수업 기록이 있고 단가가 설정된 강사가 없습니다.
+              </div>
+            )}
+          </div>
+          <p className="text-xs text-slate-400">
+            * 단가가 설정된 강사만 표시됩니다. 주민등록번호 등 민감 정보는 별도 입력이 필요합니다.
+          </p>
+        </div>
+      )}
+
+      {/* ── 급여 명세서 모달 ── */}
+      {showSlip && (
+        <div
+          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setShowSlip(false); }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+            <div className="flex items-center justify-between px-5 py-4 border-b">
+              <h3 className="font-bold text-slate-800">급여 명세서</h3>
+              <button
+                onClick={() => setShowSlip(false)}
+                className="p-1 rounded-lg hover:bg-slate-100 transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            {/* 지급일 입력 */}
+            <div className="px-5 pt-4 pb-2 flex items-center gap-3">
+              <label className="text-xs font-bold text-slate-500 whitespace-nowrap">지급일</label>
+              <input
+                type="date"
+                value={payDate}
+                onChange={(e) => setPayDate(e.target.value)}
+                className="border rounded-lg px-3 py-1.5 text-sm flex-1"
+              />
+            </div>
+            {/* 캡처 대상 영역 */}
+            <div ref={slipRef} className="mx-5 mb-2 mt-3 border-2 border-slate-200 rounded-xl p-6 bg-white">
+              <h2 className="text-center text-lg font-bold text-slate-800 mb-1">
+                {selectedYear}년 {selectedMonth}월 급여 명세서
+              </h2>
+              <p className="text-center text-xs text-slate-400 mb-5">
+                {period.start} ~ {period.end}
+              </p>
+              <div className="space-y-2.5 text-sm">
+                {[
+                  ["강사명", selectedTeacherName],
+                  ["파트", currentTeacher?.part || "—"],
+                  ["지급일", payDate],
+                ].map(([k, v]) => (
+                  <div key={k} className="flex justify-between items-center border-b pb-2">
+                    <span className="text-slate-500">{k}</span>
+                    <span className="font-bold">{v}</span>
+                  </div>
+                ))}
+                <div className="flex justify-between items-center border-b pb-2">
+                  <span className="text-slate-500">담당 학생 수</span>
+                  <span className="font-bold">{sessionRows.length}명</span>
+                </div>
+                <div className="flex justify-between items-center border-b pb-2">
+                  <span className="text-slate-500">총 수업 횟수</span>
+                  <span className="font-bold">{totalSessions}회</span>
+                </div>
+                <div className="h-1" />
+                <div className="flex justify-between items-center border-b pb-2">
+                  <span className="text-slate-500">강사료</span>
+                  <span className="font-bold">{grossFee.toLocaleString()}원</span>
+                </div>
+                <div className="flex justify-between items-center border-b pb-2">
+                  <span className="text-slate-500">세금 (3.3%)</span>
+                  <span className="font-bold text-rose-600">-{tax.toLocaleString()}원</span>
+                </div>
+                <div className="flex justify-between items-center pt-1">
+                  <span className="text-base font-bold">지급액</span>
+                  <span className="text-base font-bold text-emerald-700">{netFee.toLocaleString()}원</span>
+                </div>
+              </div>
+              <div className="mt-6 pt-4 border-t text-right">
+                <p className="text-sm text-slate-600">
+                  {payDate}&nbsp;&nbsp;J&amp;C 음악학원장 강열혁 (인)
+                </p>
+              </div>
+            </div>
+            <div className="px-5 pb-5 pt-3">
+              <button
+                onClick={handleSaveSlipImage}
+                className="w-full flex items-center justify-center gap-2 py-3 text-sm font-bold bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors"
+              >
+                <Download size={16} /> 이미지 저장
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 // [TeacherTimetableView] - (파트필터 + 인쇄 + 보안 + 모바일최적화 + 중앙정렬/자동숨김 유지)
 const TeacherTimetableView = ({ students, teachers, user }) => {
