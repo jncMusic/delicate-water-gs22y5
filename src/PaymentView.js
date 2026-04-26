@@ -762,14 +762,17 @@ export const PaymentView = ({
         // 채널별 실제 발송 횟수 (한 로그에 두 채널이 있으면 각각 1씩 카운트)
         let kyuljeCount = 0;
         let smsCount = 0;
-        let payCount = 0;
+        const paidStudentIds = new Set();
         g.items.forEach((l) => {
           const ch = l.channels || [];
           if (ch.includes("결제선생")) kyuljeCount++;
           if (ch.includes("sms")) smsCount++;
           const st = students.find((s) => s.id === l.studentId);
-          if (st && (st.paymentHistory || []).find((p) => p.date >= l.sentAt)) payCount++;
+          if (st && (st.paymentHistory || []).find((p) => p.date >= l.sentAt)) {
+            paidStudentIds.add(l.studentId);
+          }
         });
+        const payCount = paidStudentIds.size;
         return { ...g, label: formatLabel(g.key), kyuljeCount, smsCount, payCount };
       });
   }, [messageLogs, historyPeriod, students]);
