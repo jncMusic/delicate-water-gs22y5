@@ -1309,6 +1309,7 @@ const PaymentDetailModal = ({
   const [amount, setAmount] = useState(student.tuitionFee || 0);
   const [editingHistoryId, setEditingHistoryId] = useState(null);
   const [editingDate, setEditingDate] = useState("");
+  const [isPaySaving, setIsPaySaving] = useState(false);
 
   // [NEW] 출석 수정 모달 상태
   const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState(false);
@@ -1397,7 +1398,8 @@ const PaymentDetailModal = ({
     setIsAttendanceModalOpen(false);
   };
 
-  const handlePaymentSubmit = () => {
+  const handlePaymentSubmit = async () => {
+    if (isPaySaving) return;
     if (!amount || amount <= 0) {
       showToast("금액을 확인해주세요.", "warning");
       return;
@@ -1419,12 +1421,17 @@ const PaymentDetailModal = ({
     confirmMsg += `결제일: ${paymentDate}\n`;
 
     if (window.confirm(confirmMsg)) {
-      onSavePayment(
-        student.id,
-        paymentDate,
-        parseInt(amount),
-        realSessionStartDate
-      );
+      setIsPaySaving(true);
+      try {
+        await onSavePayment(
+          student.id,
+          paymentDate,
+          parseInt(amount),
+          realSessionStartDate
+        );
+      } finally {
+        setIsPaySaving(false);
+      }
     }
   };
 
@@ -1595,7 +1602,8 @@ const PaymentDetailModal = ({
                 </div>
                 <button
                   onClick={handlePaymentSubmit}
-                  className="w-full md:w-auto py-2.5 px-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shadow-md flex items-center justify-center gap-2 shrink-0"
+                  disabled={isPaySaving}
+                  className="w-full md:w-auto py-2.5 px-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shadow-md flex items-center justify-center gap-2 shrink-0 disabled:opacity-50"
                 >
                   <CheckCircle size={18} /> 갱신하기
                 </button>
