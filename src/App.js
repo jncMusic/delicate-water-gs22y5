@@ -11380,6 +11380,14 @@ export default function App() {
       );
       const student = students.find((s) => s.id === studentId);
       if (!student) return;
+      // 같은 날짜·금액의 결제가 이미 있으면 중복 저장 방지
+      const alreadyExists = (student.paymentHistory || []).some(
+        (p) => p.date === date && Number(p.amount) === Number(amount)
+      );
+      if (alreadyExists) {
+        showToast("이미 동일한 결제 내역이 있습니다.", "error");
+        return;
+      }
       const newHistoryItem = {
         date,
         amount,

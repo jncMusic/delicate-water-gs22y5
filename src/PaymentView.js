@@ -460,6 +460,7 @@ export const PaymentView = ({
   const [completedPeriod, setCompletedPeriod] = useState("today");
   const [processQuickPay, setProcessQuickPay] = useState(null);
   const [processPayDate, setProcessPayDate] = useState(toLocalDateStr());
+  const [isProcessSaving, setIsProcessSaving] = useState(false);
 
   // ── 수납현황(today) 빠른 결제입력 상태 ───────────────────────
   const [quickPayStudent, setQuickPayStudent] = useState(null);
@@ -980,19 +981,23 @@ export const PaymentView = ({
             <div className="flex gap-2 justify-end mt-4">
               <button onClick={() => setProcessQuickPay(null)} className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg font-bold">취소</button>
               <button
+                disabled={isProcessSaving}
                 onClick={async () => {
-                  if (!processPayDate) return;
+                  if (!processPayDate || isProcessSaving) return;
+                  setIsProcessSaving(true);
                   try {
                     await onSavePayment(processQuickPay.student.id, processPayDate, parseInt(processQuickPay.student.tuitionFee || 0), processPayDate, processQuickPay.method);
                     showToast(`${processQuickPay.student.name} 수납 완료`, "success");
                     setProcessQuickPay(null);
                   } catch (e) {
                     showToast("저장 오류: " + e.message, "error");
+                  } finally {
+                    setIsProcessSaving(false);
                   }
                 }}
-                disabled={!processPayDate}
+                disabled={!processPayDate || isProcessSaving}
                 className="px-6 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 shadow-md disabled:opacity-40"
-              >완료 처리</button>
+              >{isProcessSaving ? "저장 중..." : "완료 처리"}</button>
             </div>
           </div>
         </div>
