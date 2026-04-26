@@ -11389,13 +11389,24 @@ export default function App() {
       );
       const student = students.find((s) => s.id === studentId);
       if (!student) return;
-      // 같은 날짜·금액의 결제가 이미 있으면 중복 저장 방지
-      const alreadyExists = (student.paymentHistory || []).some(
+      // 완전 동일(날짜+금액)이면 무조건 차단
+      const exactDuplicate = (student.paymentHistory || []).some(
         (p) => p.date === date && Number(p.amount) === Number(amount)
       );
-      if (alreadyExists) {
+      if (exactDuplicate) {
         showToast("이미 동일한 결제 내역이 있습니다.", "error");
         return;
+      }
+      // 30일 이내 동일 금액 결제가 있으면 중복 여부 확인
+      const recentDuplicate = (student.paymentHistory || []).find((p) => {
+        const diffDays = (new Date(date) - new Date(p.date)) / (1000 * 60 * 60 * 24);
+        return Math.abs(diffDays) <= 30 && Number(p.amount) === Number(amount);
+      });
+      if (recentDuplicate) {
+        const ok = window.confirm(
+          `${recentDuplicate.date}에 동일 금액(${Number(amount).toLocaleString()}원)의 결제가 이미 있습니다.\n발송을 여러 번 한 경우 중복 등록일 수 있습니다.\n\n그래도 등록하시겠습니까?`
+        );
+        if (!ok) return;
       }
       const newHistoryItem = {
         date,
