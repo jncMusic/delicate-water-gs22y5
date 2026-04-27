@@ -572,6 +572,48 @@ export const PaymentView = ({
     return results.sort((a, b) => b.payment.date.localeCompare(a.payment.date));
   }, [students]);
 
+  // ── 1주일 이내 결제 안내 대상 (수납현황 탭) ──────────────────
+  const weeklyDueList = useMemo(() => {
+    const todayStr = toLocalDateStr();
+    const d7 = new Date();
+    d7.setDate(d7.getDate() - 7);
+    const weekAgoStr = toLocalDateStr(d7);
+    return students.filter((s) => {
+      if (s.status !== "재원") return false;
+      const { isCompleted, isOverdue } = getStudentProgress(s);
+      if (!isCompleted && !isOverdue) return false;
+      // 오늘 수업한 학생은 위 섹션(오늘 회차 완료)에 있으므로 제외
+      const todayAttended = (s.attendanceHistory || []).some(
+        (h) => h.date === todayStr && (h.status === "present" || h.status === "canceled")
+      );
+      if (todayAttended) return false;
+      // 지난 7일 이내 수업이 있어야 포함
+      return (s.attendanceHistory || []).some(
+        (h) => h.date >= weekAgoStr && h.date < todayStr &&
+          (h.status === "present" || h.status === "canceled")
+      );
+    });
+  }, [students]);
+
+  // ── 1주일 이내 결제선생 발송 이력 (수납현황 탭) ──────────────
+  const weeklyKyuljeHistory = useMemo(() => {
+    const d7 = new Date();
+    d7.setDate(d7.getDate() - 7);
+    const weekAgoStr = toLocalDateStr(d7);
+    return (messageLogs || [])
+      .filter((log) =>
+        (log.channels || []).includes("결제선생") && log.sentAt >= weekAgoStr
+      )
+      .map((log) => {
+        const student = students.find((s) => s.id === log.studentId);
+        const paidAfter = student
+          ? (student.paymentHistory || []).find((p) => p.date >= log.sentAt)
+          : null;
+        return { log, student, paidAfter };
+      })
+      .sort((a, b) => b.log.sentAt.localeCompare(a.log.sentAt));
+  }, [messageLogs, students]);
+
   // ── 발송센터(send) 탭 필터링 목록 ────────────────────────────
   const sendList = useMemo(() => {
     const today = new Date();
@@ -1191,6 +1233,180 @@ export const PaymentView = ({
                     })}
                   </tbody>
                 </table>
+                </div>
+              )}
+            </div>
+
+            {/* 1주일 이내 결제 안내 대상 */}
+            <div className="border rounded-xl overflow-hidden flex flex-col">
+              <div className="bg-violet-50 px-4 py-2.5 flex items-center justify-between border-b shrink-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Bell size={15} className="text-violet-600" />
+                  <span className="font-bold text-violet-700 text-sm">1주일 이내 결제 안내 대상</span>
+                  <span className="bg-violet-200 text-violet-800 text-xs px-1.5 py-0.5 rounded-full">{weeklyDueList.length}명</span>
+                  {weeklyDueList.length > 0 && (
+                    <span className="text-violet-900 font-bold text-sm">
+                      총 {weeklyDueList.reduce((sum, s) => sum + (Number(s.tuitionFee) || 0), 0).toLocaleString()}원
+                    </span>
+                  )}
+                </div>
+                {weeklyDueList.length > 0 && (
+                  <button
+                    onClick={() => {
+                      setSelectedIds(weeklyDueList.map((s) => s.id));
+                      setActiveTab("send");
+                    }}
+                    className="px-3 py-1.5 text-xs bg-violet-600 text-white rounded-lg font-bold hover:bg-violet-700 flex items-center gap-1"
+                  >
+                    <Send size={12} /> 발송센터로 이동
+                  </button>
+                )}
+              </div>
+              {weeklyDueList.length === 0 ? (
+                <div className="py-8 text-center text-slate-400 text-sm">1주일 이내 결제 안내 대상이 없습니다.</div>
+              ) : (
+                <div className="overflow-auto max-h-64">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-slate-50 border-b text-xs text-slate-400 uppercase">
+                      <tr>
+                        <th className="py-2.5 px-4 text-left">이름 / 과목</th>
+                        <th className="py-2.5 px-4 text-left">강사</th>
+                        <th className="py-2.5 px-4 text-center">완료 회차</th>
+                        <th className="py-2.5 px-4 text-right">원비</th>
+                        <th className="py-2.5 px-4 text-left">최종결제일</th>
+                        <th className="py-2.5 px-4 text-center">안내 발송</th>
+                        <th className="py-2.5 px-4 text-center">결제 완료</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {weeklyDueList.map((s) => {
+                        const total = getEffectiveSessions(s);
+                        const notifSt = getNotifStatus(s.id);
+                        return (
+                          <tr key={s.id} className="hover:bg-violet-50 transition-colors">
+                            <td className="py-3 px-4">
+                              <div className="font-semibold">{s.name}</div>
+                              <div className="text-xs text-slate-400">{s.subject}</div>
+                            </td>
+                            <td className="py-3 px-4 text-slate-600">{s.teacher || "-"}</td>
+                            <td className="py-3 px-4 text-center">
+                              <span className="inline-block bg-violet-100 text-violet-800 text-xs font-bold px-2 py-0.5 rounded-full">
+                                {total}회차 완료
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-right font-bold text-indigo-600">
+                              {Number(s.tuitionFee || 0).toLocaleString()}원
+                            </td>
+                            <td className="py-3 px-4 text-xs text-slate-500">
+                              {s.lastPaymentDate
+                                ? `${parseInt(s.lastPaymentDate.slice(5, 7))}월 ${parseInt(s.lastPaymentDate.slice(8, 10))}일`
+                                : <span className="text-slate-300">없음</span>}
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <div className="flex items-center justify-center gap-1">
+                                {notifSt !== "none" && (
+                                  <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium mr-1 ${
+                                    notifSt === "done" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
+                                  }`}>
+                                    {notifSt === "done" ? "🟢 발송완료" : "🟡 SMS만"}
+                                  </span>
+                                )}
+                                <button
+                                  onClick={(e) => handleOpenMsgPreview(e, s)}
+                                  className="px-2 py-1 text-xs bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg hover:bg-indigo-100 font-medium"
+                                >
+                                  <MessageSquareText size={12} className="inline mr-0.5" />안내
+                                </button>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); sendKyuljesaengnim(s).then(async (result) => { if (onSaveMessageLog) await onSaveMessageLog({ studentId: s.id, studentName: s.name, phone: s.phone || "", sentAt: toLocalDateStr(), channels: ["결제선생"], messageType: "결제안내", sentBy: user?.name || "원장", billId: result.billId, shortURL: result.shortURL }); showToast(`${s.name} 결제선생 발송 완료`, "success"); }).catch(err => showToast("결제선생 발송 실패: " + err.message, "error")); }}
+                                  className="px-2 py-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 font-medium"
+                                >
+                                  💳
+                                </button>
+                              </div>
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <button
+                                onClick={() => { setQuickPayStudent(s); setQuickPayDate(toLocalDateStr()); }}
+                                className="px-3 py-1.5 text-xs bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-bold shadow-sm"
+                              >
+                                결제 완료 ✓
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* 1주일 이내 결제선생 발송 이력 */}
+            <div className="border rounded-xl overflow-hidden flex flex-col">
+              <div className="bg-blue-50 px-4 py-2.5 flex items-center gap-2 border-b shrink-0">
+                <Send size={15} className="text-blue-600" />
+                <span className="font-bold text-blue-700 text-sm">1주일 이내 결제선생 발송 이력</span>
+                <span className="bg-blue-200 text-blue-800 text-xs px-1.5 py-0.5 rounded-full">{weeklyKyuljeHistory.length}건</span>
+                {weeklyKyuljeHistory.length > 0 && (
+                  <>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">
+                      결제 {weeklyKyuljeHistory.filter(r => r.paidAfter).length}건
+                    </span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">
+                      미납 {weeklyKyuljeHistory.filter(r => !r.paidAfter).length}건
+                    </span>
+                  </>
+                )}
+              </div>
+              {weeklyKyuljeHistory.length === 0 ? (
+                <div className="py-8 text-center text-slate-400 text-sm">1주일 이내 결제선생 발송 이력이 없습니다.</div>
+              ) : (
+                <div className="overflow-auto max-h-64">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-slate-50 border-b text-xs text-slate-400 uppercase">
+                      <tr>
+                        <th className="py-2.5 px-4 text-left">이름 / 과목</th>
+                        <th className="py-2.5 px-4 text-left">강사</th>
+                        <th className="py-2.5 px-4 text-left">발송일</th>
+                        <th className="py-2.5 px-4 text-left">결제 여부</th>
+                        <th className="py-2.5 px-4 text-center">액션</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {weeklyKyuljeHistory.map(({ log, student: s, paidAfter }, i) => (
+                        <tr key={`${log.studentId}-${log.sentAt}-${i}`} className="hover:bg-blue-50 transition-colors">
+                          <td className="py-3 px-4">
+                            <div className="font-semibold">{log.studentName || s?.name || "-"}</div>
+                            <div className="text-xs text-slate-400">{s?.subject || ""}</div>
+                          </td>
+                          <td className="py-3 px-4 text-slate-600">{s?.teacher || "-"}</td>
+                          <td className="py-3 px-4 text-xs text-slate-500">{log.sentAt}</td>
+                          <td className="py-3 px-4">
+                            {paidAfter ? (
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">
+                                ✅ {paidAfter.date} · {Number(paidAfter.amount || 0).toLocaleString()}원
+                              </span>
+                            ) : (
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">
+                                ⏳ 미납
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            {!paidAfter && s && (
+                              <button
+                                onClick={() => { setQuickPayStudent(s); setQuickPayDate(toLocalDateStr()); }}
+                                className="px-3 py-1 text-xs bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-bold"
+                              >
+                                결제 완료 ✓
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>

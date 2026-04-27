@@ -11397,10 +11397,10 @@ export default function App() {
         showToast("이미 동일한 결제 내역이 있습니다.", "error");
         return;
       }
-      // 30일 이내 동일 금액 결제가 있으면 중복 여부 확인
+      // 10일 이내 동일 금액 결제가 있으면 중복 여부 확인
       const recentDuplicate = (student.paymentHistory || []).find((p) => {
         const diffDays = (new Date(date) - new Date(p.date)) / (1000 * 60 * 60 * 24);
-        return Math.abs(diffDays) <= 30 && Number(p.amount) === Number(amount);
+        return Math.abs(diffDays) <= 10 && Number(p.amount) === Number(amount);
       });
       if (recentDuplicate) {
         const ok = window.confirm(
