@@ -31,6 +31,12 @@ There are no test files currently in the repository.
 ## Project Structure
 
 ```
+├── homepage/                 # ★ jncmusic.kr 공개 홈페이지 (Next.js App Router)
+│   ├── app/
+│   │   ├── layout.js         # 메타데이터 (SEO, 구글/네이버 인증 코드 포함)
+│   │   ├── page.js           # 메인 페이지
+│   │   └── globals.css
+│   └── vercel.json           # Vercel 배포 설정
 ├── public/
 │   └── index.html            # SPA entry, loads Tailwind CDN
 ├── src/
@@ -45,6 +51,8 @@ There are no test files currently in the repository.
 ├── package.json
 └── pnpm-lock.yaml
 ```
+
+> **중요**: `jncmusic.kr` 공개 홈페이지는 별도 레포가 아니라 이 레포의 `homepage/` 폴더에 있는 Next.js 프로젝트입니다. SEO 메타태그, 구글/네이버 서치콘솔 인증 코드는 `homepage/app/layout.js`의 `metadata.verification`에서 관리합니다.
 
 ### Architecture Notes
 
