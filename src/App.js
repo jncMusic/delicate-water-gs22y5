@@ -5,6 +5,26 @@ import React, {
   useCallback,
   useRef,
 } from "react";
+import { PaymentView as PaymentViewNew, BulkMessageModal as BulkMessageModalNew } from "./PaymentView";
+
+// 에러 바운더리 — 렌더 에러를 잡아 화면에 표시
+export class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: 24, fontFamily: "monospace", background: "#fff0f0", minHeight: "100vh" }}>
+          <h2 style={{ color: "red" }}>⚠️ 렌더 에러 (개발용)</h2>
+          <pre style={{ whiteSpace: "pre-wrap", fontSize: 13 }}>{String(this.state.error)}</pre>
+          <pre style={{ whiteSpace: "pre-wrap", fontSize: 12, color: "#666" }}>{this.state.error?.stack}</pre>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 import { initializeApp } from "firebase/app";
 import { getAuth, signInAnonymously } from "firebase/auth";
 import {
@@ -71,6 +91,8 @@ import {
   ChevronDown,
   Tablet, // 🔥 키오스크 단말기 아이콘
   Send,
+  Bell,
+  Calculator,
 } from "lucide-react";
 import html2canvas from "html2canvas"; // 🔥 이미지 저장 라이브러리 추가
 
@@ -120,17 +142,28 @@ const PAYMINT_SEND_URL = process.env.REACT_APP_PAYMINT_API_URL || "https://jncmu
 
 // student: { id, name, phone, tuitionFee, subject, totalSessions, lastPaymentDate }
 const sendKyuljesaengnim = async (student) => {
+  const sessions = getEffectiveSessions(student);
+  // 이름: [J&C]과목-이름 형식
+  const formattedName = `[J&C]${student.subject || ""}-${student.name}`;
+  // 과정명: 1:1 개인레슨 N회 형식
+  const formattedSubject = `1:1 개인레슨 ${sessions}회`;
+  // 안내 메시지: 최종 결제일 포함
+  const lastPayStr = student.lastPaymentDate
+    ? `최종 결제일: ${student.lastPaymentDate}`
+    : "";
+  const note = `${student.name} 학생의 ${student.subject || ""} 1:1 개인레슨 ${sessions}회분 ${Number(student.tuitionFee || 0).toLocaleString()}원 결제 안내입니다.${lastPayStr ? `\n${lastPayStr}` : ""}`;
   const res = await fetch(PAYMINT_SEND_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       studentId: student.id,
-      studentName: student.name,
+      studentName: formattedName,
       phone: student.phone || "",
       price: String(student.tuitionFee || 0),
-      subject: student.subject || "",
-      totalSessions: student.totalSessions || 4,
+      subject: formattedSubject,
+      totalSessions: sessions,
       lastPaymentDate: student.lastPaymentDate || "",
+      note,
     }),
   });
   const data = await res.json();
@@ -1277,6 +1310,7 @@ const PaymentDetailModal = ({
   const [amount, setAmount] = useState(student.tuitionFee || 0);
   const [editingHistoryId, setEditingHistoryId] = useState(null);
   const [editingDate, setEditingDate] = useState("");
+  const [isPaySaving, setIsPaySaving] = useState(false);
 
   // [NEW] 출석 수정 모달 상태
   const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState(false);
@@ -1365,7 +1399,8 @@ const PaymentDetailModal = ({
     setIsAttendanceModalOpen(false);
   };
 
-  const handlePaymentSubmit = () => {
+  const handlePaymentSubmit = async () => {
+    if (isPaySaving) return;
     if (!amount || amount <= 0) {
       showToast("금액을 확인해주세요.", "warning");
       return;
@@ -1387,12 +1422,17 @@ const PaymentDetailModal = ({
     confirmMsg += `결제일: ${paymentDate}\n`;
 
     if (window.confirm(confirmMsg)) {
-      onSavePayment(
-        student.id,
-        paymentDate,
-        parseInt(amount),
-        realSessionStartDate
-      );
+      setIsPaySaving(true);
+      try {
+        await onSavePayment(
+          student.id,
+          paymentDate,
+          parseInt(amount),
+          realSessionStartDate
+        );
+      } finally {
+        setIsPaySaving(false);
+      }
     }
   };
 
@@ -1563,7 +1603,8 @@ const PaymentDetailModal = ({
                 </div>
                 <button
                   onClick={handlePaymentSubmit}
-                  className="w-full md:w-auto py-2.5 px-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shadow-md flex items-center justify-center gap-2 shrink-0"
+                  disabled={isPaySaving}
+                  className="w-full md:w-auto py-2.5 px-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shadow-md flex items-center justify-center gap-2 shrink-0 disabled:opacity-50"
                 >
                   <CheckCircle size={18} /> 갱신하기
                 </button>
@@ -1997,6 +2038,49 @@ const DashboardView = ({
     return { weeklyPaymentTotal, weeklyPaymentCount, weeklyNewStudents, weeklyConsultations, weekLabel };
   }, [students, consultations, user]);
 
+  // 오늘 회차 완료 학생 (관리자 — 결제 안내 자동화)
+  const todayCycleComplete = useMemo(() => {
+    if (user.role !== "admin") return [];
+    const todayStr = toLocalDateStr();
+    return students.filter((s) => {
+      if (s.status !== "재원") return false;
+      const history = s.attendanceHistory || [];
+      const todayRecord = history.find(
+        (h) => h.date === todayStr && (h.status === "present" || h.status === "canceled")
+      );
+      if (!todayRecord) return false;
+      const total = getEffectiveSessions(s);
+      const sessions = history
+        .filter((h) => h.status === "present" || h.status === "canceled")
+        .sort((a, b) => a.date.localeCompare(b.date));
+      let cumulative = 0;
+      for (const h of sessions) {
+        const cnt = h.status === "canceled" ? 1 : (h.count || 1);
+        cumulative += cnt;
+        if (h.date === todayStr) return cumulative % total === 0;
+        if (h.date > todayStr) break;
+      }
+      return false;
+    });
+  }, [students, user]);
+
+  // 오늘의 수업 목록 (강사 전용)
+  const todaySchedule = useMemo(() => {
+    if (user.role !== "teacher") return { regular: [], makeup: [] };
+    const todayStr = toLocalDateStr();
+    const todayDate = new Date();
+    const dayName = ["일", "월", "화", "수", "목", "금", "토"][todayDate.getDay()];
+    const regular = myStudents.filter((s) =>
+      s.schedules ? !!s.schedules[dayName] : s.className === dayName
+    );
+    const makeup = students.filter((s) =>
+      s.teacher === user.name &&
+      s.status === "재원" &&
+      s.attendanceHistory?.some((h) => h.status === "reschedule" && h.makeupDate === todayStr)
+    );
+    return { regular, makeup };
+  }, [myStudents, students, user]);
+
   // 5. 원생 추이 (관리자 전용, 최근 12개월)
   const trendData = useMemo(() => {
     if (user.role !== "admin") return [];
@@ -2165,6 +2249,75 @@ const DashboardView = ({
               <p className="text-xs text-slate-400 mt-1">이번 주 상담</p>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* 관리자: 오늘 결제 안내 필요 학생 카드 */}
+      {user.role === "admin" && todayCycleComplete.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-bold text-amber-800 flex items-center gap-2 text-sm">
+              <Bell size={16} className="text-amber-600" />
+              오늘 회차 완료 — 결제 안내 필요
+              <span className="bg-amber-200 text-amber-800 text-xs px-1.5 py-0.5 rounded-full font-bold">
+                {todayCycleComplete.length}명
+              </span>
+            </h3>
+            <button
+              onClick={() => onNavigate("payments")}
+              className="text-xs font-bold text-amber-700 hover:bg-amber-100 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 border border-amber-300"
+            >
+              수납센터 이동 →
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {todayCycleComplete.map((s) => (
+              <div key={s.id} className="flex items-center gap-2 bg-white border border-amber-200 rounded-xl px-3 py-2 text-sm">
+                <span className="font-bold text-slate-800">{s.name}</span>
+                <span className="text-xs text-slate-400">{s.subject}</span>
+                <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-bold">
+                  {getEffectiveSessions(s)}회차 완료
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 강사: 오늘의 수업 목록 */}
+      {user.role === "teacher" && (todaySchedule.regular.length > 0 || todaySchedule.makeup.length > 0) && (
+        <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
+          <h3 className="font-bold text-slate-700 flex items-center gap-2 text-sm mb-3">
+            <CalendarIcon size={16} className="text-indigo-500" />
+            오늘의 수업 ({todaySchedule.regular.length + todaySchedule.makeup.length}명)
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            {todaySchedule.regular.map((s) => {
+              const today = toLocalDateStr();
+              const record = s.attendanceHistory?.find((h) => h.date === today);
+              const statusLabel = record?.status === "present" ? "✓ 출석" : record?.status === "absent" ? "✗ 결석" : record?.status === "canceled" ? "취소" : null;
+              return (
+                <div key={s.id} className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm border ${record?.status === "present" ? "bg-emerald-50 border-emerald-200" : record?.status === "absent" ? "bg-rose-50 border-rose-200 opacity-70" : "bg-slate-50 border-slate-200"}`}>
+                  <span className="font-bold text-slate-800">{s.name}</span>
+                  <span className="text-xs text-slate-400">{s.subject}</span>
+                  {statusLabel && <span className={`text-xs font-bold ${record?.status === "present" ? "text-emerald-600" : record?.status === "absent" ? "text-rose-500" : "text-slate-400"}`}>{statusLabel}</span>}
+                </div>
+              );
+            })}
+            {todaySchedule.makeup.map((s) => (
+              <div key={`makeup-${s.id}`} className="flex items-center gap-2 bg-sky-50 border border-sky-200 rounded-xl px-3 py-2 text-sm">
+                <span className="font-bold text-slate-800">{s.name}</span>
+                <span className="text-xs text-slate-400">{s.subject}</span>
+                <span className="text-xs bg-sky-500 text-white px-1.5 py-0.5 rounded-full font-bold">보강</span>
+              </div>
+            ))}
+          </div>
+          <button
+            onClick={() => onNavigate("attendance")}
+            className="mt-3 text-xs text-indigo-600 hover:underline font-bold"
+          >
+            출석부 바로가기 →
+          </button>
         </div>
       )}
 
@@ -3753,8 +3906,16 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
       if (s.status !== "재원") return false;
       return s.attendanceHistory?.some((h) => h.date === dateStr);
     });
+    // 보강 예정일에 해당하는 학생 (다른 날짜에 reschedule 등록 → makeupDate가 dateStr인 경우)
+    const makeup = students.filter((s) => {
+      if (s.teacher !== teacherName) return false;
+      if (s.status !== "재원") return false;
+      return s.attendanceHistory?.some(
+        (h) => h.status === "reschedule" && h.makeupDate === dateStr
+      );
+    });
     const merged = [...scheduled];
-    attended.forEach((s) => {
+    [...attended, ...makeup].forEach((s) => {
       if (!merged.find((m) => m.id === s.id)) merged.push(s);
     });
     return merged;
@@ -3765,7 +3926,9 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
     date,
     status,
     reason = "",
-    memo = ""
+    memo = "",
+    makeupDate = "",
+    makeupTime = ""
   ) => {
     if (!auth.currentUser) return;
     try {
@@ -3788,6 +3951,19 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
           const cur = history[existingIdx].count || 1;
           history[existingIdx] = { ...history[existingIdx], count: cur === 1 ? 2 : 1 };
         }
+      } else if (status === "reschedule") {
+        // 보강: 원래 날짜에 reschedule 기록 저장
+        const record = {
+          date,
+          status: "reschedule",
+          makeupDate,
+          makeupTime,
+          reason,
+          teacher: student.teacher || "",
+          timestamp: new Date().toISOString(),
+        };
+        if (existingIdx > -1) history[existingIdx] = record;
+        else history.push(record);
       } else {
         const prevCount = existingIdx > -1 ? (history[existingIdx].count || 1) : 1;
         const record = {
@@ -3802,11 +3978,12 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
         if (existingIdx > -1) history[existingIdx] = record;
         else history.push(record);
       }
+      // reschedule은 세션 차감 안 함 (보강 완료 시 present로 별도 처리)
       const lastPayment = student.lastPaymentDate || "0000-00-00";
       const sessionsCompleted = history.reduce((sum, h) => {
         if (h.date < lastPayment) return sum;
         if (h.status === "present") return sum + (h.count || 1);
-        if (h.status === "canceled") return sum + 1; // 당일취소는 학생 1회 차감 (강사 시수는 별도 0.5회 적용)
+        if (h.status === "canceled") return sum + 1;
         return sum;
       }, 0);
       await updateDoc(studentRef, {
@@ -3821,6 +3998,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
       showToast(
         status === "delete" ? "기록 삭제됨"
         : status === "double" ? `연강 ${doubleCount === 2 ? "처리(2회)" : "해제(1회)"}`
+        : status === "reschedule" ? `보강 등록: ${makeupDate}`
         : "저장됨",
         "success"
       );
@@ -3830,8 +4008,19 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
     }
   };
 
-  const handleStatusSelect = (status, memo = "") => {
-    if (status === "present" || status === "delete" || status === "double") {
+  const handleStatusSelect = (status, memo = "", makeupDate = "", makeupTime = "") => {
+    if (status === "reschedule") {
+      handleCalendarAttendance(
+        attendanceMenu.student,
+        attendanceMenu.date,
+        "reschedule",
+        memo,   // reason 전달
+        "",
+        makeupDate,
+        makeupTime
+      );
+      setAttendanceMenu(null);
+    } else if (status === "present" || status === "delete" || status === "double") {
       handleCalendarAttendance(
         attendanceMenu.student,
         attendanceMenu.date,
@@ -4001,7 +4190,11 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                     )}
                     {cellStudents.map((s, idx) => {
                       const record = s.attendanceHistory?.find((h) => h.date === dateStr);
-                      const status = record ? record.status : "scheduled";
+                      // 보강 예정일인지: 다른 날짜 reschedule의 makeupDate가 오늘
+                      const makeupRecord = !record
+                        ? s.attendanceHistory?.find((h) => h.status === "reschedule" && h.makeupDate === dateStr)
+                        : null;
+                      const status = record ? record.status : makeupRecord ? "makeup" : "scheduled";
                       const isDoubleLesson = status === "present" && (record?.count || 1) === 2;
                       const sessionNum = getSessionCount(s, dateStr);
                       const isLast = status === "present" && isLastSessionOfCycle(s, dateStr);
@@ -4009,6 +4202,8 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                       const tc = teacherColorMap[s.teacher] ?? TEACHER_COLOR_PALETTE[0];
                       const isAbsent = status === "absent";
                       const isCanceled = status === "canceled";
+                      const isReschedule = status === "reschedule";
+                      const isMakeup = status === "makeup";
                       return (
                         <div
                           key={idx}
@@ -4018,22 +4213,29 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                               ? "bg-slate-100 border-l-slate-400 opacity-60"
                               : isCanceled
                               ? "bg-slate-50 border-l-slate-300 opacity-50"
+                              : isReschedule
+                              ? "bg-blue-50 border-l-blue-400 opacity-80"
+                              : isMakeup
+                              ? "bg-sky-50 border-l-sky-500 ring-1 ring-sky-300"
                               : isUnprocessed
                               ? `${tc.bg} border-l-amber-500 ring-1 ring-amber-400`
                               : `${tc.bg} ${tc.border}`}`}
                         >
-                          <div className={`text-xs font-bold flex items-center gap-1 ${isAbsent || isCanceled ? "text-slate-400" : tc.text}`}>
+                          <div className={`text-xs font-bold flex items-center gap-1 ${isAbsent || isCanceled ? "text-slate-400" : isReschedule || isMakeup ? "text-blue-700" : tc.text}`}>
                             <span className="truncate">{s.name}</span>
                             {sessionNum > 0 && <span className="shrink-0 text-[9px] opacity-60 font-normal">({sessionNum})</span>}
                             {isDoubleLesson && <span className="shrink-0 text-[8px] bg-indigo-700 text-white px-1 rounded leading-tight">×2</span>}
                             {isLast && <span className="shrink-0 text-[10px]">💳</span>}
                             {isUnprocessed && <span className="shrink-0 text-amber-500 font-bold">!</span>}
+                            {isMakeup && <span className="shrink-0 text-[9px] bg-sky-500 text-white px-1 rounded leading-tight">보강</span>}
                           </div>
                           <div className="text-[10px] text-slate-500 truncate">{s.teacher} · {s.subject}</div>
                           {status === "present" && !isDoubleLesson && <div className="text-[9px] text-emerald-600 font-medium">✓ 출석</div>}
                           {isDoubleLesson && <div className="text-[9px] text-indigo-600 font-medium">✓ 연강 출석</div>}
                           {isAbsent && <div className="text-[9px] text-rose-500">✗ 결석</div>}
                           {isCanceled && <div className="text-[9px] text-slate-400">취소</div>}
+                          {isReschedule && <div className="text-[9px] text-blue-500">🔄 보강 예정: {record.makeupDate?.replace(/-/g,'/')}{record.makeupTime ? ' ' + record.makeupTime : ''}</div>}
+                          {isMakeup && <div className="text-[9px] text-sky-600 font-medium">🔄 보강 수업</div>}
                         </div>
                       );
                     })}
@@ -5776,8 +5978,110 @@ const ReasonInputModal = ({ student, status, onClose, onSave }) => {
 const MEMO_PRESETS = ["결제 요청", "보강 예정", "연락 바람", "다음 수업 확인"];
 const AttendanceActionModal = ({ student, date, onClose, onSelectStatus, currentRecord }) => {
   const [memo, setMemo] = React.useState(currentRecord?.memo || "");
+  const [showReschedule, setShowReschedule] = React.useState(
+    currentRecord?.status === "reschedule"
+  );
+  const [makeupDate, setMakeupDate] = React.useState(
+    currentRecord?.makeupDate || ""
+  );
+  const [makeupTime, setMakeupTime] = React.useState(
+    currentRecord?.makeupTime || ""
+  );
+  const [rescheduleReason, setRescheduleReason] = React.useState(
+    currentRecord?.reason || "강사 사정"
+  );
   const isPresent = currentRecord?.status === "present";
   const isDouble = isPresent && (currentRecord.count || 1) === 2;
+  const isReschedule = currentRecord?.status === "reschedule";
+
+  if (showReschedule) {
+    return (
+      <div
+        className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
+        onClick={onClose}
+      >
+        <div
+          className="bg-white rounded-xl shadow-2xl w-full max-w-xs p-4 animate-in fade-in zoom-in-95 duration-200"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <h3 className="font-bold text-center mb-1">🔄 보강 일정</h3>
+          <p className="text-xs text-center text-slate-500 mb-4">{student.name} — {date}</p>
+          <div className="flex flex-col gap-3">
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-bold text-slate-500">보강 날짜 / 시간</label>
+                {makeupDate && (
+                  <span className="text-xs font-bold text-blue-600">
+                    {makeupDate.replace(/-/g, '/')}{makeupTime ? ' ' + makeupTime : ''}
+                  </span>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="date"
+                  lang="ko-KR"
+                  value={makeupDate}
+                  onChange={(e) => setMakeupDate(e.target.value)}
+                  className="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+                <input
+                  type="time"
+                  value={makeupTime}
+                  onChange={(e) => setMakeupTime(e.target.value)}
+                  className="w-28 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1">사유</label>
+              <div className="flex gap-2 mb-1">
+                {["강사 사정", "학생 사정", "기타"].map((r) => (
+                  <button
+                    key={r}
+                    onClick={() => setRescheduleReason(r)}
+                    className={`flex-1 py-1.5 text-xs rounded-lg border font-medium transition-colors ${
+                      rescheduleReason === r
+                        ? "bg-blue-100 border-blue-400 text-blue-700"
+                        : "bg-slate-50 border-slate-200 text-slate-500 hover:bg-blue-50"
+                    }`}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => setShowReschedule(false)}
+                className="flex-1 py-2 text-sm text-slate-500 hover:bg-slate-100 rounded-lg font-bold border"
+              >
+                취소
+              </button>
+              <button
+                onClick={() => {
+                  if (!makeupDate) return;
+                  onSelectStatus("reschedule", rescheduleReason, makeupDate, makeupTime);
+                }}
+                disabled={!makeupDate}
+                className="flex-1 py-2 text-sm bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 disabled:opacity-40"
+              >
+                보강 저장
+              </button>
+            </div>
+            {isReschedule && (
+              <button
+                onClick={() => onSelectStatus("delete", "")}
+                className="w-full py-2 text-xs text-rose-400 hover:text-rose-600 font-medium flex items-center justify-center gap-1"
+              >
+                <Trash2 size={14} /> 보강 기록 삭제
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
@@ -5821,6 +6125,17 @@ const AttendanceActionModal = ({ student, date, onClose, onSelectStatus, current
           >
             당일 취소
           </button>
+          {/* 보강 버튼 */}
+          <button
+            onClick={() => setShowReschedule(true)}
+            className={`w-full py-3 rounded-lg font-bold transition-colors flex items-center justify-center gap-2 ${
+              isReschedule
+                ? "bg-blue-100 text-blue-700 hover:bg-blue-200"
+                : "bg-blue-50 text-blue-600 hover:bg-blue-100"
+            }`}
+          >
+            🔄 {isReschedule ? `보강 예정 (${currentRecord.makeupDate?.replace(/-/g, '/')}${currentRecord.makeupTime ? ' ' + currentRecord.makeupTime : ''}) — 수정` : "보강 일정 등록"}
+          </button>
           {/* 메모 입력 */}
           <div className="border-t pt-2 mt-1">
             <p className="text-xs text-slate-400 mb-1.5 font-medium">메모 (선택)</p>
@@ -5853,6 +6168,92 @@ const AttendanceActionModal = ({ student, date, onClose, onSelectStatus, current
           >
             <Trash2 size={16} /> 기록 삭제
           </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// [Helper: RescheduleModal] - 출석부(AttendanceView) 보강 일정 등록용
+const RescheduleModal = ({ student, date, existingMakeupDate, existingMakeupTime, existingReason, onClose, onSave }) => {
+  const [makeupDate, setMakeupDate] = React.useState(existingMakeupDate || "");
+  const [makeupTime, setMakeupTime] = React.useState(existingMakeupTime || "");
+  const [reason, setReason] = React.useState(existingReason || "강사 사정");
+  const isEdit = !!existingMakeupDate;
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-xl shadow-2xl w-full max-w-xs p-4 animate-in fade-in zoom-in-95 duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="font-bold text-center mb-1">🔄 보강 일정 {isEdit ? "수정" : "등록"}</h3>
+        <p className="text-xs text-center text-slate-500 mb-4">{student.name} — {date}</p>
+        <div className="flex flex-col gap-3">
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-bold text-slate-500">보강 날짜 / 시간</label>
+              {makeupDate && (
+                <span className="text-xs font-bold text-blue-600">
+                  {makeupDate.replace(/-/g, '/')}{makeupTime ? ' ' + makeupTime : ''}
+                </span>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="date"
+                lang="ko-KR"
+                value={makeupDate}
+                onChange={(e) => setMakeupDate(e.target.value)}
+                className="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+              />
+              <input
+                type="time"
+                value={makeupTime}
+                onChange={(e) => setMakeupTime(e.target.value)}
+                className="w-28 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-500 mb-1">사유</label>
+            <div className="flex gap-2">
+              {["강사 사정", "학생 사정", "기타"].map((r) => (
+                <button
+                  key={r}
+                  onClick={() => setReason(r)}
+                  className={`flex-1 py-1.5 text-xs rounded-lg border font-medium transition-colors ${
+                    reason === r
+                      ? "bg-blue-100 border-blue-400 text-blue-700"
+                      : "bg-slate-50 border-slate-200 text-slate-500 hover:bg-blue-50"
+                  }`}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={onClose}
+              className="flex-1 py-2 text-sm text-slate-500 hover:bg-slate-100 rounded-lg font-bold border"
+            >
+              취소
+            </button>
+            <button
+              onClick={() => {
+                if (!makeupDate) return;
+                onSave(makeupDate, reason, makeupTime);
+              }}
+              disabled={!makeupDate}
+              className="flex-1 py-2 text-sm bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 disabled:opacity-40"
+            >
+              보강 저장
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -7222,33 +7623,46 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
     ["일", "월", "화", "수", "목", "금", "토"][date.getDay()];
   const formatDate = (date) => toLocalDateStr(date);
 
-  // [기능 보존] 오늘 수업 대상자 필터링 (강사 필터링 로직 포함)
+  // [기능 보존] 오늘 수업 대상자 필터링 (강사 필터링 로직 포함, 보강 대상 포함)
   const todayStudents = useMemo(() => {
     const dayName = getDayOfWeek(selectedDate);
-    return students
+    const dateStr = toLocalDateStr(selectedDate);
+    const isTeacherOk = (s) =>
+      user.role === "admin"
+        ? selectedTeacher === "" || s.teacher === selectedTeacher
+        : s.teacher === user.name;
+
+    // 정규 수업 학생
+    const regular = students
       .filter((s) => {
-        // 1. 재원생 & 오늘 수업 여부
         const hasSchedule =
           s.status === "재원" &&
           (s.schedules ? !!s.schedules[dayName] : s.className === dayName);
-
-        // 2. 강사 필터링 (Admin은 선택, Teacher는 본인만)
-        const isTeacherMatch =
-          user.role === "admin"
-            ? selectedTeacher === "" || s.teacher === selectedTeacher
-            : s.teacher === user.name;
-
-        return hasSchedule && isTeacherMatch;
+        return hasSchedule && isTeacherOk(s);
       })
       .sort((a, b) =>
-        (a.schedules[dayName] || "00:00").localeCompare(
-          b.schedules[dayName] || "00:00"
+        (a.schedules?.[dayName] || "00:00").localeCompare(
+          b.schedules?.[dayName] || "00:00"
         )
       );
+
+    // 보강 수업 학생 (다른 날 reschedule → makeupDate = 오늘)
+    const makeup = students.filter((s) => {
+      if (!isTeacherOk(s) || s.status !== "재원") return false;
+      if (regular.find((r) => r.id === s.id)) return false; // 이미 포함된 경우 제외
+      return s.attendanceHistory?.some(
+        (h) => h.status === "reschedule" && h.makeupDate === dateStr
+      );
+    });
+
+    return [...regular, ...makeup.map((s) => ({ ...s, _isMakeup: true }))];
   }, [students, selectedDate, selectedTeacher, user]);
 
+  // 보강 모달 상태
+  const [rescheduleModal, setRescheduleModal] = useState(null); // { student }
+
   // DB 업데이트 및 횟수 재계산 로직
-  const saveAttendanceToDB = async (student, status, detail = "") => {
+  const saveAttendanceToDB = async (student, status, detail = "", makeupDate = "", makeupTime = "") => {
     const dateStr = formatDate(selectedDate);
     try {
       const studentRef = doc(
@@ -7266,6 +7680,19 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
       // 삭제 모드
       if (status === "delete") {
         if (existingIdx > -1) history.splice(existingIdx, 1);
+      } else if (status === "reschedule") {
+        // 보강 등록: makeupDate, makeupTime, reason(=detail) 저장
+        const record = {
+          date: dateStr,
+          status: "reschedule",
+          makeupDate,
+          makeupTime,
+          reason: detail,
+          teacher: student.teacher || "",
+          timestamp: new Date().toISOString(),
+        };
+        if (existingIdx > -1) history[existingIdx] = record;
+        else history.push(record);
       } else {
         // 추가/수정 모드 (기존 count 값 보존)
         const prevCount = existingIdx > -1 ? (history[existingIdx].count || 1) : 1;
@@ -7314,13 +7741,13 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
       let msg = "";
       if (status === "delete") msg = "기록이 삭제되었습니다.";
       else if (status === "present") msg = `${student.name}님 출석 처리됨`;
-      else if (status === "absent")
-        msg = `${student.name}님 결석(보강대상) 처리됨`;
-      else if (status === "canceled")
-        msg = `${student.name}님 당일취소(${detail}) 처리됨`;
+      else if (status === "absent") msg = `${student.name}님 결석(보강대상) 처리됨`;
+      else if (status === "canceled") msg = `${student.name}님 당일취소(${detail}) 처리됨`;
+      else if (status === "reschedule") msg = `${student.name}님 보강 등록 (${makeupDate})`;
 
       showToast(msg);
-      setModalConfig(null); // 모달 닫기
+      setModalConfig(null);
+      setRescheduleModal(null);
     } catch (e) {
       console.error(e);
       showToast("저장 실패", "error");
@@ -7385,6 +7812,8 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
       if (window.confirm("이 출석 기록을 삭제하시겠습니까?")) {
         saveAttendanceToDB(student, "delete");
       }
+    } else if (action === "reschedule") {
+      setRescheduleModal({ student });
     } else {
       // 결석(absent)이나 당일취소(canceled)는 모달 띄우기
       setModalConfig({ type: action, student });
@@ -7428,6 +7857,26 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
         />
       )}
 
+      {/* 보강 모달 */}
+      {rescheduleModal && (() => {
+        const existingRecord = rescheduleModal.student.attendanceHistory?.find(
+          (h) => h.date === formatDate(selectedDate) && h.status === "reschedule"
+        );
+        return (
+          <RescheduleModal
+            student={rescheduleModal.student}
+            date={formatDate(selectedDate)}
+            existingMakeupDate={existingRecord?.makeupDate || ""}
+            existingMakeupTime={existingRecord?.makeupTime || ""}
+            existingReason={existingRecord?.reason || "강사 사정"}
+            onClose={() => setRescheduleModal(null)}
+            onSave={(makeupDate, reason, makeupTime) =>
+              saveAttendanceToDB(rescheduleModal.student, "reschedule", reason, makeupDate, makeupTime)
+            }
+          />
+        );
+      })()}
+
       {/* 2. 상단 컨트롤러 (날짜 + 강사필터) */}
       <div className="bg-white p-6 rounded-2xl shadow-sm border flex flex-col md:flex-row justify-between items-center gap-4">
         <div className="flex items-center gap-4">
@@ -7443,7 +7892,7 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
           </button>
           <div className="text-center">
             <h2 className="text-2xl font-bold text-slate-800">
-              {selectedDate.toLocaleDateString()} ({getDayOfWeek(selectedDate)})
+              {`${String(selectedDate.getFullYear()).slice(-2)}/${String(selectedDate.getMonth()+1).padStart(2,'0')}/${String(selectedDate.getDate()).padStart(2,'0')}`} ({getDayOfWeek(selectedDate)})
             </h2>
             <p className="text-sm text-indigo-600 font-medium">
               오늘 레슨 대상: {todayStudents.length}명
@@ -7517,6 +7966,12 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
               (h) => h.date === formatDate(selectedDate)
             );
             const status = record?.status;
+            // 보강 수업인 경우: makeupDate가 오늘인 reschedule 원본 기록에서 시간 추출
+            const makeupRecord = s._isMakeup
+              ? (s.attendanceHistory || []).find(
+                  (h) => h.status === "reschedule" && h.makeupDate === formatDate(selectedDate)
+                )
+              : null;
             // 상세 정보 (결석 사유 or 취소 유형)
             const detailInfo = record?.reason || record?.subType || "";
 
@@ -7530,9 +7985,22 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
                     ? "border-rose-500 bg-rose-50/30"
                     : status === "absent"
                     ? "border-amber-500 bg-amber-50/30"
+                    : status === "reschedule"
+                    ? "border-blue-400 bg-blue-50/30"
+                    : s._isMakeup
+                    ? "border-sky-400 bg-sky-50/30"
                     : "border-slate-100 shadow-sm"
                 }`}
               >
+                {/* 보강 수업 배지 */}
+                {s._isMakeup && (
+                  <div className="flex items-center gap-1 mb-2">
+                    <span className="text-xs bg-sky-500 text-white px-2 py-0.5 rounded-full font-bold">🔄 보강 수업</span>
+                    {makeupRecord?.makeupTime && (
+                      <span className="text-xs bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full font-bold">{makeupRecord.makeupTime}</span>
+                    )}
+                  </div>
+                )}
                 <div className="flex justify-between items-start mb-4">
                   <div>
                     <div className="flex items-center gap-2">
@@ -7549,8 +8017,12 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
                     <p className="text-xs text-slate-500 mt-1 font-medium">
                       {s.subject} · {s.teacher} 선생님
                     </p>
+                    {/* 보강 예정일 표시 */}
+                    {status === "reschedule" && record?.makeupDate && (
+                      <p className="text-xs text-blue-600 font-bold mt-0.5">🔄 보강 예정: {record.makeupDate?.replace(/-/g,'/')}{record.makeupTime ? ' ' + record.makeupTime : ''} ({record.reason})</p>
+                    )}
                   </div>
-                  {status && (
+                  {status && status !== "reschedule" && (
                     <div className="text-right">
                       <span
                         className={`text-[10px] font-bold px-2 py-1 rounded-lg block w-fit ml-auto mb-1 ${
@@ -7574,10 +8046,13 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
                       )}
                     </div>
                   )}
+                  {status === "reschedule" && (
+                    <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-blue-500 text-white">보강등록</span>
+                  )}
                 </div>
 
                 {/* 액션 버튼 그룹 */}
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-5 gap-1.5">
                   <button
                     onClick={() => onActionClick(s, "present")}
                     className={`col-span-2 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-1 transition-all ${
@@ -7610,6 +8085,20 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
                       당일
                       <br />
                       취소
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => onActionClick(s, "reschedule")}
+                    className={`col-span-1 py-2.5 rounded-xl font-bold text-xs flex flex-col items-center justify-center gap-0.5 transition-all ${
+                      status === "reschedule"
+                        ? "bg-blue-500 text-white shadow-lg shadow-blue-200"
+                        : "bg-slate-50 text-slate-400 hover:bg-blue-50 hover:text-blue-600 border border-slate-100"
+                    }`}
+                  >
+                    <span className="leading-tight">
+                      🔄
+                      <br />
+                      보강
                     </span>
                   </button>
                 </div>
@@ -9493,6 +9982,7 @@ const PaymentView = ({
   // 결제 완료 간편 입력 state
   const [quickPayStudent, setQuickPayStudent] = useState(null);
   const [quickPayDate, setQuickPayDate] = useState("");
+  const [quickPayMethod, setQuickPayMethod] = useState("");
 
   // 결제 처리 탭 state
   const [processMode, setProcessMode] = useState(false);
@@ -9558,13 +10048,15 @@ const PaymentView = ({
     return Array.from(set).sort();
   }, [students]);
 
-  // 발송 상태 3단계: none / sms-only / done (구버전 channel 문자열 하위 호환)
+  // 발송 상태 4단계: none / sms-only / done / paid (구버전 channel 문자열 하위 호환)
+  // paid: 직전 안내 후 결제까지 완료 (messageLog에 paidAt 마킹됨)
   const getNotifStatus = (studentId) => {
     const logs = messageLogs
       .filter((l) => l.studentId === studentId)
       .sort((a, b) => b.sentAt.localeCompare(a.sentAt));
     if (!logs.length) return "none";
     const latest = logs[0];
+    if (latest.paidAt) return "paid";
     const ch = latest.channels || (latest.channel ? ["sms"] : []);
     if (ch.includes("결제선생")) return "done";
     if (ch.includes("sms")) return "sms-only";
@@ -9636,6 +10128,20 @@ const PaymentView = ({
     [students]
   );
 
+  // 안내 발송 탭: 오늘 결제 완료자 (당일 수금 점검용)
+  const todayPayments = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const results = [];
+    students.filter((s) => s.status === "재원").forEach((s) => {
+      (s.paymentHistory || []).forEach((p) => {
+        if (p.date === today) results.push({ student: s, payment: p });
+      });
+    });
+    return results.sort((a, b) =>
+      (b.payment.createdAt || "").localeCompare(a.payment.createdAt || "")
+    );
+  }, [students]);
+
   // 결제 처리 탭: 결제 완료자 명단
   const recentlyPaidList = useMemo(() => {
     const now = new Date();
@@ -9689,18 +10195,22 @@ const PaymentView = ({
     );
   };
 
-  // 결제 완료 간편 저장
+  // 결제 완료 간편 저장 (결제방법 포함 - lastPaymentMethod 기본 재활용)
   const handleQuickPaySave = async () => {
     if (!quickPayStudent || !quickPayDate) return;
     try {
+      const method = quickPayMethod || quickPayStudent.lastPaymentMethod || "";
       await onSavePayment(
         quickPayStudent.id,
         quickPayDate,
         parseInt(quickPayStudent.tuitionFee || 0),
-        quickPayDate
+        quickPayDate,
+        method
       );
+      showToast(`${quickPayStudent.name} 수납 완료${method ? ` (${method})` : ""}`, "success");
       setQuickPayStudent(null);
       setQuickPayDate("");
+      setQuickPayMethod("");
     } catch (e) {
       showToast("저장 오류: " + e.message, "error");
     }
@@ -9825,8 +10335,35 @@ const PaymentView = ({
                 {Number(quickPayStudent.tuitionFee || 0).toLocaleString()}원
               </div>
             </div>
+            <div className="mb-4">
+              <label className="block text-xs font-bold text-slate-500 mb-1">
+                결제방법
+                {quickPayStudent.lastPaymentMethod && (
+                  <span className="ml-2 text-[10px] text-slate-400 font-normal">
+                    (이전: {quickPayStudent.lastPaymentMethod})
+                  </span>
+                )}
+              </label>
+              <div className="flex flex-wrap gap-1">
+                {["현장", "계좌이체", "기타", "결제선생"].map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setQuickPayMethod(m)}
+                    className={`px-3 py-1.5 text-xs rounded-lg border font-medium transition-all ${
+                      quickPayMethod === m
+                        ? m === "결제선생"
+                          ? "bg-blue-600 text-white border-blue-600"
+                          : "bg-indigo-600 text-white border-indigo-600"
+                        : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
+                    }`}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="flex gap-2 justify-end mt-4">
-              <button onClick={() => { setQuickPayStudent(null); setQuickPayDate(""); }} className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg font-bold">취소</button>
+              <button onClick={() => { setQuickPayStudent(null); setQuickPayDate(""); setQuickPayMethod(""); }} className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg font-bold">취소</button>
               <button
                 onClick={handleQuickPaySave}
                 disabled={!quickPayDate}
@@ -9999,6 +10536,43 @@ const PaymentView = ({
           </button>
         </div>
       </div>
+
+      {/* 안내 발송 모드: 오늘 결제 완료 요약 (당일 수금 확인) */}
+      {notifMode && todayPayments.length > 0 && (
+        <div className="mb-2 shrink-0 bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5">
+          <div className="flex items-center gap-2 flex-wrap text-xs">
+            <CheckCircle size={14} className="text-blue-600 shrink-0" />
+            <span className="font-bold text-blue-700">
+              오늘 결제 완료 {todayPayments.length}건
+            </span>
+            <span className="text-slate-400">|</span>
+            <span className="text-slate-600">
+              총{" "}
+              <span className="font-bold text-blue-700">
+                {todayPayments
+                  .reduce((sum, { payment }) => sum + (Number(payment.amount) || 0), 0)
+                  .toLocaleString()}
+                원
+              </span>
+            </span>
+            <div className="flex flex-wrap gap-1 mt-0.5">
+              {todayPayments.map(({ student, payment }, i) => (
+                <span
+                  key={`${student.id}-${i}`}
+                  className="px-2 py-0.5 rounded-full bg-white border border-blue-200 text-blue-700 font-medium"
+                >
+                  {student.name}
+                  {payment.method && (
+                    <span className="text-[10px] text-slate-400 ml-1">
+                      · {payment.method}
+                    </span>
+                  )}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 안내 발송 모드: 일괄 액션 바 */}
       {notifMode && (
@@ -10257,7 +10831,11 @@ const PaymentView = ({
                   {notifMode ? (
                     <>
                       <td className="py-3 px-4 text-xs">
-                        {notifSt === "done" ? (
+                        {notifSt === "paid" ? (
+                          <span className="font-medium text-blue-600">
+                            ✅ {lastNotif} 결제완료
+                          </span>
+                        ) : notifSt === "done" ? (
                           <span className={`font-medium ${isThisMonth(lastNotif) ? "text-emerald-600" : "text-emerald-400"}`}>
                             🟢 {lastNotif}{!isThisMonth(lastNotif) && " (지난달)"}
                           </span>
@@ -10270,15 +10848,22 @@ const PaymentView = ({
                         )}
                       </td>
                       <td className="py-3 px-4 text-center" onClick={(e) => e.stopPropagation()}>
-                        <button
-                          onClick={() => {
-                            setQuickPayStudent(s);
-                            setQuickPayDate(new Date().toISOString().split("T")[0]);
-                          }}
-                          className="px-2 py-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 font-medium"
-                        >
-                          결제 완료
-                        </button>
+                        {notifSt === "paid" ? (
+                          <span className="px-2 py-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-lg font-medium">
+                            ✅ 결제완료
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setQuickPayStudent(s);
+                              setQuickPayDate(new Date().toISOString().split("T")[0]);
+                              setQuickPayMethod(s.lastPaymentMethod || "");
+                            }}
+                            className="px-2 py-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 font-medium"
+                          >
+                            결제 완료
+                          </button>
+                        )}
                       </td>
                     </>
                   ) : (
@@ -10573,6 +11158,11 @@ export default function App() {
   const [showMemoPopup, setShowMemoPopup] = useState(false);
   const [today, setToday] = useState(new Date());
   const [targetConsultation, setTargetConsultation] = useState(null);
+  const [payDetailStudentId, setPayDetailStudentId] = useState(null);
+  // students onSnapshot 업데이트 시 모달 데이터도 실시간 반영
+  const payDetailStudent = payDetailStudentId
+    ? students.find((s) => s.id === payDetailStudentId) ?? null
+    : null;
 
   useEffect(() => {
     setToday(new Date());
@@ -10799,6 +11389,25 @@ export default function App() {
       );
       const student = students.find((s) => s.id === studentId);
       if (!student) return;
+      // 완전 동일(날짜+금액)이면 무조건 차단
+      const exactDuplicate = (student.paymentHistory || []).some(
+        (p) => p.date === date && Number(p.amount) === Number(amount)
+      );
+      if (exactDuplicate) {
+        showToast("이미 동일한 결제 내역이 있습니다.", "error");
+        return;
+      }
+      // 10일 이내 동일 금액 결제가 있으면 중복 여부 확인
+      const recentDuplicate = (student.paymentHistory || []).find((p) => {
+        const diffDays = (new Date(date) - new Date(p.date)) / (1000 * 60 * 60 * 24);
+        return Math.abs(diffDays) <= 10 && Number(p.amount) === Number(amount);
+      });
+      if (recentDuplicate) {
+        const ok = window.confirm(
+          `${recentDuplicate.date}에 동일 금액(${Number(amount).toLocaleString()}원)의 결제가 이미 있습니다.\n발송을 여러 번 한 경우 중복 등록일 수 있습니다.\n\n그래도 등록하시겠습니까?`
+        );
+        if (!ok) return;
+      }
       const newHistoryItem = {
         date,
         amount,
@@ -10819,16 +11428,26 @@ export default function App() {
         ...(method && { lastPaymentMethod: method }),
       });
 
-      // 결제 완료 시 해당 학생의 메시지 발송 이력 초기화 (다음 주기에 미발송으로 표시)
+      // 결제 완료 시 미결제(paidAt 없는) 메시지 로그에만 paidAt 마킹 (이력 보존)
+      // 다음 결제 주기에는 sessionStartDate 기준으로 새 로그가 "미발송"으로 분류됨
       try {
         const logsRef = collection(db, "artifacts", safeAppId, "public", "data", "messageLogs");
         const logsQuery = query(logsRef, where("studentId", "==", studentId));
         const logSnap = await getDocs(logsQuery);
         const batch = writeBatch(db);
-        logSnap.forEach((d) => batch.delete(d.ref));
+        logSnap.forEach((d) => {
+          const data = d.data();
+          if (!data.paidAt) {
+            batch.update(d.ref, {
+              paidAt: realSessionStartDate,
+              paidAmount: amount,
+              ...(method && { paidMethod: method }),
+            });
+          }
+        });
         await batch.commit();
       } catch (logErr) {
-        console.error("메시지 이력 초기화 오류:", logErr);
+        console.error("메시지 이력 마킹 오류:", logErr);
       }
 
       showToast("결제 완료", "success");
@@ -11009,19 +11628,15 @@ export default function App() {
 
   // 4. [정의] 학생 삭제
   const handleDeleteStudent = async (studentId) => {
-    if (window.confirm("정말 삭제하시겠습니까? (복구 불가)")) {
-      try {
-        const safeAppId = APP_ID || "jnc-music-v2";
-
-        await deleteDoc(
-          doc(db, "artifacts", safeAppId, "public", "data", "students", studentId)
-        );
-        // onSnapshot이 자동으로 상태를 동기화합니다
-        showToast("삭제되었습니다.", "success");
-      } catch (e) {
-        console.error(e);
-        showToast("삭제 실패: " + e.message, "error");
-      }
+    try {
+      const safeAppId = APP_ID || "jnc-music-v2";
+      await deleteDoc(
+        doc(db, "artifacts", safeAppId, "public", "data", "students", studentId)
+      );
+      showToast("삭제되었습니다.", "success");
+    } catch (e) {
+      console.error(e);
+      showToast("삭제 실패: " + e.message, "error");
     }
   };
 
@@ -11081,8 +11696,8 @@ export default function App() {
   // ▲▲▲▲▲ [여기까지] return ( 바로 위에 있어야 합니다 ▲▲▲▲▲
   return (
     <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
-      {/* 키오스크 모드: 전체화면 오버레이 */}
-      {activeTab === "kiosk" && (
+      {/* 키오스크 모드: 전체화면 오버레이 (관리자 전용) */}
+      {activeTab === "kiosk" && currentUser?.role === "admin" && (
         <KioskView
           students={students}
           onExitKiosk={() => setActiveTab("dashboard")}
@@ -11216,6 +11831,7 @@ export default function App() {
               setIsSidebarOpen(false);
             }}
           />
+          {currentUser.role === "admin" && (
           <SidebarItem
             icon={Tablet}
             label="출석 단말기"
@@ -11225,6 +11841,7 @@ export default function App() {
               setIsSidebarOpen(false);
             }}
           />
+          )}
           <SidebarItem
             icon={BookOpen}
             label="수업 일지"
@@ -11264,6 +11881,15 @@ export default function App() {
                 active={activeTab === "payments"}
                 onClick={() => {
                   setActiveTab("payments");
+                  setIsSidebarOpen(false);
+                }}
+              />
+              <SidebarItem
+                icon={Calculator}
+                label="강사료 계산"
+                active={activeTab === "instructorFee"}
+                onClick={() => {
+                  setActiveTab("instructorFee");
                   setIsSidebarOpen(false);
                 }}
               />
@@ -11347,6 +11973,8 @@ export default function App() {
               ? "상담 관리"
               : activeTab === "settings"
               ? "환경 설정"
+              : activeTab === "instructorFee"
+              ? "강사료 계산 센터"
               : "JnC Music"}
           </h2>
           <div className="text-sm font-bold text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
@@ -11386,7 +12014,7 @@ export default function App() {
             />
           )}
           {activeTab === "timetable" && (
-            <TeacherTimetableView students={students} teachers={teachers} />
+            <TeacherTimetableView students={students} teachers={teachers} user={currentUser} />
           )}
           {activeTab === "subject_timetable" && (
             <SubjectTimetableView
@@ -11444,17 +12072,31 @@ export default function App() {
             />
           )}
           {activeTab === "payments" && currentUser.role === "admin" && (
-            <PaymentView
-              students={students}
-              showToast={showToast}
-              onSavePayment={handleSavePayment}
-              onUpdatePaymentHistory={handleUpdatePaymentHistory}
-              onUpdateStudent={handleUpdateStudent}
-              messageLogs={messageLogs}
-              onSaveMessageLog={handleSaveMessageLog}
-              paymentUrl={paymentUrl}
-              user={currentUser}
-            />
+            <>
+              <PaymentViewNew
+                students={students}
+                showToast={showToast}
+                onSavePayment={handleSavePayment}
+                onUpdatePaymentHistory={handleUpdatePaymentHistory}
+                onUpdateStudent={handleUpdateStudent}
+                messageLogs={messageLogs}
+                onSaveMessageLog={handleSaveMessageLog}
+                paymentUrl={paymentUrl}
+                user={currentUser}
+                generatePaymentMessage={generatePaymentMessage}
+                onOpenStudentDetail={(student) => setPayDetailStudentId(student.id)}
+              />
+              {payDetailStudent && (
+                <PaymentDetailModal
+                  student={payDetailStudent}
+                  onClose={() => setPayDetailStudentId(null)}
+                  onSavePayment={handleSavePayment}
+                  onUpdatePaymentHistory={handleUpdatePaymentHistory}
+                  onUpdateStudent={handleUpdateStudent}
+                  showToast={showToast}
+                />
+              )}
+            </>
           )}
           {activeTab === "consultations" && currentUser.role === "admin" && (
             <ConsultationView
@@ -11482,11 +12124,621 @@ export default function App() {
               paymentUrl={paymentUrl}
             />
           )}
+          {activeTab === "instructorFee" && currentUser.role === "admin" && (
+            <InstructorFeeView
+              teachers={teachers}
+              students={students}
+              showToast={showToast}
+            />
+          )}
         </main>
       </div>
     </div>
   );
 }
+
+// =================================================================
+// [InstructorFeeView] - 강사료 계산 센터 (관리자 전용)
+// =================================================================
+
+// 출석 날짜 기준 실제 담당 강사 조회 (강사 변경 이력 반영)
+const resolveFeeTeacher = (student, date, record) => {
+  if (record?.teacher) return record.teacher;
+  const hist = student.teacherHistory;
+  if (!hist || !hist.length) return student.teacher || "";
+  const entry = [...hist]
+    .sort((a, b) => b.from.localeCompare(a.from))
+    .find((h) => h.from <= date && (h.to === null || h.to >= date));
+  return entry ? entry.teacher : student.teacher || "";
+};
+
+const InstructorFeeView = ({ teachers, students, showToast }) => {
+  const [subTab, setSubTab] = useState("calc");
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
+  const [selectedTeacherName, setSelectedTeacherName] = useState("");
+  const [showSlip, setShowSlip] = useState(false);
+  const [payDate, setPayDate] = useState(new Date().toISOString().slice(0, 10));
+  const [savingId, setSavingId] = useState(null);
+  const [editFeeData, setEditFeeData] = useState({});
+  const slipRef = useRef(null);
+
+  const teacherList = teachers.filter((t) => t.name && t.name.trim());
+
+  // 첫 강사 자동 선택
+  useEffect(() => {
+    if (!selectedTeacherName && teacherList.length > 0) {
+      setSelectedTeacherName(teacherList[0].name);
+    }
+  }, [teacherList.length]); // eslint-disable-line
+
+  // 단가 편집 데이터 초기화 (최초 1회)
+  useEffect(() => {
+    setEditFeeData((prev) => {
+      if (Object.keys(prev).length > 0) return prev;
+      const data = {};
+      teachers.forEach((t) => {
+        if (t.id)
+          data[t.id] = {
+            feeType: t.feeType || "perSession",
+            feeRate: t.feeRate != null ? String(t.feeRate) : "",
+          };
+      });
+      return Object.keys(data).length > 0 ? data : prev;
+    });
+  }, [teachers]);
+
+  // 정산 기간: 전월 24일 ~ 당월 23일
+  const period = useMemo(() => {
+    let py = selectedYear, pm = selectedMonth - 1;
+    if (pm === 0) { pm = 12; py = selectedYear - 1; }
+    return {
+      start: `${py}-${String(pm).padStart(2, "0")}-24`,
+      end: `${selectedYear}-${String(selectedMonth).padStart(2, "0")}-23`,
+    };
+  }, [selectedYear, selectedMonth]);
+
+  // 강사별 학생 수업 횟수 집계
+  const calcSessions = useCallback(
+    (teacherName) =>
+      students
+        .map((s) => {
+          const recs = (s.attendanceHistory || []).filter(
+            (h) =>
+              h.date >= period.start &&
+              h.date <= period.end &&
+              (h.status === "present" || h.status === "canceled") &&
+              resolveFeeTeacher(s, h.date, h) === teacherName
+          );
+          if (!recs.length) return null;
+          const sessions = recs.reduce((sum, h) => {
+            if (h.status === "present") return sum + (h.count || 1);
+            if (h.status === "canceled") return sum + 0.5;
+            return sum;
+          }, 0);
+          return { name: s.name, sessions };
+        })
+        .filter(Boolean)
+        .sort((a, b) => b.sessions - a.sessions),
+    [students, period]
+  );
+
+  // 강사료 계산 (회당 또는 월 고정)
+  const calcFee = (teacher, totalSessions) => {
+    if (!teacher) return 0;
+    const rate = Number(teacher.feeRate || 0);
+    if (teacher.feeType === "monthly") return rate;
+    return totalSessions * rate;
+  };
+
+  const currentTeacher = teacherList.find((t) => t.name === selectedTeacherName);
+  const sessionRows = useMemo(
+    () => (selectedTeacherName ? calcSessions(selectedTeacherName) : []),
+    [selectedTeacherName, calcSessions]
+  );
+  const totalSessions = sessionRows.reduce((s, r) => s + r.sessions, 0);
+  const grossFee = calcFee(currentTeacher, totalSessions);
+  const tax = Math.round(grossFee * 0.033);
+  const netFee = grossFee - tax;
+
+  const yearOptions = [
+    new Date().getFullYear() - 1,
+    new Date().getFullYear(),
+    new Date().getFullYear() + 1,
+  ];
+
+  // 단가 Firebase 저장
+  const handleSaveFeeRate = async (teacherId) => {
+    const data = editFeeData[teacherId];
+    if (!data) return;
+    setSavingId(teacherId);
+    try {
+      await updateDoc(
+        doc(db, "artifacts", APP_ID, "public", "data", "teachers", teacherId),
+        { feeType: data.feeType, feeRate: Number(data.feeRate) || 0 }
+      );
+      showToast("저장되었습니다.", "success");
+    } catch {
+      showToast("저장 실패", "error");
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  // 명세서 이미지 저장
+  const handleSaveSlipImage = async () => {
+    if (!slipRef.current) return;
+    try {
+      const canvas = await html2canvas(slipRef.current, {
+        scale: 2,
+        backgroundColor: "#ffffff",
+      });
+      const link = document.createElement("a");
+      link.download = `급여명세서_${selectedTeacherName}_${selectedYear}년${selectedMonth}월.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+      showToast("명세서가 저장되었습니다.", "success");
+    } catch {
+      showToast("이미지 저장 실패", "error");
+    }
+  };
+
+  // 월별 계산서 엑셀 다운로드
+  const handleCalcExcel = () => {
+    if (typeof window.XLSX === "undefined") {
+      showToast("잠시 후 다시 시도해주세요.", "error");
+      return;
+    }
+    const isPerSession = (currentTeacher?.feeType || "perSession") !== "monthly";
+    const wb = window.XLSX.utils.book_new();
+    const rows = [
+      [`${selectedYear}년 ${selectedMonth}월 강사료 계산서 — ${selectedTeacherName}`],
+      [`정산 기간: ${period.start} ~ ${period.end}`],
+      [],
+      ["학생명", "회차", "강사료(원)"],
+      ...sessionRows.map((r) => [
+        r.name,
+        r.sessions,
+        isPerSession ? r.sessions * Number(currentTeacher?.feeRate || 0) : "—",
+      ]),
+      [],
+      ["합계", totalSessions, grossFee],
+      ["세금 (3.3%)", "", -tax],
+      ["실지급액", "", netFee],
+    ];
+    const ws = window.XLSX.utils.aoa_to_sheet(rows);
+    window.XLSX.utils.book_append_sheet(wb, ws, "강사료계산서");
+    window.XLSX.writeFile(
+      wb,
+      `강사료_${selectedTeacherName}_${selectedYear}${String(selectedMonth).padStart(2, "0")}.xlsx`
+    );
+  };
+
+  // 세무 자료 엑셀 다운로드
+  const handleTaxExcel = () => {
+    if (typeof window.XLSX === "undefined") {
+      showToast("잠시 후 다시 시도해주세요.", "error");
+      return;
+    }
+    const wb = window.XLSX.utils.book_new();
+    const header = [
+      [`${selectedYear}년 ${selectedMonth}월 강사료 세무 자료`],
+      [`정산 기간: ${period.start} ~ ${period.end}`],
+      [],
+      ["연번", "강사명", "파트", "귀속월", "지급액(강사료)", "소득세(3%)", "지방소득세(0.3%)", "합계세액", "실지급액"],
+    ];
+    let seq = 0;
+    const dataRows = teacherList
+      .map((t) => {
+        const rows2 = calcSessions(t.name);
+        const sess = rows2.reduce((s, r) => s + r.sessions, 0);
+        if (!sess) return null;
+        const gross = calcFee(t, sess);
+        if (!gross) return null;
+        const it = Math.round(gross * 0.03);
+        const lt = Math.round(gross * 0.003);
+        seq++;
+        return [
+          seq,
+          t.name,
+          t.part || "",
+          `${selectedYear}-${String(selectedMonth).padStart(2, "0")}`,
+          gross,
+          it,
+          lt,
+          it + lt,
+          gross - it - lt,
+        ];
+      })
+      .filter(Boolean);
+    const ws = window.XLSX.utils.aoa_to_sheet([...header, ...dataRows]);
+    window.XLSX.utils.book_append_sheet(wb, ws, "세무자료");
+    window.XLSX.writeFile(wb, `세무자료_${selectedYear}년${selectedMonth}월.xlsx`);
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* 탭 바 */}
+      <div className="flex gap-0 border-b bg-white rounded-t-2xl">
+        {[
+          { id: "calc", label: "월별 계산서" },
+          { id: "settings", label: "단가 설정" },
+          { id: "tax", label: "세무 자료" },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setSubTab(tab.id)}
+            className={`px-5 py-3 text-sm font-bold border-b-2 transition-colors ${
+              subTab === tab.id
+                ? "border-indigo-600 text-indigo-600"
+                : "border-transparent text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── 탭 1: 월별 계산서 ── */}
+      {subTab === "calc" && (
+        <div className="space-y-4">
+          {/* 필터 컨트롤 */}
+          <div className="bg-white rounded-2xl border p-4 flex flex-wrap gap-3 items-end">
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">강사</label>
+              <select
+                value={selectedTeacherName}
+                onChange={(e) => setSelectedTeacherName(e.target.value)}
+                className="border rounded-lg px-3 py-2 text-sm"
+              >
+                {teacherList.map((t) => (
+                  <option key={t.id} value={t.name}>{t.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">연도</label>
+              <select
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(Number(e.target.value))}
+                className="border rounded-lg px-3 py-2 text-sm"
+              >
+                {yearOptions.map((y) => <option key={y} value={y}>{y}년</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">월</label>
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                className="border rounded-lg px-3 py-2 text-sm"
+              >
+                {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                  <option key={m} value={m}>{m}월</option>
+                ))}
+              </select>
+            </div>
+            <p className="text-xs text-slate-400 self-end pb-2">
+              집계 기간: {period.start} ~ {period.end}
+            </p>
+          </div>
+
+          {/* 단가 미설정 경고 */}
+          {currentTeacher && !currentTeacher.feeRate && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-700 flex items-center gap-2">
+              <AlertCircle size={15} />
+              단가가 설정되지 않았습니다. [단가 설정] 탭에서 먼저 입력해주세요.
+            </div>
+          )}
+
+          {/* 요약 카드 4개 */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[
+              { label: "담당 학생 수", value: `${sessionRows.length}명` },
+              { label: "총 수업 횟수", value: `${totalSessions}회` },
+              { label: "강사료", value: `${grossFee.toLocaleString()}원`, color: "text-indigo-600" },
+              { label: "지급액 (세후)", value: `${netFee.toLocaleString()}원`, color: "text-emerald-700" },
+            ].map((c) => (
+              <div key={c.label} className="bg-white rounded-2xl border p-4 text-center">
+                <p className="text-xs text-slate-500 mb-1">{c.label}</p>
+                <p className={`text-xl font-bold ${c.color || "text-slate-800"}`}>{c.value}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* 수업 내역 테이블 */}
+          <div className="bg-white rounded-2xl border overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3 border-b">
+              <h3 className="font-bold text-slate-700">수업 내역</h3>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleCalcExcel}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors"
+                >
+                  <Download size={13} /> 엑셀
+                </button>
+                <button
+                  onClick={() => setShowSlip(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors"
+                >
+                  <File size={13} /> 명세서
+                </button>
+              </div>
+            </div>
+            {sessionRows.length === 0 ? (
+              <div className="py-16 text-center text-slate-400 text-sm">
+                해당 기간의 수업 기록이 없습니다.
+              </div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-xs text-slate-500">
+                  <tr>
+                    <th className="px-5 py-3 text-left font-bold">학생명</th>
+                    <th className="px-5 py-3 text-center font-bold">회차</th>
+                    <th className="px-5 py-3 text-right font-bold">강사료</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sessionRows.map((row, i) => {
+                    const rowFee =
+                      (currentTeacher?.feeType || "perSession") === "monthly"
+                        ? null
+                        : row.sessions * Number(currentTeacher?.feeRate || 0);
+                    return (
+                      <tr key={i} className="border-t hover:bg-slate-50 transition-colors">
+                        <td className="px-5 py-3 font-medium">{row.name}</td>
+                        <td className="px-5 py-3 text-center">{row.sessions}회</td>
+                        <td className="px-5 py-3 text-right">
+                          {rowFee !== null ? `${rowFee.toLocaleString()}원` : "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 bg-slate-50 font-bold">
+                    <td className="px-5 py-3">합계</td>
+                    <td className="px-5 py-3 text-center">{totalSessions}회</td>
+                    <td className="px-5 py-3 text-right">{grossFee.toLocaleString()}원</td>
+                  </tr>
+                </tfoot>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── 탭 2: 단가 설정 ── */}
+      {subTab === "settings" && (
+        <div className="space-y-3">
+          <p className="text-xs text-slate-400 pb-1">
+            각 강사의 계약 조건에 따라 지급 단가를 설정합니다. 설정 내용은 관리자만 확인할 수 있습니다.
+          </p>
+          {teacherList.map((t) => {
+            const ed = editFeeData[t.id] || { feeType: "perSession", feeRate: "" };
+            return (
+              <div key={t.id} className="bg-white rounded-2xl border p-4 flex flex-wrap gap-3 items-center">
+                <div className="flex-1 min-w-[120px]">
+                  <p className="font-bold text-slate-800">{t.name}</p>
+                  <p className="text-xs text-slate-500">{t.part || "파트 미설정"}</p>
+                </div>
+                <select
+                  value={ed.feeType}
+                  onChange={(e) =>
+                    setEditFeeData((prev) => ({
+                      ...prev,
+                      [t.id]: { ...prev[t.id], feeType: e.target.value },
+                    }))
+                  }
+                  className="border rounded-lg px-3 py-2 text-sm"
+                >
+                  <option value="perSession">회당 지급</option>
+                  <option value="monthly">월 고정</option>
+                </select>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    value={ed.feeRate}
+                    onChange={(e) =>
+                      setEditFeeData((prev) => ({
+                        ...prev,
+                        [t.id]: { ...prev[t.id], feeRate: e.target.value },
+                      }))
+                    }
+                    placeholder={ed.feeType === "monthly" ? "월 고정액" : "회당 금액"}
+                    className="border rounded-lg px-3 py-2 text-sm w-36"
+                  />
+                  <span className="text-xs text-slate-500">원</span>
+                </div>
+                <button
+                  onClick={() => handleSaveFeeRate(t.id)}
+                  disabled={savingId === t.id}
+                  className="px-4 py-2 text-sm font-bold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                >
+                  {savingId === t.id ? "저장 중…" : "저장"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── 탭 3: 세무 자료 ── */}
+      {subTab === "tax" && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-2xl border p-4 flex flex-wrap gap-3 items-end">
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">연도</label>
+              <select
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(Number(e.target.value))}
+                className="border rounded-lg px-3 py-2 text-sm"
+              >
+                {yearOptions.map((y) => <option key={y} value={y}>{y}년</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">월</label>
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                className="border rounded-lg px-3 py-2 text-sm"
+              >
+                {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                  <option key={m} value={m}>{m}월</option>
+                ))}
+              </select>
+            </div>
+            <button
+              onClick={handleTaxExcel}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-bold bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
+            >
+              <Download size={15} /> 엑셀 다운로드
+            </button>
+          </div>
+          <p className="text-xs text-slate-400">집계 기간: {period.start} ~ {period.end}</p>
+
+          <div className="bg-white rounded-2xl border overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-xs text-slate-500">
+                <tr>
+                  <th className="px-4 py-3 text-left font-bold">강사명</th>
+                  <th className="px-4 py-3 text-left font-bold">파트</th>
+                  <th className="px-4 py-3 text-right font-bold">강사료</th>
+                  <th className="px-4 py-3 text-right font-bold">소득세 (3%)</th>
+                  <th className="px-4 py-3 text-right font-bold">지방소득세 (0.3%)</th>
+                  <th className="px-4 py-3 text-right font-bold">실지급액</th>
+                </tr>
+              </thead>
+              <tbody>
+                {teacherList
+                  .map((t) => {
+                    const rows2 = calcSessions(t.name);
+                    const sess = rows2.reduce((s, r) => s + r.sessions, 0);
+                    if (!sess) return null;
+                    const gross = calcFee(t, sess);
+                    if (!gross) return null;
+                    const it = Math.round(gross * 0.03);
+                    const lt = Math.round(gross * 0.003);
+                    return (
+                      <tr key={t.id} className="border-t hover:bg-slate-50 transition-colors">
+                        <td className="px-4 py-3 font-medium">{t.name}</td>
+                        <td className="px-4 py-3 text-slate-500">{t.part || "—"}</td>
+                        <td className="px-4 py-3 text-right">{gross.toLocaleString()}</td>
+                        <td className="px-4 py-3 text-right text-rose-600">{it.toLocaleString()}</td>
+                        <td className="px-4 py-3 text-right text-rose-500">{lt.toLocaleString()}</td>
+                        <td className="px-4 py-3 text-right font-bold text-emerald-700">
+                          {(gross - it - lt).toLocaleString()}
+                        </td>
+                      </tr>
+                    );
+                  })
+                  .filter(Boolean)}
+              </tbody>
+            </table>
+            {teacherList.every((t) => {
+              const rows2 = calcSessions(t.name);
+              const sess = rows2.reduce((s, r) => s + r.sessions, 0);
+              return !sess || !calcFee(t, sess);
+            }) && (
+              <div className="py-16 text-center text-slate-400 text-sm">
+                해당 기간에 수업 기록이 있고 단가가 설정된 강사가 없습니다.
+              </div>
+            )}
+          </div>
+          <p className="text-xs text-slate-400">
+            * 단가가 설정된 강사만 표시됩니다. 주민등록번호 등 민감 정보는 별도 입력이 필요합니다.
+          </p>
+        </div>
+      )}
+
+      {/* ── 급여 명세서 모달 ── */}
+      {showSlip && (
+        <div
+          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setShowSlip(false); }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+            <div className="flex items-center justify-between px-5 py-4 border-b">
+              <h3 className="font-bold text-slate-800">급여 명세서</h3>
+              <button
+                onClick={() => setShowSlip(false)}
+                className="p-1 rounded-lg hover:bg-slate-100 transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            {/* 지급일 입력 */}
+            <div className="px-5 pt-4 pb-2 flex items-center gap-3">
+              <label className="text-xs font-bold text-slate-500 whitespace-nowrap">지급일</label>
+              <input
+                type="date"
+                value={payDate}
+                onChange={(e) => setPayDate(e.target.value)}
+                className="border rounded-lg px-3 py-1.5 text-sm flex-1"
+              />
+            </div>
+            {/* 캡처 대상 영역 */}
+            <div ref={slipRef} className="mx-5 mb-2 mt-3 border-2 border-slate-200 rounded-xl p-6 bg-white">
+              <h2 className="text-center text-lg font-bold text-slate-800 mb-1">
+                {selectedYear}년 {selectedMonth}월 급여 명세서
+              </h2>
+              <p className="text-center text-xs text-slate-400 mb-5">
+                {period.start} ~ {period.end}
+              </p>
+              <div className="space-y-2.5 text-sm">
+                {[
+                  ["강사명", selectedTeacherName],
+                  ["파트", currentTeacher?.part || "—"],
+                  ["지급일", payDate],
+                ].map(([k, v]) => (
+                  <div key={k} className="flex justify-between items-center border-b pb-2">
+                    <span className="text-slate-500">{k}</span>
+                    <span className="font-bold">{v}</span>
+                  </div>
+                ))}
+                <div className="flex justify-between items-center border-b pb-2">
+                  <span className="text-slate-500">담당 학생 수</span>
+                  <span className="font-bold">{sessionRows.length}명</span>
+                </div>
+                <div className="flex justify-between items-center border-b pb-2">
+                  <span className="text-slate-500">총 수업 횟수</span>
+                  <span className="font-bold">{totalSessions}회</span>
+                </div>
+                <div className="h-1" />
+                <div className="flex justify-between items-center border-b pb-2">
+                  <span className="text-slate-500">강사료</span>
+                  <span className="font-bold">{grossFee.toLocaleString()}원</span>
+                </div>
+                <div className="flex justify-between items-center border-b pb-2">
+                  <span className="text-slate-500">세금 (3.3%)</span>
+                  <span className="font-bold text-rose-600">-{tax.toLocaleString()}원</span>
+                </div>
+                <div className="flex justify-between items-center pt-1">
+                  <span className="text-base font-bold">지급액</span>
+                  <span className="text-base font-bold text-emerald-700">{netFee.toLocaleString()}원</span>
+                </div>
+              </div>
+              <div className="mt-6 pt-4 border-t text-right">
+                <p className="text-sm text-slate-600">
+                  {payDate}&nbsp;&nbsp;J&amp;C 음악학원장 강열혁 (인)
+                </p>
+              </div>
+            </div>
+            <div className="px-5 pb-5 pt-3">
+              <button
+                onClick={handleSaveSlipImage}
+                className="w-full flex items-center justify-center gap-2 py-3 text-sm font-bold bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors"
+              >
+                <Download size={16} /> 이미지 저장
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 // [TeacherTimetableView] - (파트필터 + 인쇄 + 보안 + 모바일최적화 + 중앙정렬/자동숨김 유지)
 const TeacherTimetableView = ({ students, teachers, user }) => {
