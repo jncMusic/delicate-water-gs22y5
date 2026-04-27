@@ -1,19 +1,26 @@
-'use client';
-
-import { useState } from 'react';
 import { notFound } from 'next/navigation';
-import { Music, ArrowLeft, ArrowRight, ChevronRight, Phone, MessageCircle } from 'lucide-react';
+import { Music, ArrowLeft, ChevronRight, Phone, MessageCircle } from 'lucide-react';
 import { COURSES, COURSE_DETAILS } from '../../lib/courses';
+
+export function generateStaticParams() {
+  return COURSES.map((c) => ({ id: c.id }));
+}
+
+export function generateMetadata({ params }) {
+  const course = COURSES.find((c) => c.id === params.id);
+  if (!course) return {};
+  return {
+    title: `${course.title} | JNC 음악학원`,
+    description: course.description,
+    alternates: { canonical: `https://jncmusic.kr/courses/${course.id}` },
+  };
+}
 
 export default function CoursePage({ params }) {
   const course = COURSES.find((c) => c.id === params.id);
   const detail = COURSE_DETAILS[params.id];
 
   if (!course || !detail) notFound();
-
-  const scrollTo = (id) => {
-    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
-  };
 
   return (
     <div className="min-h-screen bg-white">
@@ -49,7 +56,6 @@ export default function CoursePage({ params }) {
             <p className="text-white/70 text-xl max-w-2xl leading-relaxed mb-8">
               {detail.hero}
             </p>
-            {/* 악기 태그 */}
             <div className="flex flex-wrap gap-2">
               {course.instruments.map((inst) => (
                 <span
@@ -128,7 +134,6 @@ export default function CoursePage({ params }) {
               <h2 className="text-3xl sm:text-4xl font-extrabold text-white">레슨 단계</h2>
             </div>
             <div className="relative">
-              {/* 연결선 */}
               <div className="absolute left-6 top-8 bottom-8 w-0.5 bg-white/10 hidden sm:block" />
               <div className="space-y-6">
                 {detail.steps.map((s) => (
