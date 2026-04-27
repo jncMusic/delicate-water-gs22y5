@@ -11299,6 +11299,16 @@ export default function App() {
     }
   };
 
+  const handleDeleteMessageLog = async (log) => {
+    if (!log?.id) return;
+    try {
+      const safeAppId = APP_ID || "jnc-music-v2";
+      await deleteDoc(doc(db, "artifacts", safeAppId, "public", "data", "messageLogs", log.id));
+    } catch (e) {
+      console.error("메시지 이력 삭제 오류:", e);
+    }
+  };
+
   // -----------------------------------------------------------
   // [삭제 함수] 보고서 삭제
   // -----------------------------------------------------------
@@ -12081,6 +12091,7 @@ export default function App() {
                 onUpdateStudent={handleUpdateStudent}
                 messageLogs={messageLogs}
                 onSaveMessageLog={handleSaveMessageLog}
+                onDeleteMessageLog={handleDeleteMessageLog}
                 paymentUrl={paymentUrl}
                 user={currentUser}
                 generatePaymentMessage={generatePaymentMessage}

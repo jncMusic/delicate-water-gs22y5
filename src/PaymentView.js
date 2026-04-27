@@ -430,6 +430,7 @@ export const PaymentView = ({
   onUpdateStudent,
   messageLogs = [],
   onSaveMessageLog,
+  onDeleteMessageLog,
   paymentUrl = "",
   user,
   generatePaymentMessage,
@@ -468,6 +469,12 @@ export const PaymentView = ({
 
   // ── 히스토리(history) 탭 상태 ────────────────────────────────
   const [historyPeriod, setHistoryPeriod] = useState("month"); // "day" | "week" | "month"
+
+  // ── 수납관리(manage) 탭 필터 ─────────────────────────────────
+  const [manageFilter, setManageFilter] = useState(""); // "" | "target" | "unpaid"
+
+  // ── 결제선생 파기 확인 ────────────────────────────────────────
+  const [deleteConfirm, setDeleteConfirm] = useState(null); // log 객체
 
   // ── 수강 진척도 헬퍼 ──────────────────────────────────────────
   const getStudentProgress = (s) => {
@@ -601,9 +608,27 @@ export const PaymentView = ({
     d7.setDate(d7.getDate() - 7);
     const weekAgoStr = toLocalDateStr(d7);
     return (messageLogs || [])
-      .filter((log) =>
-        (log.channels || []).includes("결제선생") && log.sentAt >= weekAgoStr
-      )
+      .filter((log) => {
+        if (!(log.channels || []).includes("결제선생")) return false;
+        if (log.sentAt < weekAgoStr) return false;
+        const student = students.find((s) => s.id === log.studentId);
+        if (student && student.status !== "재원") return false; // 휴원/퇴원 제외
+        return true;
+      })
+      .map((log) => {
+        const student = students.find((s) => s.id === log.studentId);
+        const paidAfter = student
+          ? (student.paymentHistory || []).find((p) => p.date >= log.sentAt)
+          : null;
+        return { log, student, paidAfter };
+      })
+      .sort((a, b) => b.log.sentAt.localeCompare(a.log.sentAt));
+  }, [messageLogs, students]);
+
+  // ── 결제선생 전체 발송 이력 (결제선생 탭) ──────────────────────
+  const kyuljeLogsData = useMemo(() => {
+    return (messageLogs || [])
+      .filter((log) => (log.channels || []).includes("결제선생"))
       .map((log) => {
         const student = students.find((s) => s.id === log.studentId);
         const paidAfter = student
@@ -696,7 +721,13 @@ export const PaymentView = ({
   const manageList = useMemo(() => {
     return students
       .filter((s) => {
-        if (s.status !== "재원") return false;
+        if (s.status !== "재원") return false; // 휴원/퇴원 제외
+        // 필터: 결제 대상자(만료/초과) 또는 미납자(초과만)
+        if (manageFilter === "target" || manageFilter === "unpaid") {
+          const { isCompleted, isOverdue } = getStudentProgress(s);
+          if (manageFilter === "target" && !isCompleted && !isOverdue) return false;
+          if (manageFilter === "unpaid" && !isOverdue) return false;
+        }
         return (
           s.name.includes(searchTerm) ||
           (s.subject && s.subject.includes(searchTerm)) ||
@@ -705,13 +736,14 @@ export const PaymentView = ({
       })
       .filter((s) => !selectedTeacher || s.teacher === selectedTeacher)
       .sort((a, b) => a.name.localeCompare(b.name, "ko"));
-  }, [students, searchTerm, selectedTeacher]);
+  }, [students, searchTerm, selectedTeacher, manageFilter]);
 
   // ── 히스토리(history) 탭 데이터 ──────────────────────────────
   const historyData = useMemo(() => {
     const allPayments = [];
-    // 학생별로 (날짜+금액) 기준 중복 제거 후 수집
+    // 학생별로 (날짜+금액) 기준 중복 제거 후 수집 (휴원/퇴원 제외)
     students.forEach((s) => {
+      if (s.status !== "재원") return; // 휴원/퇴원생 제외
       const seen = new Set();
       (s.paymentHistory || []).forEach((p) => {
         if (!p.date) return;
@@ -796,6 +828,9 @@ export const PaymentView = ({
     (messageLogs || []).forEach((log) => {
       const date = log.sentAt;
       if (!date) return;
+      // 휴원/퇴원생 제외
+      const logStudent = students.find((s) => s.id === log.studentId);
+      if (logStudent && logStudent.status !== "재원") return;
       let key;
       if (historyPeriod === "month") key = date.substring(0, 7);
       else if (historyPeriod === "week") key = getMondayStr(date);
@@ -866,6 +901,7 @@ export const PaymentView = ({
     { id: "send", label: "발송센터", icon: <Send size={14} />, badge: sendList.filter(s => getNotifStatus(s.id) === "none").length || null },
     { id: "confirm", label: "결제확인", icon: <CreditCard size={14} />, badge: processableStudents.length || null },
     { id: "manage", label: "수납관리", icon: <Users size={14} />, badge: null },
+    { id: "kyulje", label: "결제선생", icon: <CreditCard size={14} />, badge: kyuljeLogsData.length || null },
     { id: "history", label: "히스토리", icon: <History size={14} />, badge: null },
   ];
 
@@ -1809,11 +1845,36 @@ export const PaymentView = ({
         ============================================================ */}
         {activeTab === "manage" && (
           <div className="flex-1 flex flex-col min-h-0 p-5">
+          <div className="flex items-center gap-2 mb-3 flex-wrap">
+            <span className="text-sm font-medium text-slate-600">필터:</span>
+            {[
+              { key: "", label: "전체" },
+              { key: "target", label: "결제 대상자" },
+              { key: "unpaid", label: "미납자" },
+            ].map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setManageFilter(key)}
+                className={`text-xs px-3 py-1.5 rounded-full font-medium border transition-colors ${
+                  manageFilter === key
+                    ? "bg-indigo-600 text-white border-indigo-600"
+                    : "bg-white text-slate-600 border-slate-300 hover:border-indigo-400"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <div className="border rounded-xl overflow-auto flex-1 min-h-0">
             <div className="bg-slate-50 px-4 py-2.5 flex items-center gap-2 border-b">
               <Users size={15} className="text-slate-600" />
               <span className="font-bold text-slate-700 text-sm">재원생 수납 현황</span>
               <span className="bg-slate-200 text-slate-700 text-xs px-1.5 py-0.5 rounded-full">{manageList.length}명</span>
+              {manageFilter && (
+                <span className="text-xs text-indigo-500 font-medium">
+                  ({manageFilter === "target" ? "결제 대상자만" : "미납자만"})
+                </span>
+              )}
             </div>
             <table className="w-full text-sm min-w-[600px]">
               <thead className="sticky top-0 bg-slate-50 border-b">
@@ -1876,7 +1937,86 @@ export const PaymentView = ({
         )}
 
         {/* ============================================================
-            탭 5: 히스토리 (history)
+            탭 5: 결제선생 (kyulje)
+            - 결제선생 채널 발송 이력 전체 조회 + 파기
+        ============================================================ */}
+        {activeTab === "kyulje" && (
+          <div className="flex-1 flex flex-col min-h-0 p-5 gap-3">
+            <div className="flex items-center gap-2 text-sm text-slate-500">
+              <CreditCard size={14} className="text-blue-500" />
+              <span>모든 경로에서 발송된 결제선생 이력 · 총 <span className="font-bold text-slate-700">{kyuljeLogsData.length}건</span></span>
+            </div>
+            <div className="border rounded-xl overflow-auto flex-1 min-h-0">
+              {kyuljeLogsData.length === 0 ? (
+                <div className="py-16 text-center text-slate-400 text-sm">결제선생 발송 이력이 없습니다.</div>
+              ) : (
+                <table className="w-full text-sm min-w-[600px]">
+                  <thead className="sticky top-0 bg-slate-50 border-b text-xs text-slate-400 uppercase">
+                    <tr>
+                      <th className="py-3 px-4 text-left">이름 / 과목</th>
+                      <th className="py-3 px-4 text-left">강사</th>
+                      <th className="py-3 px-4 text-left">발송일</th>
+                      <th className="py-3 px-4 text-left">발송자</th>
+                      <th className="py-3 px-4 text-left">결제 여부</th>
+                      <th className="py-3 px-4 text-center">파기</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {kyuljeLogsData.map(({ log, student, paidAfter }, i) => (
+                      <tr key={`${log.id || log.studentId}-${i}`} className={`hover:bg-slate-50 ${student && student.status !== "재원" ? "opacity-50" : ""}`}>
+                        <td className="py-3 px-4 font-medium">
+                          {log.studentName || "-"}
+                          {student?.subject && <span className="text-xs text-slate-400 ml-1">({student.subject})</span>}
+                          {student && student.status !== "재원" && (
+                            <span className="ml-1 text-xs text-red-400">({student.status})</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-slate-500 text-xs">{student?.teacher || "-"}</td>
+                        <td className="py-3 px-4 text-slate-500 text-xs">{log.sentAt}</td>
+                        <td className="py-3 px-4 text-slate-400 text-xs">{log.sentBy || "-"}</td>
+                        <td className="py-3 px-4">
+                          {paidAfter ? (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">
+                              ✅ {paidAfter.date} {Number(paidAfter.amount || 0).toLocaleString()}원
+                            </span>
+                          ) : (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-600 font-medium">⏳ 미납</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          {deleteConfirm?.id === log.id || (deleteConfirm && !log.id && deleteConfirm._idx === i) ? (
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                onClick={async () => {
+                                  if (onDeleteMessageLog) await onDeleteMessageLog(log);
+                                  setDeleteConfirm(null);
+                                }}
+                                className="text-xs px-2 py-1 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                              >확인</button>
+                              <button
+                                onClick={() => setDeleteConfirm(null)}
+                                className="text-xs px-2 py-1 bg-slate-200 text-slate-600 rounded-lg hover:bg-slate-300"
+                              >취소</button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setDeleteConfirm(log.id ? { id: log.id } : { _idx: i })}
+                              className="text-xs px-2 py-1 text-red-400 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-200"
+                              title="이 발송 이력 파기"
+                            >파기</button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================
+            탭 6: 히스토리 (history)
             - 일간/주간/월간 기간별 수납 합계 + 건수 + 결제방법 분류
         ============================================================ */}
         {activeTab === "history" && (
