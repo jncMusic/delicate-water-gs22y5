@@ -668,9 +668,15 @@ export const PaymentView = ({
   // ── 히스토리(history) 탭 데이터 ──────────────────────────────
   const historyData = useMemo(() => {
     const allPayments = [];
+    // 학생별로 (날짜+금액) 기준 중복 제거 후 수집
     students.forEach((s) => {
+      const seen = new Set();
       (s.paymentHistory || []).forEach((p) => {
-        if (p.date) allPayments.push({ student: s, payment: p });
+        if (!p.date) return;
+        const key = `${p.date}__${p.amount}`;
+        if (seen.has(key)) return; // 동일 날짜+금액 중복은 한 번만 표시
+        seen.add(key);
+        allPayments.push({ student: s, payment: p });
       });
     });
 
