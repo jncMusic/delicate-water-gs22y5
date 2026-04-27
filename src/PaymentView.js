@@ -607,14 +607,23 @@ export const PaymentView = ({
     const d7 = new Date();
     d7.setDate(d7.getDate() - 7);
     const weekAgoStr = toLocalDateStr(d7);
-    return (messageLogs || [])
-      .filter((log) => {
-        if (!(log.channels || []).includes("결제선생")) return false;
-        if (log.sentAt < weekAgoStr) return false;
-        const student = students.find((s) => s.id === log.studentId);
-        if (student && student.status !== "재원") return false; // 휴원/퇴원 제외
-        return true;
-      })
+    // studentId+날짜 기준 중복 병합
+    const dedupeMap = {};
+    (messageLogs || []).forEach((log) => {
+      if (!(log.channels || []).includes("결제선생")) return;
+      if (log.sentAt < weekAgoStr) return;
+      const student = students.find((s) => s.id === log.studentId);
+      if (student && student.status !== "재원") return;
+      const key = `${log.studentId}__${log.sentAt}`;
+      if (!dedupeMap[key]) {
+        dedupeMap[key] = { ...log, channels: [...(log.channels || [])] };
+      } else {
+        (log.channels || []).forEach((ch) => {
+          if (!dedupeMap[key].channels.includes(ch)) dedupeMap[key].channels.push(ch);
+        });
+      }
+    });
+    return Object.values(dedupeMap)
       .map((log) => {
         const student = students.find((s) => s.id === log.studentId);
         const paidAfter = student
@@ -627,8 +636,21 @@ export const PaymentView = ({
 
   // ── 결제선생 전체 발송 이력 (결제선생 탭) ──────────────────────
   const kyuljeLogsData = useMemo(() => {
-    return (messageLogs || [])
+    // studentId+날짜 기준 중복 병합
+    const dedupeMap = {};
+    (messageLogs || [])
       .filter((log) => (log.channels || []).includes("결제선생"))
+      .forEach((log) => {
+        const key = `${log.studentId}__${log.sentAt}`;
+        if (!dedupeMap[key]) {
+          dedupeMap[key] = { ...log, channels: [...(log.channels || [])] };
+        } else {
+          (log.channels || []).forEach((ch) => {
+            if (!dedupeMap[key].channels.includes(ch)) dedupeMap[key].channels.push(ch);
+          });
+        }
+      });
+    return Object.values(dedupeMap)
       .map((log) => {
         const student = students.find((s) => s.id === log.studentId);
         const paidAfter = student
@@ -836,18 +858,28 @@ export const PaymentView = ({
       else if (historyPeriod === "week") key = getMondayStr(date);
       else key = date;
 
-      if (!groups[key]) groups[key] = { key, items: [] };
-      groups[key].items.push(log);
+      if (!groups[key]) groups[key] = { key, dedupeMap: {} };
+      const dedupeKey = `${log.studentId}__${log.sentAt}`;
+      if (!groups[key].dedupeMap[dedupeKey]) {
+        groups[key].dedupeMap[dedupeKey] = { ...log, channels: [...(log.channels || [])] };
+      } else {
+        (log.channels || []).forEach((ch) => {
+          if (!groups[key].dedupeMap[dedupeKey].channels.includes(ch)) {
+            groups[key].dedupeMap[dedupeKey].channels.push(ch);
+          }
+        });
+      }
     });
 
     return Object.values(groups)
       .sort((a, b) => b.key.localeCompare(a.key))
       .map((g) => {
+        const items = Object.values(g.dedupeMap);
         // 채널별 실제 발송 횟수 (한 로그에 두 채널이 있으면 각각 1씩 카운트)
         let kyuljeCount = 0;
         let smsCount = 0;
         const paidStudentIds = new Set();
-        g.items.forEach((l) => {
+        items.forEach((l) => {
           const ch = l.channels || [];
           if (ch.includes("결제선생")) kyuljeCount++;
           if (ch.includes("sms")) smsCount++;
@@ -857,7 +889,7 @@ export const PaymentView = ({
           }
         });
         const payCount = paidStudentIds.size;
-        return { ...g, label: formatLabel(g.key), kyuljeCount, smsCount, payCount };
+        return { key: g.key, items, label: formatLabel(g.key), kyuljeCount, smsCount, payCount };
       });
   }, [messageLogs, historyPeriod, students]);
 
