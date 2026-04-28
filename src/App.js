@@ -12604,7 +12604,8 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
                   </select>
                   <div className="flex items-center gap-1">
                     <input
-                      type="number"
+                      type="text"
+                      inputMode="numeric"
                       value={ed.feeRate}
                       onChange={(e) =>
                         setEditFeeData((prev) => ({
@@ -12679,7 +12680,8 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
                           </select>
                           <div className="flex items-center gap-1">
                             <input
-                              type="number"
+                              type="text"
+                              inputMode="numeric"
                               value={overrideVal}
                               onChange={(e) =>
                                 setEditFeeData((prev) => ({
