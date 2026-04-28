@@ -528,12 +528,22 @@ export const PaymentView = ({
 
   // ── 발송 상태 (none / sms-only / done) ───────────────────────
   const getNotifStatus = (studentId) => {
-    const logs = messageLogs
-      .filter((l) => l.studentId === studentId)
-      .sort((a, b) => b.sentAt.localeCompare(a.sentAt));
+    const logs = messageLogs.filter((l) => l.studentId === studentId);
     if (!logs.length) return "none";
-    const latest = logs[0];
-    const ch = latest.channels || (latest.channel ? ["sms"] : []);
+    // 같은 날 SMS + 결제선생 각각 발송 시 채널 병합 후 판정
+    const dedupeMap = {};
+    logs.forEach((log) => {
+      const key = log.sentAt;
+      if (!dedupeMap[key]) {
+        dedupeMap[key] = { sentAt: key, channels: [...(log.channels || (log.channel ? ["sms"] : []))] };
+      } else {
+        (log.channels || []).forEach((ch) => {
+          if (!dedupeMap[key].channels.includes(ch)) dedupeMap[key].channels.push(ch);
+        });
+      }
+    });
+    const latest = Object.values(dedupeMap).sort((a, b) => b.sentAt.localeCompare(a.sentAt))[0];
+    const ch = latest.channels;
     if (ch.includes("결제선생")) return "done";
     if (ch.includes("sms")) return "sms-only";
     return "none";
