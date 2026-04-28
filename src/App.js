@@ -12718,7 +12718,7 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
                     const rows2 = calcSessions(t.name);
                     const sess = rows2.reduce((s, r) => s + r.sessions, 0);
                     if (!sess) return null;
-                    const gross = calcFee(t, sess);
+                    const gross = calcFee(t, rows2);
                     if (!gross) return null;
                     const it = Math.round(gross * 0.03);
                     const lt = Math.round(gross * 0.003);
@@ -12741,7 +12741,7 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
             {teacherList.every((t) => {
               const rows2 = calcSessions(t.name);
               const sess = rows2.reduce((s, r) => s + r.sessions, 0);
-              return !sess || !calcFee(t, sess);
+              return !sess || !calcFee(t, rows2);
             }) && (
               <div className="py-16 text-center text-slate-400 text-sm">
                 해당 기간에 수업 기록이 있고 단가가 설정된 강사가 없습니다.
