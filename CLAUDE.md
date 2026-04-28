@@ -1,5 +1,9 @@
 # CLAUDE.md - JnC Music Academy Dashboard
 
+## Communication Style
+
+- 사용자와의 모든 대화는 **존댓말(격식체)**로 한다.
+
 ## Project Overview
 
 This is the **JnC Music Academy Dashboard** — a React-based web application for managing a music academy's daily operations including student enrollment, teacher scheduling, attendance tracking, payment management, and consultation logging. The UI and all comments/data are in **Korean**.
