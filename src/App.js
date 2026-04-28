@@ -12193,6 +12193,8 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
           data[t.id] = {
             feeType: t.feeType || "perSession",
             feeRate: t.feeRate != null ? String(t.feeRate) : "",
+            studentFeeOverrides: t.studentFeeOverrides || {},
+            showOverrides: false,
           };
       });
       return Object.keys(data).length > 0 ? data : prev;
@@ -12214,32 +12216,54 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
     (teacherName) =>
       students
         .map((s) => {
-          const recs = (s.attendanceHistory || []).filter(
+          const allRecs = (s.attendanceHistory || []).filter(
             (h) =>
               h.date >= period.start &&
               h.date <= period.end &&
-              (h.status === "present" || h.status === "canceled") &&
-              resolveFeeTeacher(s, h.date, h) === teacherName
+              (h.status === "present" || h.status === "canceled")
+          );
+          const recs = allRecs.filter(
+            (h) => resolveFeeTeacher(s, h.date, h) === teacherName
           );
           if (!recs.length) return null;
-          const sessions = recs.reduce((sum, h) => {
-            if (h.status === "present") return sum + (h.count || 1);
-            if (h.status === "canceled") return sum + 0.5;
-            return sum;
-          }, 0);
-          return { name: s.name, sessions };
+          const countRec = (h) =>
+            h.status === "present" ? (h.count || 1) : h.status === "canceled" ? 0.5 : 0;
+          const sessions = recs.reduce((sum, h) => sum + countRec(h), 0);
+          const totalStudentSessions = allRecs.reduce((sum, h) => sum + countRec(h), 0);
+          return {
+            name: s.name,
+            studentId: s.id,
+            sessions,
+            totalStudentSessions,
+            tuitionFee: Number(s.tuitionFee || 0),
+          };
         })
         .filter(Boolean)
         .sort((a, b) => b.sessions - a.sessions),
     [students, period]
   );
 
-  // 강사료 계산 (회당 또는 월 고정)
-  const calcFee = (teacher, totalSessions) => {
+  // 학생 1명에 대한 강사료 계산 (override → revenueShare → 기본 단가)
+  const calcStudentFee = (teacher, row) => {
     if (!teacher) return 0;
-    const rate = Number(teacher.feeRate || 0);
-    if (teacher.feeType === "monthly") return rate;
-    return totalSessions * rate;
+    const overrides = teacher.studentFeeOverrides || {};
+    const override = overrides[row.studentId];
+    if (override != null && override !== "" && Number(override) >= 0) {
+      return row.sessions * Number(override);
+    }
+    if (teacher.feeType === "revenueShare") {
+      const rate = Number(teacher.feeRate || 0) / 100;
+      if (!row.totalStudentSessions) return 0;
+      return Math.round(row.tuitionFee * (row.sessions / row.totalStudentSessions) * rate);
+    }
+    return row.sessions * Number(teacher.feeRate || 0);
+  };
+
+  // 강사료 합계 (회당/비율 → 학생별 합산, 월고정 → feeRate 그대로)
+  const calcFee = (teacher, rows) => {
+    if (!teacher) return 0;
+    if (teacher.feeType === "monthly") return Number(teacher.feeRate || 0);
+    return rows.reduce((sum, row) => sum + calcStudentFee(teacher, row), 0);
   };
 
   const currentTeacher = teacherList.find((t) => t.name === selectedTeacherName);
@@ -12248,7 +12272,7 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
     [selectedTeacherName, calcSessions]
   );
   const totalSessions = sessionRows.reduce((s, r) => s + r.sessions, 0);
-  const grossFee = calcFee(currentTeacher, totalSessions);
+  const grossFee = calcFee(currentTeacher, sessionRows);
   const tax = Math.round(grossFee * 0.033);
   const netFee = grossFee - tax;
 
@@ -12264,9 +12288,14 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
     if (!data) return;
     setSavingId(teacherId);
     try {
+      // studentFeeOverrides: 빈 문자열 제거 후 숫자로 변환
+      const cleanedOverrides = {};
+      Object.entries(data.studentFeeOverrides || {}).forEach(([sid, val]) => {
+        if (val !== "" && val != null) cleanedOverrides[sid] = Number(val);
+      });
       await updateDoc(
         doc(db, "artifacts", APP_ID, "public", "data", "teachers", teacherId),
-        { feeType: data.feeType, feeRate: Number(data.feeRate) || 0 }
+        { feeType: data.feeType, feeRate: Number(data.feeRate) || 0, studentFeeOverrides: cleanedOverrides }
       );
       showToast("저장되었습니다.", "success");
     } catch {
@@ -12310,7 +12339,7 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
       ...sessionRows.map((r) => [
         r.name,
         r.sessions,
-        isPerSession ? r.sessions * Number(currentTeacher?.feeRate || 0) : "—",
+        isPerSession ? calcStudentFee(currentTeacher, r) : "—",
       ]),
       [],
       ["합계", totalSessions, grossFee],
@@ -12344,7 +12373,7 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
         const rows2 = calcSessions(t.name);
         const sess = rows2.reduce((s, r) => s + r.sessions, 0);
         if (!sess) return null;
-        const gross = calcFee(t, sess);
+        const gross = calcFee(t, rows2);
         if (!gross) return null;
         const it = Math.round(gross * 0.03);
         const lt = Math.round(gross * 0.003);
@@ -12491,13 +12520,17 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
                 </thead>
                 <tbody>
                   {sessionRows.map((row, i) => {
-                    const rowFee =
-                      (currentTeacher?.feeType || "perSession") === "monthly"
-                        ? null
-                        : row.sessions * Number(currentTeacher?.feeRate || 0);
+                    const isMonthly = (currentTeacher?.feeType || "perSession") === "monthly";
+                    const rowFee = isMonthly ? null : calcStudentFee(currentTeacher, row);
+                    const hasOverride = currentTeacher && (currentTeacher.studentFeeOverrides || {})[row.studentId] != null;
                     return (
                       <tr key={i} className="border-t hover:bg-slate-50 transition-colors">
-                        <td className="px-5 py-3 font-medium">{row.name}</td>
+                        <td className="px-5 py-3 font-medium">
+                          {row.name}
+                          {hasOverride && (
+                            <span className="ml-1.5 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-normal">개별단가</span>
+                          )}
+                        </td>
                         <td className="px-5 py-3 text-center">{row.sessions}회</td>
                         <td className="px-5 py-3 text-right">
                           {rowFee !== null ? `${rowFee.toLocaleString()}원` : "—"}
@@ -12526,48 +12559,106 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
             각 강사의 계약 조건에 따라 지급 단가를 설정합니다. 설정 내용은 관리자만 확인할 수 있습니다.
           </p>
           {teacherList.map((t) => {
-            const ed = editFeeData[t.id] || { feeType: "perSession", feeRate: "" };
+            const ed = editFeeData[t.id] || { feeType: "perSession", feeRate: "", studentFeeOverrides: {}, showOverrides: false };
+            const teacherStudents = students.filter((s) => s.teacher === t.name && s.status === "재원");
             return (
-              <div key={t.id} className="bg-white rounded-2xl border p-4 flex flex-wrap gap-3 items-center">
-                <div className="flex-1 min-w-[120px]">
-                  <p className="font-bold text-slate-800">{t.name}</p>
-                  <p className="text-xs text-slate-500">{t.part || "파트 미설정"}</p>
-                </div>
-                <select
-                  value={ed.feeType}
-                  onChange={(e) =>
-                    setEditFeeData((prev) => ({
-                      ...prev,
-                      [t.id]: { ...prev[t.id], feeType: e.target.value },
-                    }))
-                  }
-                  className="border rounded-lg px-3 py-2 text-sm"
-                >
-                  <option value="perSession">회당 지급</option>
-                  <option value="monthly">월 고정</option>
-                </select>
-                <div className="flex items-center gap-1">
-                  <input
-                    type="number"
-                    value={ed.feeRate}
+              <div key={t.id} className="bg-white rounded-2xl border overflow-hidden">
+                {/* 기본 단가 설정 행 */}
+                <div className="p-4 flex flex-wrap gap-3 items-center">
+                  <div className="flex-1 min-w-[120px]">
+                    <p className="font-bold text-slate-800">{t.name}</p>
+                    <p className="text-xs text-slate-500">{t.part || "파트 미설정"}</p>
+                  </div>
+                  <select
+                    value={ed.feeType}
                     onChange={(e) =>
                       setEditFeeData((prev) => ({
                         ...prev,
-                        [t.id]: { ...prev[t.id], feeRate: e.target.value },
+                        [t.id]: { ...prev[t.id], feeType: e.target.value },
                       }))
                     }
-                    placeholder={ed.feeType === "monthly" ? "월 고정액" : "회당 금액"}
-                    className="border rounded-lg px-3 py-2 text-sm w-36"
-                  />
-                  <span className="text-xs text-slate-500">원</span>
+                    className="border rounded-lg px-3 py-2 text-sm"
+                  >
+                    <option value="perSession">회당 지급</option>
+                    <option value="monthly">월 고정</option>
+                    <option value="revenueShare">수업료 비율 (%)</option>
+                  </select>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      value={ed.feeRate}
+                      onChange={(e) =>
+                        setEditFeeData((prev) => ({
+                          ...prev,
+                          [t.id]: { ...prev[t.id], feeRate: e.target.value },
+                        }))
+                      }
+                      placeholder={ed.feeType === "monthly" ? "월 고정액" : ed.feeType === "revenueShare" ? "비율 (예: 50)" : "회당 금액"}
+                      className="border rounded-lg px-3 py-2 text-sm w-36"
+                    />
+                    <span className="text-xs text-slate-500">{ed.feeType === "revenueShare" ? "%" : "원"}</span>
+                  </div>
+                  <button
+                    onClick={() => handleSaveFeeRate(t.id)}
+                    disabled={savingId === t.id}
+                    className="px-4 py-2 text-sm font-bold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                  >
+                    {savingId === t.id ? "저장 중…" : "저장"}
+                  </button>
+                  {teacherStudents.length > 0 && ed.feeType !== "monthly" && (
+                    <button
+                      onClick={() =>
+                        setEditFeeData((prev) => ({
+                          ...prev,
+                          [t.id]: { ...prev[t.id], showOverrides: !prev[t.id]?.showOverrides },
+                        }))
+                      }
+                      className="px-3 py-2 text-xs font-bold border rounded-lg text-slate-600 hover:bg-slate-50 transition-colors"
+                    >
+                      학생별 단가 {ed.showOverrides ? "▲ 닫기" : "▼ 설정"}
+                    </button>
+                  )}
                 </div>
-                <button
-                  onClick={() => handleSaveFeeRate(t.id)}
-                  disabled={savingId === t.id}
-                  className="px-4 py-2 text-sm font-bold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-                >
-                  {savingId === t.id ? "저장 중…" : "저장"}
-                </button>
+
+                {/* 학생별 단가 override 섹션 */}
+                {ed.showOverrides && ed.feeType !== "monthly" && (
+                  <div className="border-t bg-slate-50 px-4 py-3 space-y-2">
+                    <p className="text-xs text-slate-400 mb-2">
+                      입력하지 않으면 위의 기본 단가가 적용됩니다.
+                      {ed.feeType === "revenueShare" && " 여기서는 회당 고정 금액으로 override됩니다."}
+                    </p>
+                    {teacherStudents.map((s) => {
+                      const overrideVal = (ed.studentFeeOverrides || {})[s.id] ?? "";
+                      return (
+                        <div key={s.id} className="flex items-center gap-3">
+                          <span className="text-sm font-medium text-slate-700 w-24 shrink-0">{s.name}</span>
+                          <span className="text-xs text-slate-400 flex-1">원비 {Number(s.tuitionFee || 0).toLocaleString()}원</span>
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="number"
+                              value={overrideVal}
+                              onChange={(e) =>
+                                setEditFeeData((prev) => ({
+                                  ...prev,
+                                  [t.id]: {
+                                    ...prev[t.id],
+                                    studentFeeOverrides: {
+                                      ...(prev[t.id]?.studentFeeOverrides || {}),
+                                      [s.id]: e.target.value,
+                                    },
+                                  },
+                                }))
+                              }
+                              placeholder="기본값 사용"
+                              className="border rounded-lg px-2 py-1 text-sm w-28"
+                            />
+                            <span className="text-xs text-slate-500">원/회</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })}
