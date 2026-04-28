@@ -12193,7 +12193,13 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
           data[t.id] = {
             feeType: t.feeType || "perSession",
             feeRate: t.feeRate != null ? String(t.feeRate) : "",
-            studentFeeOverrides: t.studentFeeOverrides || {},
+            // 구버전(숫자) 호환: { type, value } 구조로 정규화
+            studentFeeOverrides: Object.fromEntries(
+              Object.entries(t.studentFeeOverrides || {}).map(([sid, val]) => [
+                sid,
+                typeof val === "object" ? val : { type: "fixed", value: val },
+              ])
+            ),
             showOverrides: false,
           };
       });
@@ -12248,13 +12254,21 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
     if (!teacher) return 0;
     const overrides = teacher.studentFeeOverrides || {};
     const override = overrides[row.studentId];
-    if (override != null && override !== "" && Number(override) >= 0) {
-      return row.sessions * Number(override);
+    if (override != null && override !== "") {
+      // 구버전 호환: 숫자면 회당 고정으로 처리
+      if (typeof override === "number" || (typeof override === "string" && override !== "")) {
+        return row.sessions * Number(override);
+      }
+      const { type, value } = override;
+      if (value !== "" && value != null && Number(value) >= 0) {
+        if (type === "percent") return Math.round(row.tuitionFee * (Number(value) / 100));
+        return row.sessions * Number(value); // fixed
+      }
     }
+    // 기본 단가 (revenueShare는 calcFee에서 전체 합산으로 처리)
     if (teacher.feeType === "revenueShare") {
       const rate = Number(teacher.feeRate || 0) / 100;
-      if (!row.totalStudentSessions) return 0;
-      return Math.round(row.tuitionFee * (row.sessions / row.totalStudentSessions) * rate);
+      return Math.round(row.tuitionFee * rate);
     }
     return row.sessions * Number(teacher.feeRate || 0);
   };
@@ -12288,10 +12302,15 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
     if (!data) return;
     setSavingId(teacherId);
     try {
-      // studentFeeOverrides: 빈 문자열 제거 후 숫자로 변환
+      // studentFeeOverrides: value가 비어있으면 제외, { type, value: number } 구조로 저장
       const cleanedOverrides = {};
-      Object.entries(data.studentFeeOverrides || {}).forEach(([sid, val]) => {
-        if (val !== "" && val != null) cleanedOverrides[sid] = Number(val);
+      Object.entries(data.studentFeeOverrides || {}).forEach(([sid, entry]) => {
+        if (!entry) return;
+        const val = typeof entry === "object" ? entry.value : entry;
+        const type = typeof entry === "object" ? (entry.type || "fixed") : "fixed";
+        if (val !== "" && val != null && String(val).trim() !== "") {
+          cleanedOverrides[sid] = { type, value: Number(val) };
+        }
       });
       await updateDoc(
         doc(db, "artifacts", APP_ID, "public", "data", "teachers", teacherId),
@@ -12624,15 +12643,40 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
                 {ed.showOverrides && ed.feeType !== "monthly" && (
                   <div className="border-t bg-slate-50 px-4 py-3 space-y-2">
                     <p className="text-xs text-slate-400 mb-2">
-                      입력하지 않으면 위의 기본 단가가 적용됩니다.
-                      {ed.feeType === "revenueShare" && " 여기서는 회당 고정 금액으로 override됩니다."}
+                      입력하지 않으면 위의 기본 단가가 적용됩니다. 학생별로 회당 고정 또는 원비 비율(%)을 선택할 수 있어요.
                     </p>
                     {teacherStudents.map((s) => {
-                      const overrideVal = (ed.studentFeeOverrides || {})[s.id] ?? "";
+                      const raw = (ed.studentFeeOverrides || {})[s.id];
+                      const overrideType = (typeof raw === "object" && raw?.type) ? raw.type : "fixed";
+                      const overrideVal = (typeof raw === "object" ? raw?.value : raw) ?? "";
+                      const previewFee = overrideVal !== "" && Number(overrideVal) >= 0
+                        ? (overrideType === "percent"
+                          ? Math.round(Number(s.tuitionFee || 0) * Number(overrideVal) / 100)
+                          : null)
+                        : null;
                       return (
-                        <div key={s.id} className="flex items-center gap-3">
+                        <div key={s.id} className="flex items-center gap-2 flex-wrap">
                           <span className="text-sm font-medium text-slate-700 w-24 shrink-0">{s.name}</span>
-                          <span className="text-xs text-slate-400 flex-1">원비 {Number(s.tuitionFee || 0).toLocaleString()}원</span>
+                          <span className="text-xs text-slate-400 w-28 shrink-0">원비 {Number(s.tuitionFee || 0).toLocaleString()}원</span>
+                          <select
+                            value={overrideType}
+                            onChange={(e) =>
+                              setEditFeeData((prev) => ({
+                                ...prev,
+                                [t.id]: {
+                                  ...prev[t.id],
+                                  studentFeeOverrides: {
+                                    ...(prev[t.id]?.studentFeeOverrides || {}),
+                                    [s.id]: { type: e.target.value, value: overrideVal },
+                                  },
+                                },
+                              }))
+                            }
+                            className="border rounded-lg px-2 py-1 text-xs"
+                          >
+                            <option value="fixed">회당 고정</option>
+                            <option value="percent">원비 비율 (%)</option>
+                          </select>
                           <div className="flex items-center gap-1">
                             <input
                               type="number"
@@ -12644,16 +12688,19 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
                                     ...prev[t.id],
                                     studentFeeOverrides: {
                                       ...(prev[t.id]?.studentFeeOverrides || {}),
-                                      [s.id]: e.target.value,
+                                      [s.id]: { type: overrideType, value: e.target.value },
                                     },
                                   },
                                 }))
                               }
                               placeholder="기본값 사용"
-                              className="border rounded-lg px-2 py-1 text-sm w-28"
+                              className="border rounded-lg px-2 py-1 text-sm w-24"
                             />
-                            <span className="text-xs text-slate-500">원/회</span>
+                            <span className="text-xs text-slate-500">{overrideType === "percent" ? "%" : "원/회"}</span>
                           </div>
+                          {previewFee !== null && (
+                            <span className="text-xs text-indigo-600 font-medium">= {previewFee.toLocaleString()}원/월</span>
+                          )}
                         </div>
                       );
                     })}
