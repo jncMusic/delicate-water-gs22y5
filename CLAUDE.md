@@ -1,5 +1,9 @@
 # CLAUDE.md - JnC Music Academy Dashboard
 
+## Communication Style
+
+- 사용자와의 모든 대화는 **반존대** 스타일로 한다. (예: "~했어요", "~할게요", "~인데요" 등 친근하지만 예의 있는 말투)
+
 ## Project Overview
 
 This is the **JnC Music Academy Dashboard** — a React-based web application for managing a music academy's daily operations including student enrollment, teacher scheduling, attendance tracking, payment management, and consultation logging. The UI and all comments/data are in **Korean**.

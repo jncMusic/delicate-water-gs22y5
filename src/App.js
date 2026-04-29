@@ -12193,6 +12193,14 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
           data[t.id] = {
             feeType: t.feeType || "perSession",
             feeRate: t.feeRate != null ? String(t.feeRate) : "",
+            // 구버전(숫자) 호환: { type, value } 구조로 정규화
+            studentFeeOverrides: Object.fromEntries(
+              Object.entries(t.studentFeeOverrides || {}).map(([sid, val]) => [
+                sid,
+                typeof val === "object" ? val : { type: "fixed", value: val },
+              ])
+            ),
+            showOverrides: false,
           };
       });
       return Object.keys(data).length > 0 ? data : prev;
@@ -12214,32 +12222,62 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
     (teacherName) =>
       students
         .map((s) => {
-          const recs = (s.attendanceHistory || []).filter(
+          const allRecs = (s.attendanceHistory || []).filter(
             (h) =>
               h.date >= period.start &&
               h.date <= period.end &&
-              (h.status === "present" || h.status === "canceled") &&
-              resolveFeeTeacher(s, h.date, h) === teacherName
+              (h.status === "present" || h.status === "canceled")
+          );
+          const recs = allRecs.filter(
+            (h) => resolveFeeTeacher(s, h.date, h) === teacherName
           );
           if (!recs.length) return null;
-          const sessions = recs.reduce((sum, h) => {
-            if (h.status === "present") return sum + (h.count || 1);
-            if (h.status === "canceled") return sum + 0.5;
-            return sum;
-          }, 0);
-          return { name: s.name, sessions };
+          const countRec = (h) =>
+            h.status === "present" ? (h.count || 1) : h.status === "canceled" ? 0.5 : 0;
+          const sessions = recs.reduce((sum, h) => sum + countRec(h), 0);
+          const totalStudentSessions = allRecs.reduce((sum, h) => sum + countRec(h), 0);
+          return {
+            name: s.name,
+            studentId: s.id,
+            sessions,
+            totalStudentSessions,
+            tuitionFee: Number(s.tuitionFee || 0),
+          };
         })
         .filter(Boolean)
         .sort((a, b) => b.sessions - a.sessions),
     [students, period]
   );
 
-  // 강사료 계산 (회당 또는 월 고정)
-  const calcFee = (teacher, totalSessions) => {
+  // 학생 1명에 대한 강사료 계산 (override → revenueShare → 기본 단가)
+  const calcStudentFee = (teacher, row) => {
     if (!teacher) return 0;
-    const rate = Number(teacher.feeRate || 0);
-    if (teacher.feeType === "monthly") return rate;
-    return totalSessions * rate;
+    const overrides = teacher.studentFeeOverrides || {};
+    const override = overrides[row.studentId];
+    if (override != null && override !== "") {
+      // 구버전 호환: 숫자면 회당 고정으로 처리
+      if (typeof override === "number" || (typeof override === "string" && override !== "")) {
+        return row.sessions * Number(override);
+      }
+      const { type, value } = override;
+      if (value !== "" && value != null && Number(value) >= 0) {
+        if (type === "percent") return Math.round(row.tuitionFee * (Number(value) / 100));
+        return row.sessions * Number(value); // fixed
+      }
+    }
+    // 기본 단가 (revenueShare는 calcFee에서 전체 합산으로 처리)
+    if (teacher.feeType === "revenueShare") {
+      const rate = Number(teacher.feeRate || 0) / 100;
+      return Math.round(row.tuitionFee * rate);
+    }
+    return row.sessions * Number(teacher.feeRate || 0);
+  };
+
+  // 강사료 합계 (회당/비율 → 학생별 합산, 월고정 → feeRate 그대로)
+  const calcFee = (teacher, rows) => {
+    if (!teacher) return 0;
+    if (teacher.feeType === "monthly") return Number(teacher.feeRate || 0);
+    return rows.reduce((sum, row) => sum + calcStudentFee(teacher, row), 0);
   };
 
   const currentTeacher = teacherList.find((t) => t.name === selectedTeacherName);
@@ -12248,7 +12286,7 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
     [selectedTeacherName, calcSessions]
   );
   const totalSessions = sessionRows.reduce((s, r) => s + r.sessions, 0);
-  const grossFee = calcFee(currentTeacher, totalSessions);
+  const grossFee = calcFee(currentTeacher, sessionRows);
   const tax = Math.round(grossFee * 0.033);
   const netFee = grossFee - tax;
 
@@ -12264,9 +12302,19 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
     if (!data) return;
     setSavingId(teacherId);
     try {
+      // studentFeeOverrides: value가 비어있으면 제외, { type, value: number } 구조로 저장
+      const cleanedOverrides = {};
+      Object.entries(data.studentFeeOverrides || {}).forEach(([sid, entry]) => {
+        if (!entry) return;
+        const val = typeof entry === "object" ? entry.value : entry;
+        const type = typeof entry === "object" ? (entry.type || "fixed") : "fixed";
+        if (val !== "" && val != null && String(val).trim() !== "") {
+          cleanedOverrides[sid] = { type, value: Number(val) };
+        }
+      });
       await updateDoc(
         doc(db, "artifacts", APP_ID, "public", "data", "teachers", teacherId),
-        { feeType: data.feeType, feeRate: Number(data.feeRate) || 0 }
+        { feeType: data.feeType, feeRate: Number(data.feeRate) || 0, studentFeeOverrides: cleanedOverrides }
       );
       showToast("저장되었습니다.", "success");
     } catch {
@@ -12310,7 +12358,7 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
       ...sessionRows.map((r) => [
         r.name,
         r.sessions,
-        isPerSession ? r.sessions * Number(currentTeacher?.feeRate || 0) : "—",
+        isPerSession ? calcStudentFee(currentTeacher, r) : "—",
       ]),
       [],
       ["합계", totalSessions, grossFee],
@@ -12344,7 +12392,7 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
         const rows2 = calcSessions(t.name);
         const sess = rows2.reduce((s, r) => s + r.sessions, 0);
         if (!sess) return null;
-        const gross = calcFee(t, sess);
+        const gross = calcFee(t, rows2);
         if (!gross) return null;
         const it = Math.round(gross * 0.03);
         const lt = Math.round(gross * 0.003);
@@ -12491,13 +12539,17 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
                 </thead>
                 <tbody>
                   {sessionRows.map((row, i) => {
-                    const rowFee =
-                      (currentTeacher?.feeType || "perSession") === "monthly"
-                        ? null
-                        : row.sessions * Number(currentTeacher?.feeRate || 0);
+                    const isMonthly = (currentTeacher?.feeType || "perSession") === "monthly";
+                    const rowFee = isMonthly ? null : calcStudentFee(currentTeacher, row);
+                    const hasOverride = currentTeacher && (currentTeacher.studentFeeOverrides || {})[row.studentId] != null;
                     return (
                       <tr key={i} className="border-t hover:bg-slate-50 transition-colors">
-                        <td className="px-5 py-3 font-medium">{row.name}</td>
+                        <td className="px-5 py-3 font-medium">
+                          {row.name}
+                          {hasOverride && (
+                            <span className="ml-1.5 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-normal">개별단가</span>
+                          )}
+                        </td>
                         <td className="px-5 py-3 text-center">{row.sessions}회</td>
                         <td className="px-5 py-3 text-right">
                           {rowFee !== null ? `${rowFee.toLocaleString()}원` : "—"}
@@ -12526,48 +12578,136 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
             각 강사의 계약 조건에 따라 지급 단가를 설정합니다. 설정 내용은 관리자만 확인할 수 있습니다.
           </p>
           {teacherList.map((t) => {
-            const ed = editFeeData[t.id] || { feeType: "perSession", feeRate: "" };
+            const ed = editFeeData[t.id] || { feeType: "perSession", feeRate: "", studentFeeOverrides: {}, showOverrides: false };
+            const teacherStudents = students.filter((s) => s.teacher === t.name && s.status === "재원");
             return (
-              <div key={t.id} className="bg-white rounded-2xl border p-4 flex flex-wrap gap-3 items-center">
-                <div className="flex-1 min-w-[120px]">
-                  <p className="font-bold text-slate-800">{t.name}</p>
-                  <p className="text-xs text-slate-500">{t.part || "파트 미설정"}</p>
-                </div>
-                <select
-                  value={ed.feeType}
-                  onChange={(e) =>
-                    setEditFeeData((prev) => ({
-                      ...prev,
-                      [t.id]: { ...prev[t.id], feeType: e.target.value },
-                    }))
-                  }
-                  className="border rounded-lg px-3 py-2 text-sm"
-                >
-                  <option value="perSession">회당 지급</option>
-                  <option value="monthly">월 고정</option>
-                </select>
-                <div className="flex items-center gap-1">
-                  <input
-                    type="number"
-                    value={ed.feeRate}
+              <div key={t.id} className="bg-white rounded-2xl border overflow-hidden">
+                {/* 기본 단가 설정 행 */}
+                <div className="p-4 flex flex-wrap gap-3 items-center">
+                  <div className="flex-1 min-w-[120px]">
+                    <p className="font-bold text-slate-800">{t.name}</p>
+                    <p className="text-xs text-slate-500">{t.part || "파트 미설정"}</p>
+                  </div>
+                  <select
+                    value={ed.feeType}
                     onChange={(e) =>
                       setEditFeeData((prev) => ({
                         ...prev,
-                        [t.id]: { ...prev[t.id], feeRate: e.target.value },
+                        [t.id]: { ...prev[t.id], feeType: e.target.value },
                       }))
                     }
-                    placeholder={ed.feeType === "monthly" ? "월 고정액" : "회당 금액"}
-                    className="border rounded-lg px-3 py-2 text-sm w-36"
-                  />
-                  <span className="text-xs text-slate-500">원</span>
+                    className="border rounded-lg px-3 py-2 text-sm"
+                  >
+                    <option value="perSession">회당 지급</option>
+                    <option value="monthly">월 고정</option>
+                    <option value="revenueShare">수업료 비율 (%)</option>
+                  </select>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={ed.feeRate}
+                      onChange={(e) =>
+                        setEditFeeData((prev) => ({
+                          ...prev,
+                          [t.id]: { ...prev[t.id], feeRate: e.target.value },
+                        }))
+                      }
+                      placeholder={ed.feeType === "monthly" ? "월 고정액" : ed.feeType === "revenueShare" ? "비율 (예: 50)" : "회당 금액"}
+                      className="border rounded-lg px-3 py-2 text-sm w-36"
+                    />
+                    <span className="text-xs text-slate-500">{ed.feeType === "revenueShare" ? "%" : "원"}</span>
+                  </div>
+                  <button
+                    onClick={() => handleSaveFeeRate(t.id)}
+                    disabled={savingId === t.id}
+                    className="px-4 py-2 text-sm font-bold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                  >
+                    {savingId === t.id ? "저장 중…" : "저장"}
+                  </button>
+                  {teacherStudents.length > 0 && ed.feeType !== "monthly" && (
+                    <button
+                      onClick={() =>
+                        setEditFeeData((prev) => ({
+                          ...prev,
+                          [t.id]: { ...prev[t.id], showOverrides: !prev[t.id]?.showOverrides },
+                        }))
+                      }
+                      className="px-3 py-2 text-xs font-bold border rounded-lg text-slate-600 hover:bg-slate-50 transition-colors"
+                    >
+                      학생별 단가 {ed.showOverrides ? "▲ 닫기" : "▼ 설정"}
+                    </button>
+                  )}
                 </div>
-                <button
-                  onClick={() => handleSaveFeeRate(t.id)}
-                  disabled={savingId === t.id}
-                  className="px-4 py-2 text-sm font-bold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-                >
-                  {savingId === t.id ? "저장 중…" : "저장"}
-                </button>
+
+                {/* 학생별 단가 override 섹션 */}
+                {ed.showOverrides && ed.feeType !== "monthly" && (
+                  <div className="border-t bg-slate-50 px-4 py-3 space-y-2">
+                    <p className="text-xs text-slate-400 mb-2">
+                      입력하지 않으면 위의 기본 단가가 적용됩니다. 학생별로 회당 고정 또는 원비 비율(%)을 선택할 수 있어요.
+                    </p>
+                    {teacherStudents.map((s) => {
+                      const raw = (ed.studentFeeOverrides || {})[s.id];
+                      const overrideType = (typeof raw === "object" && raw?.type) ? raw.type : "fixed";
+                      const overrideVal = (typeof raw === "object" ? raw?.value : raw) ?? "";
+                      const previewFee = overrideVal !== "" && Number(overrideVal) >= 0
+                        ? (overrideType === "percent"
+                          ? Math.round(Number(s.tuitionFee || 0) * Number(overrideVal) / 100)
+                          : null)
+                        : null;
+                      return (
+                        <div key={s.id} className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-medium text-slate-700 w-24 shrink-0">{s.name}</span>
+                          <span className="text-xs text-slate-400 w-28 shrink-0">원비 {Number(s.tuitionFee || 0).toLocaleString()}원</span>
+                          <select
+                            value={overrideType}
+                            onChange={(e) =>
+                              setEditFeeData((prev) => ({
+                                ...prev,
+                                [t.id]: {
+                                  ...prev[t.id],
+                                  studentFeeOverrides: {
+                                    ...(prev[t.id]?.studentFeeOverrides || {}),
+                                    [s.id]: { type: e.target.value, value: overrideVal },
+                                  },
+                                },
+                              }))
+                            }
+                            className="border rounded-lg px-2 py-1 text-xs"
+                          >
+                            <option value="fixed">회당 고정</option>
+                            <option value="percent">원비 비율 (%)</option>
+                          </select>
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              value={overrideVal}
+                              onChange={(e) =>
+                                setEditFeeData((prev) => ({
+                                  ...prev,
+                                  [t.id]: {
+                                    ...prev[t.id],
+                                    studentFeeOverrides: {
+                                      ...(prev[t.id]?.studentFeeOverrides || {}),
+                                      [s.id]: { type: overrideType, value: e.target.value },
+                                    },
+                                  },
+                                }))
+                              }
+                              placeholder="기본값 사용"
+                              className="border rounded-lg px-2 py-1 text-sm w-24"
+                            />
+                            <span className="text-xs text-slate-500">{overrideType === "percent" ? "%" : "원/회"}</span>
+                          </div>
+                          {previewFee !== null && (
+                            <span className="text-xs text-indigo-600 font-medium">= {previewFee.toLocaleString()}원/월</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -12627,7 +12767,7 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
                     const rows2 = calcSessions(t.name);
                     const sess = rows2.reduce((s, r) => s + r.sessions, 0);
                     if (!sess) return null;
-                    const gross = calcFee(t, sess);
+                    const gross = calcFee(t, rows2);
                     if (!gross) return null;
                     const it = Math.round(gross * 0.03);
                     const lt = Math.round(gross * 0.003);
@@ -12650,7 +12790,7 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
             {teacherList.every((t) => {
               const rows2 = calcSessions(t.name);
               const sess = rows2.reduce((s, r) => s + r.sessions, 0);
-              return !sess || !calcFee(t, sess);
+              return !sess || !calcFee(t, rows2);
             }) && (
               <div className="py-16 text-center text-slate-400 text-sm">
                 해당 기간에 수업 기록이 있고 단가가 설정된 강사가 없습니다.
@@ -12847,6 +12987,60 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
       return student.time;
     return null;
   };
+
+  // 45분 수업 기준 타임라인 상수
+  const LESSON_MIN = 45;
+  const PX_PER_MIN = 2;            // 1분 = 2px
+  const PX_PER_HOUR = 60 * PX_PER_MIN; // 120px / 시간
+  const LESSON_HEIGHT = LESSON_MIN * PX_PER_MIN; // 90px
+  const TL_START = 9;              // 타임라인 시작 (9시)
+  const TOTAL_MINS = (22 - TL_START) * 60; // 780분
+  const TOTAL_HEIGHT = TOTAL_MINS * PX_PER_MIN; // 1560px
+
+  // 특정 강사·요일의 수업 목록 (시간순)
+  const getAllStudentLessons = useCallback((teacherName, day) => {
+    return students
+      .filter((s) => {
+        if (isTeacherMode && teacherName !== myName) return false;
+        if (s.teacher !== teacherName) return false;
+        if (!getLessonTime(s, day)) return false;
+        if (selectedPart !== "전체" && getPartBySubject(s.subject || "") !== selectedPart) return false;
+        return true;
+      })
+      .map((s) => {
+        const timeStr = getLessonTime(s, day);
+        const [hour, minute] = timeStr.split(":").map(Number);
+        return { student: s, timeStr, hour, minute };
+      })
+      .sort((a, b) => a.hour * 60 + a.minute - (b.hour * 60 + b.minute));
+  }, [students, isTeacherMode, myName, selectedPart]); // eslint-disable-line
+
+  // 45분 수업 배정 가능한 빈 구간 계산
+  const getAvailableWindows = useCallback((teacherName, day) => {
+    const isWeekend = day === "토" || day === "일";
+    const opStartMin = (isWeekend ? 9 : 10) * 60;
+    const opEndMin = 22 * 60;
+    const booked = students
+      .filter((s) => s.teacher === teacherName && s.status === "재원" && getLessonTime(s, day))
+      .map((s) => {
+        const [h, m] = (getLessonTime(s, day)).split(":").map(Number);
+        const start = h * 60 + m;
+        return { start, end: start + LESSON_MIN };
+      })
+      .sort((a, b) => a.start - b.start);
+    const windows = [];
+    let cursor = opStartMin;
+    for (const lesson of booked) {
+      if (lesson.start > cursor && lesson.start - cursor >= LESSON_MIN) {
+        windows.push({ startMin: cursor, endMin: lesson.start });
+      }
+      cursor = Math.max(cursor, lesson.end);
+    }
+    if (cursor <= opEndMin - LESSON_MIN) {
+      windows.push({ startMin: cursor, endMin: opEndMin });
+    }
+    return windows;
+  }, [students]); // eslint-disable-line
 
   // 수업 데이터 필터링 (파트 필터 적용)
   const getLessons = (teacherName, day, hour) => {
@@ -13051,130 +13245,150 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
             )}
           </div>
 
-          {/* 바디 */}
-          <div className="divide-y divide-slate-200 print:divide-slate-300">
-            {HOURS.map((hour) => (
-              <div
-                key={hour}
-                className="flex min-h-[80px] md:min-h-[100px] print:min-h-[80px]"
-              >
-                {/* 시간축 */}
-                <div className="w-[50px] md:w-[80px] p-1 md:p-2 text-center text-[10px] md:text-xs font-bold text-slate-400 border-r bg-white flex flex-col justify-start pt-2 sticky left-0 z-10 shrink-0 print:static print:border-slate-300">
-                  {hour}:00
-                </div>
-
-                {isTeacherMode && viewMode === "weekly" ? (
-                  // 강사 주간 보기 바디
-                  <div className="flex flex-1 min-w-max">
-                    {DAYS.map((day) => {
-                      const lessons = getLessons(myName, day, hour);
-                      const isWeekend = day === "토" || day === "일";
-                      const opStart = isWeekend ? 9 : 10;
-                      const isOperating = hour >= opStart && hour < 22;
-                      return (
-                        <div
-                          key={day}
-                          className={`flex-1 min-w-[100px] md:min-w-[140px] border-r p-1 transition-colors flex flex-col gap-1 print:border-slate-300 ${
-                            !isOperating
-                              ? "bg-slate-100/60"
-                              : lessons.length === 0
-                              ? "bg-emerald-50 hover:bg-emerald-100"
-                              : selectedDay === day
-                              ? "bg-indigo-50/10 hover:bg-slate-50 print:bg-transparent"
-                              : "bg-white hover:bg-slate-50"
-                          }`}
-                        >
-                          {isOperating && lessons.length === 0 && (
-                            <div className="flex items-center justify-center h-full py-2">
-                              <span className="text-[10px] font-semibold text-emerald-400">가능</span>
-                            </div>
-                          )}
-                          {lessons.map((l, idx) => (
-                            <div
-                              key={idx}
-                              className={`px-2 py-1 md:px-3 md:py-2 rounded-lg border text-[10px] md:text-xs shadow-sm print:border-slate-400 print:shadow-none ${getSubjectColor(
-                                l.subject
-                              )}`}
-                            >
-                              <div className="font-bold flex justify-between items-center mb-0.5">
-                                <span className="truncate">{l.name}</span>
-                              </div>
-                              <div className="flex justify-between items-center opacity-80 text-[9px] md:text-[10px]">
-                                <span>{getLessonTime(l, day)}</span>
-                                <span className="hidden md:inline">
-                                  {l.grade}
-                                </span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      );
-                    })}
+          {/* 바디 — 45분 절대좌표 타임라인 */}
+          <div className="flex" style={{ height: TOTAL_HEIGHT }}>
+            {/* 시간축 */}
+            <div
+              className="w-[50px] md:w-[80px] border-r bg-white sticky left-0 z-10 shrink-0 print:static print:border-slate-300"
+              style={{ position: "relative", height: TOTAL_HEIGHT }}
+            >
+              {HOURS.map((hour, i) => (
+                <React.Fragment key={hour}>
+                  <div
+                    style={{ position: "absolute", top: i * PX_PER_HOUR, left: 0, right: 0 }}
+                    className="border-t border-slate-200 print:border-slate-300"
+                  />
+                  <div
+                    style={{ position: "absolute", top: i * PX_PER_HOUR + 2, left: 0, right: 0 }}
+                    className="pl-1 md:pl-2 text-[9px] md:text-xs font-bold text-slate-400"
+                  >
+                    {hour}:00
                   </div>
-                ) : (
-                  // 관리자/강사 일간 보기 바디 (🔥 중앙 정렬 justify-center 적용됨)
-                  <div className="flex flex-1 justify-center min-w-max">
-                    {activeTeachers.map((t) => {
-                      const targetName = isTeacherMode ? myName : t.name;
-                      const lessons = getLessons(targetName, selectedDay, hour);
-                      const isWeekend = selectedDay === "토" || selectedDay === "일";
-                      const opStart = isWeekend ? 9 : 10;
-                      const isOperating = hour >= opStart && hour < 22;
-                      return (
-                        <div
-                          key={t.id}
-                          className={`${
-                            isTeacherMode ? "w-full" : "w-[120px] md:w-[160px]"
-                          } border-r p-1 transition-colors shrink-0 flex flex-col gap-1 print:border-slate-300 ${
-                            !isOperating
-                              ? "bg-slate-100/60"
-                              : lessons.length === 0
-                              ? "bg-emerald-50 hover:bg-emerald-100"
-                              : "bg-white hover:bg-slate-50"
-                          }`}
-                        >
-                          {isOperating && lessons.length === 0 && (
-                            <div className="flex items-center justify-center h-full py-2">
-                              <span className="text-[10px] font-semibold text-emerald-400">가능</span>
-                            </div>
-                          )}
-                          {lessons.map((l, idx) => (
-                            <div
-                              key={idx}
-                              className={`px-2 py-1 md:px-3 md:py-2 rounded-lg border text-[10px] md:text-xs shadow-sm print:border-slate-400 print:shadow-none ${getSubjectColor(
-                                l.subject
-                              )}`}
-                            >
-                              <div className="font-bold flex justify-between items-center mb-0.5">
-                                <span className="truncate">{l.name}</span>
-                                <span className="md:hidden text-[9px] opacity-70">
-                                  {l.grade}
-                                </span>
-                              </div>
-                              <div className="flex justify-between items-center opacity-80 text-[9px] md:text-[10px]">
-                                <span>{getLessonTime(l, selectedDay)}</span>
-                                <span className="hidden md:inline">
-                                  {l.grade}
-                                </span>
-                              </div>
-                            </div>
-                          ))}
+                </React.Fragment>
+              ))}
+            </div>
+
+            {/* 강사/요일 컬럼 */}
+            {isTeacherMode && viewMode === "weekly" ? (
+              /* 강사 주간 보기 */
+              <div className="flex flex-1 min-w-max">
+                {DAYS.map((day) => {
+                  const isWeekend = day === "토" || day === "일";
+                  const opStartMin = ((isWeekend ? 9 : 10) - TL_START) * 60;
+                  const opEndMin = (22 - TL_START) * 60;
+                  const lessons = getAllStudentLessons(myName, day);
+                  const windows = getAvailableWindows(myName, day);
+                  return (
+                    <div
+                      key={day}
+                      className={`flex-1 min-w-[100px] md:min-w-[140px] border-r shrink-0 print:border-slate-300 ${selectedDay === day ? "bg-indigo-50/20" : "bg-white"}`}
+                      style={{ position: "relative", height: TOTAL_HEIGHT }}
+                    >
+                      {/* 비운영 음영 */}
+                      <div style={{ position: "absolute", top: 0, height: opStartMin * PX_PER_MIN, left: 0, right: 0 }} className="bg-slate-100/70 print:bg-transparent" />
+                      <div style={{ position: "absolute", top: opEndMin * PX_PER_MIN, height: (TOTAL_MINS - opEndMin) * PX_PER_MIN, left: 0, right: 0 }} className="bg-slate-100/70 print:bg-transparent" />
+                      {/* 시간 그리드 */}
+                      {HOURS.map((_, i) => (
+                        <div key={i} style={{ position: "absolute", top: i * PX_PER_HOUR, left: 0, right: 0 }} className="border-t border-slate-200 print:border-slate-300" />
+                      ))}
+                      {/* 30분 보조선 */}
+                      {HOURS.map((_, i) => (
+                        <div key={`h-${i}`} style={{ position: "absolute", top: i * PX_PER_HOUR + 60, left: 0, right: 0 }} className="border-t border-dashed border-slate-100" />
+                      ))}
+                      {/* 배정 가능 구간 */}
+                      {windows.map(({ startMin, endMin }, wi) => (
+                        <div key={wi} style={{ position: "absolute", top: (startMin - TL_START * 60) * PX_PER_MIN, height: (endMin - startMin) * PX_PER_MIN, left: 1, right: 1, zIndex: 1 }} className="bg-emerald-50 rounded print:bg-transparent">
+                          <span className="text-[8px] md:text-[9px] font-bold text-emerald-500 px-1 pt-0.5 block leading-tight">
+                            ✓ {Math.floor(startMin / 60)}:{String(startMin % 60).padStart(2, "0")} 배정가능
+                          </span>
                         </div>
-                      );
-                    })}
-                    {/* 빈 공간 처리 */}
-                    {activeTeachers.length === 0 && (
-                      <div className="flex-1 bg-transparent"></div>
-                    )}
+                      ))}
+                      {/* 수업 카드 */}
+                      {lessons.map((l, li) => (
+                        <div
+                          key={li}
+                          style={{ position: "absolute", top: (l.hour * 60 + l.minute - TL_START * 60) * PX_PER_MIN, height: LESSON_HEIGHT - 2, left: 2, right: 2, zIndex: 2 }}
+                          className={`rounded-lg border text-[9px] md:text-[10px] shadow-sm overflow-hidden px-1.5 py-0.5 print:border-slate-400 ${getSubjectColor(l.student.subject)}`}
+                        >
+                          <div className="font-bold truncate">{l.student.name}</div>
+                          <div className="opacity-70">{l.timeStr}</div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              /* 관리자/강사 일간 보기 */
+              <div className="flex flex-1 justify-center min-w-max">
+                {activeTeachers.length > 0 ? (
+                  activeTeachers.map((t) => {
+                    const targetName = isTeacherMode ? myName : t.name;
+                    const isWeekend = selectedDay === "토" || selectedDay === "일";
+                    const opStartMin = ((isWeekend ? 9 : 10) - TL_START) * 60;
+                    const opEndMin = (22 - TL_START) * 60;
+                    const lessons = getAllStudentLessons(targetName, selectedDay);
+                    const windows = getAvailableWindows(targetName, selectedDay);
+                    return (
+                      <div
+                        key={t.id}
+                        className={`${isTeacherMode ? "flex-1 min-w-[200px]" : "w-[120px] md:w-[160px]"} border-r shrink-0 bg-white print:border-slate-300`}
+                        style={{ position: "relative", height: TOTAL_HEIGHT }}
+                      >
+                        {/* 비운영 음영 */}
+                        <div style={{ position: "absolute", top: 0, height: opStartMin * PX_PER_MIN, left: 0, right: 0 }} className="bg-slate-100/70 print:bg-transparent" />
+                        <div style={{ position: "absolute", top: opEndMin * PX_PER_MIN, height: (TOTAL_MINS - opEndMin) * PX_PER_MIN, left: 0, right: 0 }} className="bg-slate-100/70 print:bg-transparent" />
+                        {/* 시간 그리드 */}
+                        {HOURS.map((_, i) => (
+                          <div key={i} style={{ position: "absolute", top: i * PX_PER_HOUR, left: 0, right: 0 }} className="border-t border-slate-200 print:border-slate-300" />
+                        ))}
+                        {/* 30분 보조선 */}
+                        {HOURS.map((_, i) => (
+                          <div key={`h-${i}`} style={{ position: "absolute", top: i * PX_PER_HOUR + 60, left: 0, right: 0 }} className="border-t border-dashed border-slate-100" />
+                        ))}
+                        {/* 배정 가능 구간 */}
+                        {windows.map(({ startMin, endMin }, wi) => (
+                          <div key={wi} style={{ position: "absolute", top: (startMin - TL_START * 60) * PX_PER_MIN, height: (endMin - startMin) * PX_PER_MIN, left: 1, right: 1, zIndex: 1 }} className="bg-emerald-50 rounded print:bg-transparent">
+                            <div className="text-[8px] md:text-[10px] font-bold text-emerald-500 px-1 pt-0.5 leading-tight">
+                              ✓ {Math.floor(startMin / 60)}:{String(startMin % 60).padStart(2, "0")} 배정가능
+                            </div>
+                            {(endMin - startMin) >= 90 && (
+                              <div className="text-[8px] text-emerald-400 px-1">{endMin - startMin}분 여유</div>
+                            )}
+                          </div>
+                        ))}
+                        {/* 수업 카드 */}
+                        {lessons.map((l, li) => (
+                          <div
+                            key={li}
+                            style={{ position: "absolute", top: (l.hour * 60 + l.minute - TL_START * 60) * PX_PER_MIN, height: LESSON_HEIGHT - 2, left: 2, right: 2, zIndex: 2 }}
+                            className={`rounded-lg border shadow-sm text-[10px] md:text-xs overflow-hidden print:border-slate-400 print:shadow-none ${getSubjectColor(l.student.subject)}`}
+                          >
+                            <div className="px-1.5 py-1">
+                              <div className="font-bold truncate">{l.student.name}</div>
+                              <div className="opacity-80 text-[9px] md:text-[10px]">{l.timeStr}</div>
+                              <div className="opacity-60 text-[9px] hidden md:block">{l.student.grade}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="flex-1 flex justify-center pt-20 text-slate-400 text-sm">
+                    {selectedPart === "전체"
+                      ? `📅 ${selectedDay}요일 수업 없음`
+                      : `🔍 [${selectedPart}] 파트 수업 없음`}
                   </div>
                 )}
               </div>
-            ))}
+            )}
           </div>
         </div>
       </div>
     </div>
   );
+
 };
 
 // [SubjectTimetableView] - 평일 10:30 / 주말 09:00 오픈 규칙 적용
@@ -13308,88 +13522,122 @@ const SubjectTimetableView = ({ students, teachers, showToast }) => {
     }
   };
 
+  // 과목별로 운영 요일 집계
+  const subjectDayMap = useMemo(() => {
+    const map = {}; // subject -> Set of dayStr
+    teachers.forEach((t) => {
+      const subject = teacherSubjects[t.name];
+      if (!subject || !t.days) return;
+      if (!map[subject]) map[subject] = new Set();
+      t.days.forEach((dayId) => {
+        const dayStr = dayId === 0 ? "일" : DAYS[dayId - 1];
+        map[subject].add(dayStr);
+      });
+    });
+    return map;
+  }, [teachers, teacherSubjects]);
+
+  const subjectList = Object.keys(subjectDayMap).sort();
+
+  const subjectBg = (subject) => {
+    const map = {
+      피아노: { bg: "bg-indigo-500", light: "bg-indigo-50", text: "text-indigo-700", border: "border-indigo-200" },
+      바이올린: { bg: "bg-fuchsia-500", light: "bg-fuchsia-50", text: "text-fuchsia-700", border: "border-fuchsia-200" },
+      플루트: { bg: "bg-emerald-500", light: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200" },
+      첼로: { bg: "bg-amber-500", light: "bg-amber-50", text: "text-amber-700", border: "border-amber-200" },
+      성악: { bg: "bg-rose-500", light: "bg-rose-50", text: "text-rose-700", border: "border-rose-200" },
+      기타: { bg: "bg-sky-500", light: "bg-sky-50", text: "text-sky-700", border: "border-sky-200" },
+      드럼: { bg: "bg-slate-500", light: "bg-slate-50", text: "text-slate-700", border: "border-slate-200" },
+    };
+    return map[subject] || { bg: "bg-gray-400", light: "bg-gray-50", text: "text-gray-700", border: "border-gray-200" };
+  };
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 h-full flex flex-col overflow-hidden animate-fade-in">
+      {/* 헤더 */}
       <div className="flex justify-between items-center mb-6 shrink-0">
         <h2 className="text-lg font-bold flex items-center text-slate-800">
-          <BookOpen className="mr-2 text-indigo-600" /> 과목별 운영 시간표 (외부
-          공유용)
+          <BookOpen className="mr-2 text-indigo-600" /> 과목별 운영 시간표
         </h2>
         <button
           onClick={handleCopyCaption}
           className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-lg shadow-md flex items-center transition-colors"
         >
-          <Copy size={16} className="mr-2" /> 시간표 복사
+          <Copy size={16} className="mr-2" /> 텍스트 복사
         </button>
       </div>
 
-      <div className="flex-1 overflow-auto border rounded-xl bg-white relative">
-        <div className="grid grid-cols-[60px_repeat(7,1fr)] bg-slate-50 border-b sticky top-0 z-10 shadow-sm min-w-[800px]">
-          <div className="p-3 text-center text-xs font-bold text-slate-400 border-r flex items-center justify-center bg-slate-50 sticky left-0 z-20">
-            TIME
-          </div>
-          {DAYS.map((day) => (
-            <div
-              key={day}
-              className={`p-3 text-center text-sm font-bold border-r last:border-r-0 ${
-                day === "일"
-                  ? "text-rose-500 bg-rose-50/30"
-                  : day === "토"
-                  ? "text-blue-500 bg-blue-50/30"
-                  : "text-slate-700"
-              }`}
-            >
-              {day}
-            </div>
-          ))}
+      {subjectList.length === 0 ? (
+        <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
+          등록된 수업 정보가 없습니다.
         </div>
-
-        <div className="divide-y divide-slate-100 min-w-[800px]">
-          {HOURS.map((hour) => (
-            <div
-              key={hour}
-              className="grid grid-cols-[60px_repeat(7,1fr)] min-h-[50px]"
-            >
-              <div className="p-2 text-center text-xs font-bold text-slate-400 border-r bg-white flex items-center justify-center sticky left-0 z-10 font-mono">
-                {hour}:00
+      ) : (
+        <div className="flex-1 overflow-auto">
+          {/* 요일 헤더 */}
+          <div className="grid grid-cols-[140px_repeat(7,1fr)] mb-2 min-w-[640px]">
+            <div />
+            {DAYS.map((day) => (
+              <div
+                key={day}
+                className={`text-center text-sm font-bold pb-2 ${
+                  day === "일" ? "text-rose-500" : day === "토" ? "text-blue-500" : "text-slate-500"
+                }`}
+              >
+                {day}
               </div>
+            ))}
+          </div>
 
-              {DAYS.map((day) => {
-                const key = `${day}-${hour}`;
-                const subjects = availabilityMap[key]
-                  ? Array.from(availabilityMap[key])
-                  : [];
+          {/* 과목별 행 */}
+          <div className="space-y-3 min-w-[640px]">
+            {subjectList.map((subject) => {
+              const colors = subjectBg(subject);
+              const availDays = subjectDayMap[subject] || new Set();
+              return (
+                <div key={subject} className={`rounded-2xl border ${colors.border} ${colors.light} overflow-hidden`}>
+                  <div className="grid grid-cols-[140px_repeat(7,1fr)]">
+                    {/* 과목명 */}
+                    <div className={`flex items-center gap-2 px-4 py-5 border-r ${colors.border}`}>
+                      <div className={`w-2.5 h-2.5 rounded-full ${colors.bg} shrink-0`} />
+                      <span className={`font-bold text-sm ${colors.text}`}>{subject}</span>
+                    </div>
 
-                return (
-                  <div
-                    key={day}
-                    className="border-r last:border-r-0 p-1 flex flex-wrap content-center justify-center gap-1 hover:bg-slate-50 transition-colors"
-                  >
-                    {subjects.length > 0 ? (
-                      subjects.sort().map((subj) => (
-                        <span
-                          key={subj}
-                          className={`text-[10px] px-2 py-1 rounded border font-bold shadow-sm whitespace-nowrap opacity-90 ${getSubjectColor(
-                            subj
-                          )}`}
+                    {/* 요일별 셀 */}
+                    {DAYS.map((day) => {
+                      const isWeekend = day === "토" || day === "일";
+                      const available = availDays.has(day);
+                      return (
+                        <div
+                          key={day}
+                          className={`flex flex-col items-center justify-center py-4 border-r last:border-r-0 ${colors.border} transition-colors ${
+                            available ? "bg-white/70" : "bg-transparent"
+                          }`}
                         >
-                          {subj}
-                        </span>
-                      ))
-                    ) : (
-                      <div className="w-full h-full"></div>
-                    )}
+                          {available ? (
+                            <>
+                              <div className={`w-2 h-2 rounded-full ${colors.bg} mb-1.5`} />
+                              <span className={`text-[11px] font-bold ${colors.text}`}>
+                                {isWeekend ? "09:00" : "10:30"}
+                              </span>
+                              <span className="text-[10px] text-slate-400 leading-tight">~ 22:00</span>
+                            </>
+                          ) : (
+                            <span className="text-slate-200 text-lg">—</span>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
-            </div>
-          ))}
-        </div>
-      </div>
+                </div>
+              );
+            })}
+          </div>
 
-      <div className="mt-4 text-center text-xs text-slate-400">
-        * 평일 10:30~22:00, 주말 09:00~22:00 기준 자동 생성
-      </div>
+          <p className="mt-5 text-center text-xs text-slate-400">
+            평일 10:30 ~ 22:00 · 주말 09:00 ~ 22:00 기준
+          </p>
+        </div>
+      )}
     </div>
   );
 };
