@@ -13429,35 +13429,22 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
 
 };
 
-// [SubjectTimetableView] - 평일 10:30 / 주말 09:00 오픈 규칙 적용
-const SubjectTimetableView = ({ students, teachers, showToast }) => {
+// [SubjectTimetableView] - 과목별 운영 시간표 (수업 슬롯 + 수강신청 가능 표시)
+const SubjectTimetableView = ({ students, showToast }) => {
   const DAYS = ["월", "화", "수", "목", "금", "토", "일"];
+  const S_PX = 0.8;           // px per minute
+  const TL_S = 9 * 60;        // 타임라인 시작: 09:00 (절대분)
+  const TL_E = 22 * 60;       // 타임라인 종료: 22:00 (절대분)
+  const CELL_H = (TL_E - TL_S) * S_PX; // 624px
+  const LESSON_MIN = 45;
 
-  // 화면 표시 시간: 오전 9시 ~ 밤 10시 (주말이 9시 시작이므로 9부터 그림)
-  const DISPLAY_START_HOUR = 9;
-  const END_HOUR = 22;
-  const HOURS = Array.from(
-    { length: END_HOUR - DISPLAY_START_HOUR + 1 },
-    (_, i) => i + DISPLAY_START_HOUR
-  );
+  const toMin = (t) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+  const toStr = (min) => `${Math.floor(min / 60)}:${String(min % 60).padStart(2, "0")}`;
+  const getOpStart = (day) => (day === "토" || day === "일") ? TL_S : 12 * 60;
 
-  // 과목별 색상 매핑
-  const getSubjectColor = (subject) => {
-    const map = {
-      피아노: "bg-indigo-100 text-indigo-700 border-indigo-200",
-      바이올린: "bg-fuchsia-100 text-fuchsia-700 border-fuchsia-200",
-      플루트: "bg-emerald-100 text-emerald-700 border-emerald-200",
-      첼로: "bg-amber-100 text-amber-700 border-amber-200",
-      성악: "bg-rose-100 text-rose-700 border-rose-200",
-      기타: "bg-sky-100 text-sky-700 border-sky-200",
-      드럼: "bg-slate-100 text-slate-700 border-slate-200",
-    };
-    return map[subject] || "bg-gray-100 text-gray-600 border-gray-200";
-  };
-
-  // 학생 schedules 기반: 과목 → 요일 → 수업 시간 목록
+  // 학생 schedules 기반: 과목 → 요일 → 수업 시작 시간 Set
   const subjectScheduleMap = useMemo(() => {
-    const map = {}; // { subject: { day: Set<timeStr> } }
+    const map = {};
     students
       .filter((s) => s.status === "재원" && s.subject)
       .forEach((s) => {
@@ -13471,37 +13458,51 @@ const SubjectTimetableView = ({ students, teachers, showToast }) => {
         });
       });
     return map;
-  }, [students]);
+  }, [students]); // eslint-disable-line
 
   const subjectList = Object.keys(subjectScheduleMap).sort();
 
-  const toMin = (t) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
-  const toStr = (min) => `${Math.floor(min / 60)}:${String(min % 60).padStart(2, "0")}`;
-
-  const getEndTime = (timeStr) => toStr(toMin(timeStr) + 45);
-
-  // 연속된 수업 구간 병합: [13:30, 14:15] → [{start:13:30, end:15:00}]
-  const mergeConsecutive = (sortedTimes) => {
-    if (!sortedTimes.length) return [];
-    const blocks = [];
-    let blockStart = toMin(sortedTimes[0]);
-    let blockEnd = blockStart + 45;
-    for (let i = 1; i < sortedTimes.length; i++) {
-      const s = toMin(sortedTimes[i]);
-      if (s === blockEnd) {
-        blockEnd = s + 45;
-      } else {
-        blocks.push({ start: toStr(blockStart), end: toStr(blockEnd) });
-        blockStart = s;
-        blockEnd = s + 45;
+  // 수업 블록 + 수강신청 가능 슬롯 계산
+  const getSlots = (subject, day) => {
+    const opStart = getOpStart(day);
+    const times = subjectScheduleMap[subject]?.[day];
+    if (!times || times.size === 0) return [];
+    const lessonMins = Array.from(times).map(toMin).sort((a, b) => a - b);
+    const result = [];
+    let cursor = opStart;
+    for (const ls of lessonMins) {
+      // 공강 구간: 45분 단위 수강신청 가능 슬롯
+      let t = cursor;
+      while (t + LESSON_MIN <= ls) {
+        result.push({ type: "available", startMin: t, endMin: t + LESSON_MIN });
+        t += LESSON_MIN;
       }
+      result.push({ type: "lesson", startMin: ls, endMin: ls + LESSON_MIN });
+      cursor = Math.max(cursor, ls + LESSON_MIN);
     }
-    blocks.push({ start: toStr(blockStart), end: toStr(blockEnd) });
-    return blocks;
+    // 마지막 수업 이후
+    let t = cursor;
+    while (t + LESSON_MIN <= TL_E) {
+      result.push({ type: "available", startMin: t, endMin: t + LESSON_MIN });
+      t += LESSON_MIN;
+    }
+    return result;
+  };
+
+  const subjectBg = (subject) => {
+    const map = {
+      피아노:  { bg: "bg-indigo-500", light: "bg-indigo-50",  text: "text-indigo-700",  border: "border-indigo-200"  },
+      바이올린: { bg: "bg-fuchsia-500", light: "bg-fuchsia-50", text: "text-fuchsia-700", border: "border-fuchsia-200" },
+      플루트:  { bg: "bg-emerald-500", light: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200" },
+      첼로:   { bg: "bg-amber-500",   light: "bg-amber-50",   text: "text-amber-700",   border: "border-amber-200"   },
+      성악:   { bg: "bg-rose-500",    light: "bg-rose-50",    text: "text-rose-700",    border: "border-rose-200"    },
+      기타:   { bg: "bg-sky-500",     light: "bg-sky-50",     text: "text-sky-700",     border: "border-sky-200"     },
+      드럼:   { bg: "bg-slate-500",   light: "bg-slate-50",   text: "text-slate-700",   border: "border-slate-200"   },
+    };
+    return map[subject] || { bg: "bg-gray-400", light: "bg-gray-50", text: "text-gray-700", border: "border-gray-200" };
   };
 
   const printRef = useRef(null);
-
   const handleDownloadImage = async () => {
     if (!printRef.current) return;
     try {
@@ -13516,26 +13517,14 @@ const SubjectTimetableView = ({ students, teachers, showToast }) => {
     }
   };
 
-
-  const subjectBg = (subject) => {
-    const map = {
-      피아노: { bg: "bg-indigo-500", light: "bg-indigo-50", text: "text-indigo-700", border: "border-indigo-200" },
-      바이올린: { bg: "bg-fuchsia-500", light: "bg-fuchsia-50", text: "text-fuchsia-700", border: "border-fuchsia-200" },
-      플루트: { bg: "bg-emerald-500", light: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200" },
-      첼로: { bg: "bg-amber-500", light: "bg-amber-50", text: "text-amber-700", border: "border-amber-200" },
-      성악: { bg: "bg-rose-500", light: "bg-rose-50", text: "text-rose-700", border: "border-rose-200" },
-      기타: { bg: "bg-sky-500", light: "bg-sky-50", text: "text-sky-700", border: "border-sky-200" },
-      드럼: { bg: "bg-slate-500", light: "bg-slate-50", text: "text-slate-700", border: "border-slate-200" },
-    };
-    return map[subject] || { bg: "bg-gray-400", light: "bg-gray-50", text: "text-gray-700", border: "border-gray-200" };
-  };
+  const HOUR_LABELS = Array.from({ length: TL_E / 60 - TL_S / 60 + 1 }, (_, i) => i + TL_S / 60);
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 h-full flex flex-col overflow-hidden animate-fade-in">
       {/* 헤더 */}
-      <div className="flex justify-between items-center mb-6 shrink-0">
+      <div className="flex justify-between items-center mb-4 shrink-0">
         <h2 className="text-lg font-bold flex items-center text-slate-800">
-          <BookOpen className="mr-2 text-indigo-600" /> 과목별 운영 시간표
+          <BookOpen className="mr-2 text-indigo-600" /> 과목별 수업 시간표
         </h2>
         <button
           onClick={handleDownloadImage}
@@ -13551,72 +13540,143 @@ const SubjectTimetableView = ({ students, teachers, showToast }) => {
         </div>
       ) : (
         <div className="flex-1 overflow-auto">
-          <div ref={printRef} className="bg-white p-4">
-            {/* 시간표 제목 (이미지 저장용) */}
-            <div className="text-center mb-4">
-              <p className="text-lg font-bold text-slate-800">J&C 음악학원 수업 시간표</p>
-              <p className="text-xs text-slate-400 mt-1">상담 문의: 010-4028-9803</p>
+          <div ref={printRef} className="bg-white p-3 inline-block min-w-full">
+            {/* 인쇄용 제목 */}
+            <div className="text-center mb-3">
+              <p className="text-base font-bold text-slate-800">J&C 음악학원 수업 시간표</p>
+              <p className="text-[10px] text-slate-400">상담 문의: 010-4028-9803</p>
             </div>
 
-            {/* 요일 헤더 */}
-            <div className="grid grid-cols-[140px_repeat(7,1fr)] mb-2 min-w-[640px]">
-              <div />
-              {DAYS.map((day) => (
-                <div
-                  key={day}
-                  className={`text-center text-sm font-bold pb-2 ${
-                    day === "일" ? "text-rose-500" : day === "토" ? "text-blue-500" : "text-slate-500"
-                  }`}
-                >
-                  {day}
+            <div className="flex">
+              {/* 시간축 */}
+              <div className="shrink-0 w-9" style={{ marginTop: 32 }}>
+                <div style={{ position: "relative", height: CELL_H }}>
+                  {HOUR_LABELS.map((h) => (
+                    <div
+                      key={h}
+                      style={{ position: "absolute", top: (h * 60 - TL_S) * S_PX - 5, right: 4 }}
+                      className="text-[8px] text-slate-400 leading-none"
+                    >
+                      {h}
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </div>
 
-            {/* 과목별 행 */}
-            <div className="space-y-3 min-w-[640px]">
-              {subjectList.map((subject) => {
-                const colors = subjectBg(subject);
-                return (
-                  <div key={subject} className={`rounded-2xl border ${colors.border} ${colors.light} overflow-hidden`}>
-                    <div className="grid grid-cols-[140px_repeat(7,1fr)]">
+              {/* 과목 그리드 */}
+              <div className="flex-1 border border-slate-200 rounded-lg overflow-hidden">
+                {/* 요일 헤더 */}
+                <div className="grid border-b border-slate-200 bg-slate-50" style={{ gridTemplateColumns: "90px repeat(7, 1fr)", height: 32 }}>
+                  <div className="flex items-center px-2 text-[10px] text-slate-400 border-r border-slate-200">과목</div>
+                  {DAYS.map((day) => (
+                    <div key={day} className={`flex items-center justify-center text-xs font-bold border-r last:border-r-0 border-slate-200 ${day === "일" ? "text-rose-500" : day === "토" ? "text-blue-500" : "text-slate-600"}`}>
+                      {day}
+                    </div>
+                  ))}
+                </div>
+
+                {/* 과목별 행 */}
+                {subjectList.map((subject, si) => {
+                  const colors = subjectBg(subject);
+                  return (
+                    <div
+                      key={subject}
+                      className={`grid ${si > 0 ? "border-t border-slate-200" : ""}`}
+                      style={{ gridTemplateColumns: "90px repeat(7, 1fr)" }}
+                    >
                       {/* 과목명 */}
-                      <div className={`flex items-center gap-2 px-4 py-5 border-r ${colors.border}`}>
-                        <div className={`w-2.5 h-2.5 rounded-full ${colors.bg} shrink-0`} />
-                        <span className={`font-bold text-sm ${colors.text}`}>{subject}</span>
+                      <div
+                        className={`flex items-center gap-1.5 px-2 border-r border-slate-200 ${colors.light}`}
+                        style={{ height: CELL_H }}
+                      >
+                        <div className={`w-2 h-2 rounded-full ${colors.bg} shrink-0`} />
+                        <span className={`font-bold text-xs ${colors.text} leading-tight`}>{subject}</span>
                       </div>
 
                       {/* 요일별 셀 */}
                       {DAYS.map((day) => {
-                        const times = subjectScheduleMap[subject]?.[day];
-                        const hasTimes = times && times.size > 0;
-                        const blocks = hasTimes ? mergeConsecutive(Array.from(times).sort()) : [];
+                        const hasTimes = !!(subjectScheduleMap[subject]?.[day]?.size);
+                        const slots = hasTimes ? getSlots(subject, day) : [];
+                        const opStart = getOpStart(day);
+                        const preOpH = (opStart - TL_S) * S_PX; // 평일은 144px 음영
+
                         return (
                           <div
                             key={day}
-                            className={`flex flex-col items-center justify-center py-3 px-1 border-r last:border-r-0 ${colors.border} transition-colors ${
-                              hasTimes ? "bg-white/70" : "bg-transparent"
-                            }`}
+                            className="border-r last:border-r-0 border-slate-200 relative"
+                            style={{ height: CELL_H }}
                           >
+                            {/* 시간 구분선 (배경) */}
+                            {HOUR_LABELS.map((h) => (
+                              <div
+                                key={h}
+                                style={{ position: "absolute", top: (h * 60 - TL_S) * S_PX, left: 0, right: 0 }}
+                                className="border-t border-slate-100"
+                              />
+                            ))}
+
                             {hasTimes ? (
-                              <div className="flex flex-col items-center gap-1.5 w-full">
-                                {blocks.map((b) => (
-                                  <div key={b.start} className={`text-center w-full px-1 py-1 rounded ${colors.light}`}>
-                                    <div className={`text-[11px] font-bold ${colors.text}`}>{b.start}</div>
-                                    <div className={`text-[10px] font-semibold ${colors.text} opacity-70`}>~ {b.end}</div>
-                                  </div>
-                                ))}
-                              </div>
+                              <>
+                                {/* 비운영 음영 (평일 09:00-12:00) */}
+                                {preOpH > 0 && (
+                                  <div
+                                    style={{ position: "absolute", top: 0, height: preOpH, left: 0, right: 0 }}
+                                    className="bg-slate-100/80"
+                                  />
+                                )}
+                                {/* 수업/수강가능 슬롯 */}
+                                {slots.map((slot) => {
+                                  const top = (slot.startMin - TL_S) * S_PX;
+                                  const h = (slot.endMin - slot.startMin) * S_PX - 1;
+                                  if (slot.type === "lesson") {
+                                    return (
+                                      <div
+                                        key={slot.startMin}
+                                        style={{ position: "absolute", top, height: h, left: 1, right: 1, zIndex: 2 }}
+                                        className={`${colors.light} border ${colors.border} rounded-sm flex flex-col items-center justify-center overflow-hidden`}
+                                      >
+                                        <span className={`text-[8px] font-bold ${colors.text} leading-tight`}>{toStr(slot.startMin)}</span>
+                                        <span className={`text-[7px] ${colors.text} opacity-70 leading-tight`}>~{toStr(slot.endMin)}</span>
+                                      </div>
+                                    );
+                                  }
+                                  return (
+                                    <div
+                                      key={slot.startMin}
+                                      style={{ position: "absolute", top, height: h, left: 1, right: 1, zIndex: 2 }}
+                                      className="bg-emerald-50 border border-emerald-200 rounded-sm flex items-center justify-center overflow-hidden"
+                                    >
+                                      <span className="text-[7px] text-emerald-600 font-semibold leading-tight text-center">수강신청{"\n"}가능</span>
+                                    </div>
+                                  );
+                                })}
+                              </>
                             ) : (
-                              <span className="text-slate-200 text-lg">—</span>
+                              <div className="absolute inset-0 flex items-center justify-center text-slate-200 text-base">—</div>
                             )}
                           </div>
                         );
                       })}
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 범례 */}
+            <div className="flex items-center gap-4 mt-3 justify-center">
+              <div className="flex items-center gap-1.5">
+                <div className="w-3 h-3 rounded-sm bg-indigo-50 border border-indigo-200" />
+                <span className="text-[10px] text-slate-500">수업 진행 중</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-3 h-3 rounded-sm bg-emerald-50 border border-emerald-200" />
+                <span className="text-[10px] text-slate-500">수강신청 가능</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-3 h-3 rounded-sm bg-slate-100" />
+                <span className="text-[10px] text-slate-500">운영 전</span>
+              </div>
             </div>
           </div>
         </div>
