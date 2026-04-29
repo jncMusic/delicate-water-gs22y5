@@ -12988,6 +12988,60 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
     return null;
   };
 
+  // 45분 수업 기준 타임라인 상수
+  const LESSON_MIN = 45;
+  const PX_PER_MIN = 2;            // 1분 = 2px
+  const PX_PER_HOUR = 60 * PX_PER_MIN; // 120px / 시간
+  const LESSON_HEIGHT = LESSON_MIN * PX_PER_MIN; // 90px
+  const TL_START = 9;              // 타임라인 시작 (9시)
+  const TOTAL_MINS = (22 - TL_START) * 60; // 780분
+  const TOTAL_HEIGHT = TOTAL_MINS * PX_PER_MIN; // 1560px
+
+  // 특정 강사·요일의 수업 목록 (시간순)
+  const getAllStudentLessons = useCallback((teacherName, day) => {
+    return students
+      .filter((s) => {
+        if (isTeacherMode && teacherName !== myName) return false;
+        if (s.teacher !== teacherName) return false;
+        if (!getLessonTime(s, day)) return false;
+        if (selectedPart !== "전체" && getPartBySubject(s.subject || "") !== selectedPart) return false;
+        return true;
+      })
+      .map((s) => {
+        const timeStr = getLessonTime(s, day);
+        const [hour, minute] = timeStr.split(":").map(Number);
+        return { student: s, timeStr, hour, minute };
+      })
+      .sort((a, b) => a.hour * 60 + a.minute - (b.hour * 60 + b.minute));
+  }, [students, isTeacherMode, myName, selectedPart]); // eslint-disable-line
+
+  // 45분 수업 배정 가능한 빈 구간 계산
+  const getAvailableWindows = useCallback((teacherName, day) => {
+    const isWeekend = day === "토" || day === "일";
+    const opStartMin = (isWeekend ? 9 : 10) * 60;
+    const opEndMin = 22 * 60;
+    const booked = students
+      .filter((s) => s.teacher === teacherName && s.status === "재원" && getLessonTime(s, day))
+      .map((s) => {
+        const [h, m] = (getLessonTime(s, day)).split(":").map(Number);
+        const start = h * 60 + m;
+        return { start, end: start + LESSON_MIN };
+      })
+      .sort((a, b) => a.start - b.start);
+    const windows = [];
+    let cursor = opStartMin;
+    for (const lesson of booked) {
+      if (lesson.start > cursor && lesson.start - cursor >= LESSON_MIN) {
+        windows.push({ startMin: cursor, endMin: lesson.start });
+      }
+      cursor = Math.max(cursor, lesson.end);
+    }
+    if (cursor <= opEndMin - LESSON_MIN) {
+      windows.push({ startMin: cursor, endMin: opEndMin });
+    }
+    return windows;
+  }, [students]); // eslint-disable-line
+
   // 수업 데이터 필터링 (파트 필터 적용)
   const getLessons = (teacherName, day, hour) => {
     return students
@@ -13191,130 +13245,150 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
             )}
           </div>
 
-          {/* 바디 */}
-          <div className="divide-y divide-slate-200 print:divide-slate-300">
-            {HOURS.map((hour) => (
-              <div
-                key={hour}
-                className="flex min-h-[80px] md:min-h-[100px] print:min-h-[80px]"
-              >
-                {/* 시간축 */}
-                <div className="w-[50px] md:w-[80px] p-1 md:p-2 text-center text-[10px] md:text-xs font-bold text-slate-400 border-r bg-white flex flex-col justify-start pt-2 sticky left-0 z-10 shrink-0 print:static print:border-slate-300">
-                  {hour}:00
-                </div>
-
-                {isTeacherMode && viewMode === "weekly" ? (
-                  // 강사 주간 보기 바디
-                  <div className="flex flex-1 min-w-max">
-                    {DAYS.map((day) => {
-                      const lessons = getLessons(myName, day, hour);
-                      const isWeekend = day === "토" || day === "일";
-                      const opStart = isWeekend ? 9 : 10;
-                      const isOperating = hour >= opStart && hour < 22;
-                      return (
-                        <div
-                          key={day}
-                          className={`flex-1 min-w-[100px] md:min-w-[140px] border-r p-1 transition-colors flex flex-col gap-1 print:border-slate-300 ${
-                            !isOperating
-                              ? "bg-slate-100/60"
-                              : lessons.length === 0
-                              ? "bg-emerald-50 hover:bg-emerald-100"
-                              : selectedDay === day
-                              ? "bg-indigo-50/10 hover:bg-slate-50 print:bg-transparent"
-                              : "bg-white hover:bg-slate-50"
-                          }`}
-                        >
-                          {isOperating && lessons.length === 0 && (
-                            <div className="flex items-center justify-center h-full py-2">
-                              <span className="text-[10px] font-semibold text-emerald-400">가능</span>
-                            </div>
-                          )}
-                          {lessons.map((l, idx) => (
-                            <div
-                              key={idx}
-                              className={`px-2 py-1 md:px-3 md:py-2 rounded-lg border text-[10px] md:text-xs shadow-sm print:border-slate-400 print:shadow-none ${getSubjectColor(
-                                l.subject
-                              )}`}
-                            >
-                              <div className="font-bold flex justify-between items-center mb-0.5">
-                                <span className="truncate">{l.name}</span>
-                              </div>
-                              <div className="flex justify-between items-center opacity-80 text-[9px] md:text-[10px]">
-                                <span>{getLessonTime(l, day)}</span>
-                                <span className="hidden md:inline">
-                                  {l.grade}
-                                </span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      );
-                    })}
+          {/* 바디 — 45분 절대좌표 타임라인 */}
+          <div className="flex" style={{ height: TOTAL_HEIGHT }}>
+            {/* 시간축 */}
+            <div
+              className="w-[50px] md:w-[80px] border-r bg-white sticky left-0 z-10 shrink-0 print:static print:border-slate-300"
+              style={{ position: "relative", height: TOTAL_HEIGHT }}
+            >
+              {HOURS.map((hour, i) => (
+                <React.Fragment key={hour}>
+                  <div
+                    style={{ position: "absolute", top: i * PX_PER_HOUR, left: 0, right: 0 }}
+                    className="border-t border-slate-200 print:border-slate-300"
+                  />
+                  <div
+                    style={{ position: "absolute", top: i * PX_PER_HOUR + 2, left: 0, right: 0 }}
+                    className="pl-1 md:pl-2 text-[9px] md:text-xs font-bold text-slate-400"
+                  >
+                    {hour}:00
                   </div>
-                ) : (
-                  // 관리자/강사 일간 보기 바디 (🔥 중앙 정렬 justify-center 적용됨)
-                  <div className="flex flex-1 justify-center min-w-max">
-                    {activeTeachers.map((t) => {
-                      const targetName = isTeacherMode ? myName : t.name;
-                      const lessons = getLessons(targetName, selectedDay, hour);
-                      const isWeekend = selectedDay === "토" || selectedDay === "일";
-                      const opStart = isWeekend ? 9 : 10;
-                      const isOperating = hour >= opStart && hour < 22;
-                      return (
-                        <div
-                          key={t.id}
-                          className={`${
-                            isTeacherMode ? "w-full" : "w-[120px] md:w-[160px]"
-                          } border-r p-1 transition-colors shrink-0 flex flex-col gap-1 print:border-slate-300 ${
-                            !isOperating
-                              ? "bg-slate-100/60"
-                              : lessons.length === 0
-                              ? "bg-emerald-50 hover:bg-emerald-100"
-                              : "bg-white hover:bg-slate-50"
-                          }`}
-                        >
-                          {isOperating && lessons.length === 0 && (
-                            <div className="flex items-center justify-center h-full py-2">
-                              <span className="text-[10px] font-semibold text-emerald-400">가능</span>
-                            </div>
-                          )}
-                          {lessons.map((l, idx) => (
-                            <div
-                              key={idx}
-                              className={`px-2 py-1 md:px-3 md:py-2 rounded-lg border text-[10px] md:text-xs shadow-sm print:border-slate-400 print:shadow-none ${getSubjectColor(
-                                l.subject
-                              )}`}
-                            >
-                              <div className="font-bold flex justify-between items-center mb-0.5">
-                                <span className="truncate">{l.name}</span>
-                                <span className="md:hidden text-[9px] opacity-70">
-                                  {l.grade}
-                                </span>
-                              </div>
-                              <div className="flex justify-between items-center opacity-80 text-[9px] md:text-[10px]">
-                                <span>{getLessonTime(l, selectedDay)}</span>
-                                <span className="hidden md:inline">
-                                  {l.grade}
-                                </span>
-                              </div>
-                            </div>
-                          ))}
+                </React.Fragment>
+              ))}
+            </div>
+
+            {/* 강사/요일 컬럼 */}
+            {isTeacherMode && viewMode === "weekly" ? (
+              /* 강사 주간 보기 */
+              <div className="flex flex-1 min-w-max">
+                {DAYS.map((day) => {
+                  const isWeekend = day === "토" || day === "일";
+                  const opStartMin = ((isWeekend ? 9 : 10) - TL_START) * 60;
+                  const opEndMin = (22 - TL_START) * 60;
+                  const lessons = getAllStudentLessons(myName, day);
+                  const windows = getAvailableWindows(myName, day);
+                  return (
+                    <div
+                      key={day}
+                      className={`flex-1 min-w-[100px] md:min-w-[140px] border-r shrink-0 print:border-slate-300 ${selectedDay === day ? "bg-indigo-50/20" : "bg-white"}`}
+                      style={{ position: "relative", height: TOTAL_HEIGHT }}
+                    >
+                      {/* 비운영 음영 */}
+                      <div style={{ position: "absolute", top: 0, height: opStartMin * PX_PER_MIN, left: 0, right: 0 }} className="bg-slate-100/70 print:bg-transparent" />
+                      <div style={{ position: "absolute", top: opEndMin * PX_PER_MIN, height: (TOTAL_MINS - opEndMin) * PX_PER_MIN, left: 0, right: 0 }} className="bg-slate-100/70 print:bg-transparent" />
+                      {/* 시간 그리드 */}
+                      {HOURS.map((_, i) => (
+                        <div key={i} style={{ position: "absolute", top: i * PX_PER_HOUR, left: 0, right: 0 }} className="border-t border-slate-200 print:border-slate-300" />
+                      ))}
+                      {/* 30분 보조선 */}
+                      {HOURS.map((_, i) => (
+                        <div key={`h-${i}`} style={{ position: "absolute", top: i * PX_PER_HOUR + 60, left: 0, right: 0 }} className="border-t border-dashed border-slate-100" />
+                      ))}
+                      {/* 배정 가능 구간 */}
+                      {windows.map(({ startMin, endMin }, wi) => (
+                        <div key={wi} style={{ position: "absolute", top: (startMin - TL_START * 60) * PX_PER_MIN, height: (endMin - startMin) * PX_PER_MIN, left: 1, right: 1, zIndex: 1 }} className="bg-emerald-50 rounded print:bg-transparent">
+                          <span className="text-[8px] md:text-[9px] font-bold text-emerald-500 px-1 pt-0.5 block leading-tight">
+                            ✓ {Math.floor(startMin / 60)}:{String(startMin % 60).padStart(2, "0")} 배정가능
+                          </span>
                         </div>
-                      );
-                    })}
-                    {/* 빈 공간 처리 */}
-                    {activeTeachers.length === 0 && (
-                      <div className="flex-1 bg-transparent"></div>
-                    )}
+                      ))}
+                      {/* 수업 카드 */}
+                      {lessons.map((l, li) => (
+                        <div
+                          key={li}
+                          style={{ position: "absolute", top: (l.hour * 60 + l.minute - TL_START * 60) * PX_PER_MIN, height: LESSON_HEIGHT - 2, left: 2, right: 2, zIndex: 2 }}
+                          className={`rounded-lg border text-[9px] md:text-[10px] shadow-sm overflow-hidden px-1.5 py-0.5 print:border-slate-400 ${getSubjectColor(l.student.subject)}`}
+                        >
+                          <div className="font-bold truncate">{l.student.name}</div>
+                          <div className="opacity-70">{l.timeStr}</div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              /* 관리자/강사 일간 보기 */
+              <div className="flex flex-1 justify-center min-w-max">
+                {activeTeachers.length > 0 ? (
+                  activeTeachers.map((t) => {
+                    const targetName = isTeacherMode ? myName : t.name;
+                    const isWeekend = selectedDay === "토" || selectedDay === "일";
+                    const opStartMin = ((isWeekend ? 9 : 10) - TL_START) * 60;
+                    const opEndMin = (22 - TL_START) * 60;
+                    const lessons = getAllStudentLessons(targetName, selectedDay);
+                    const windows = getAvailableWindows(targetName, selectedDay);
+                    return (
+                      <div
+                        key={t.id}
+                        className={`${isTeacherMode ? "flex-1 min-w-[200px]" : "w-[120px] md:w-[160px]"} border-r shrink-0 bg-white print:border-slate-300`}
+                        style={{ position: "relative", height: TOTAL_HEIGHT }}
+                      >
+                        {/* 비운영 음영 */}
+                        <div style={{ position: "absolute", top: 0, height: opStartMin * PX_PER_MIN, left: 0, right: 0 }} className="bg-slate-100/70 print:bg-transparent" />
+                        <div style={{ position: "absolute", top: opEndMin * PX_PER_MIN, height: (TOTAL_MINS - opEndMin) * PX_PER_MIN, left: 0, right: 0 }} className="bg-slate-100/70 print:bg-transparent" />
+                        {/* 시간 그리드 */}
+                        {HOURS.map((_, i) => (
+                          <div key={i} style={{ position: "absolute", top: i * PX_PER_HOUR, left: 0, right: 0 }} className="border-t border-slate-200 print:border-slate-300" />
+                        ))}
+                        {/* 30분 보조선 */}
+                        {HOURS.map((_, i) => (
+                          <div key={`h-${i}`} style={{ position: "absolute", top: i * PX_PER_HOUR + 60, left: 0, right: 0 }} className="border-t border-dashed border-slate-100" />
+                        ))}
+                        {/* 배정 가능 구간 */}
+                        {windows.map(({ startMin, endMin }, wi) => (
+                          <div key={wi} style={{ position: "absolute", top: (startMin - TL_START * 60) * PX_PER_MIN, height: (endMin - startMin) * PX_PER_MIN, left: 1, right: 1, zIndex: 1 }} className="bg-emerald-50 rounded print:bg-transparent">
+                            <div className="text-[8px] md:text-[10px] font-bold text-emerald-500 px-1 pt-0.5 leading-tight">
+                              ✓ {Math.floor(startMin / 60)}:{String(startMin % 60).padStart(2, "0")} 배정가능
+                            </div>
+                            {(endMin - startMin) >= 90 && (
+                              <div className="text-[8px] text-emerald-400 px-1">{endMin - startMin}분 여유</div>
+                            )}
+                          </div>
+                        ))}
+                        {/* 수업 카드 */}
+                        {lessons.map((l, li) => (
+                          <div
+                            key={li}
+                            style={{ position: "absolute", top: (l.hour * 60 + l.minute - TL_START * 60) * PX_PER_MIN, height: LESSON_HEIGHT - 2, left: 2, right: 2, zIndex: 2 }}
+                            className={`rounded-lg border shadow-sm text-[10px] md:text-xs overflow-hidden print:border-slate-400 print:shadow-none ${getSubjectColor(l.student.subject)}`}
+                          >
+                            <div className="px-1.5 py-1">
+                              <div className="font-bold truncate">{l.student.name}</div>
+                              <div className="opacity-80 text-[9px] md:text-[10px]">{l.timeStr}</div>
+                              <div className="opacity-60 text-[9px] hidden md:block">{l.student.grade}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="flex-1 flex justify-center pt-20 text-slate-400 text-sm">
+                    {selectedPart === "전체"
+                      ? `📅 ${selectedDay}요일 수업 없음`
+                      : `🔍 [${selectedPart}] 파트 수업 없음`}
                   </div>
                 )}
               </div>
-            ))}
+            )}
           </div>
         </div>
       </div>
     </div>
   );
+
 };
 
 // [SubjectTimetableView] - 평일 10:30 / 주말 09:00 오픈 규칙 적용
