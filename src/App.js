@@ -12995,6 +12995,12 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
   const LESSON_HEIGHT = LESSON_MIN * PX_PER_MIN; // 90px
   const TL_START = 9;              // 타임라인 시작 (9시)
   const TOTAL_MINS = (22 - TL_START) * 60; // 780분
+
+  const getEndTimeStr = (timeStr) => {
+    const [h, m] = timeStr.split(":").map(Number);
+    const endTotal = h * 60 + m + LESSON_MIN;
+    return `${Math.floor(endTotal / 60)}:${String(endTotal % 60).padStart(2, "0")}`;
+  };
   const TOTAL_HEIGHT = TOTAL_MINS * PX_PER_MIN; // 1560px
 
   // 특정 강사·요일의 수업 목록 (시간순)
@@ -13296,13 +13302,18 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
                         <div key={`h-${i}`} style={{ position: "absolute", top: i * PX_PER_HOUR + 60, left: 0, right: 0 }} className="border-t border-dashed border-slate-100" />
                       ))}
                       {/* 배정 가능 구간 */}
-                      {windows.map(({ startMin, endMin }, wi) => (
-                        <div key={wi} style={{ position: "absolute", top: (startMin - TL_START * 60) * PX_PER_MIN, height: (endMin - startMin) * PX_PER_MIN, left: 1, right: 1, zIndex: 1 }} className="bg-emerald-50 rounded print:bg-transparent">
-                          <span className="text-[8px] md:text-[9px] font-bold text-emerald-500 px-1 pt-0.5 block leading-tight">
-                            ✓ {Math.floor(startMin / 60)}:{String(startMin % 60).padStart(2, "0")} 배정가능
-                          </span>
-                        </div>
-                      ))}
+                      {windows.map(({ startMin, endMin }, wi) => {
+                        const sH = Math.floor(startMin / 60), sM = startMin % 60;
+                        const eH = Math.floor(endMin / 60), eM = endMin % 60;
+                        return (
+                          <div key={wi} style={{ position: "absolute", top: (startMin - TL_START * 60) * PX_PER_MIN, height: (endMin - startMin) * PX_PER_MIN, left: 1, right: 1, zIndex: 1 }} className="bg-emerald-50 border border-emerald-200 rounded print:bg-transparent">
+                            <div className="px-1.5 pt-1 leading-tight">
+                              <div className="text-[9px] md:text-[10px] font-extrabold text-emerald-600">수강 가능</div>
+                              <div className="text-[8px] md:text-[9px] font-bold text-emerald-500">{sH}:{String(sM).padStart(2,"0")} ~ {eH}:{String(eM).padStart(2,"0")}</div>
+                            </div>
+                          </div>
+                        );
+                      })}
                       {/* 수업 카드 */}
                       {lessons.map((l, li) => (
                         <div
@@ -13310,8 +13321,8 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
                           style={{ position: "absolute", top: (l.hour * 60 + l.minute - TL_START * 60) * PX_PER_MIN, height: LESSON_HEIGHT - 2, left: 2, right: 2, zIndex: 2 }}
                           className={`rounded-lg border text-[9px] md:text-[10px] shadow-sm overflow-hidden px-1.5 py-0.5 print:border-slate-400 ${getSubjectColor(l.student.subject)}`}
                         >
-                          <div className="font-bold truncate">{l.student.name}</div>
-                          <div className="opacity-70">{l.timeStr}</div>
+                          <div className="font-semibold truncate">{l.student.subject || l.student.name}</div>
+                          <div className="font-bold">{l.timeStr} ~ {getEndTimeStr(l.timeStr)}</div>
                         </div>
                       ))}
                     </div>
@@ -13347,16 +13358,18 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
                           <div key={`h-${i}`} style={{ position: "absolute", top: i * PX_PER_HOUR + 60, left: 0, right: 0 }} className="border-t border-dashed border-slate-100" />
                         ))}
                         {/* 배정 가능 구간 */}
-                        {windows.map(({ startMin, endMin }, wi) => (
-                          <div key={wi} style={{ position: "absolute", top: (startMin - TL_START * 60) * PX_PER_MIN, height: (endMin - startMin) * PX_PER_MIN, left: 1, right: 1, zIndex: 1 }} className="bg-emerald-50 rounded print:bg-transparent">
-                            <div className="text-[8px] md:text-[10px] font-bold text-emerald-500 px-1 pt-0.5 leading-tight">
-                              ✓ {Math.floor(startMin / 60)}:{String(startMin % 60).padStart(2, "0")} 배정가능
+                        {windows.map(({ startMin, endMin }, wi) => {
+                          const sH = Math.floor(startMin / 60), sM = startMin % 60;
+                          const eH = Math.floor(endMin / 60), eM = endMin % 60;
+                          return (
+                          <div key={wi} style={{ position: "absolute", top: (startMin - TL_START * 60) * PX_PER_MIN, height: (endMin - startMin) * PX_PER_MIN, left: 1, right: 1, zIndex: 1 }} className="bg-emerald-50 border border-emerald-200 rounded print:bg-transparent">
+                            <div className="px-1.5 pt-1 leading-tight">
+                              <div className="text-[9px] md:text-[11px] font-extrabold text-emerald-600">수강 가능</div>
+                              <div className="text-[8px] md:text-[10px] font-bold text-emerald-500">{sH}:{String(sM).padStart(2,"0")} ~ {eH}:{String(eM).padStart(2,"0")}</div>
                             </div>
-                            {(endMin - startMin) >= 90 && (
-                              <div className="text-[8px] text-emerald-400 px-1">{endMin - startMin}분 여유</div>
-                            )}
                           </div>
-                        ))}
+                          );
+                        })}
                         {/* 수업 카드 */}
                         {lessons.map((l, li) => (
                           <div
@@ -13365,9 +13378,8 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
                             className={`rounded-lg border shadow-sm text-[10px] md:text-xs overflow-hidden print:border-slate-400 print:shadow-none ${getSubjectColor(l.student.subject)}`}
                           >
                             <div className="px-1.5 py-1">
-                              <div className="font-bold truncate">{l.student.name}</div>
-                              <div className="opacity-80 text-[9px] md:text-[10px]">{l.timeStr}</div>
-                              <div className="opacity-60 text-[9px] hidden md:block">{l.student.grade}</div>
+                              <div className="font-semibold truncate">{l.student.subject || l.student.name}</div>
+                              <div className="font-bold text-[10px]">{l.timeStr} ~ {getEndTimeStr(l.timeStr)}</div>
                             </div>
                           </div>
                         ))}
