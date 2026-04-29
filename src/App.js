@@ -13024,7 +13024,7 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
   // 45분 수업 배정 가능한 빈 구간 계산
   const getAvailableWindows = useCallback((teacherName, day) => {
     const isWeekend = day === "토" || day === "일";
-    const opStartMin = (isWeekend ? 9 : 10) * 60;
+    const opStartMin = (isWeekend ? 9 : 12) * 60;
     const opEndMin = 22 * 60;
     const booked = students
       .filter((s) => s.teacher === teacherName && s.status === "재원" && getLessonTime(s, day))
@@ -13280,7 +13280,9 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
               <div className="flex flex-1 min-w-max">
                 {DAYS.map((day) => {
                   const isWeekend = day === "토" || day === "일";
-                  const opStartMin = ((isWeekend ? 9 : 10) - TL_START) * 60;
+                  const preOpShadeEnd = isWeekend ? 0 : (10 - TL_START) * 60;
+                  const consultStart = isWeekend ? null : (10 - TL_START) * 60;
+                  const consultEnd = isWeekend ? null : (12 - TL_START) * 60;
                   const opEndMin = (22 - TL_START) * 60;
                   const lessons = getAllStudentLessons(myName, day);
                   const windows = getAvailableWindows(myName, day);
@@ -13290,8 +13292,19 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
                       className={`flex-1 min-w-[100px] md:min-w-[140px] border-r shrink-0 print:border-slate-300 ${selectedDay === day ? "bg-indigo-50/20" : "bg-white"}`}
                       style={{ position: "relative", height: TOTAL_HEIGHT }}
                     >
-                      {/* 비운영 음영 */}
-                      <div style={{ position: "absolute", top: 0, height: opStartMin * PX_PER_MIN, left: 0, right: 0 }} className="bg-slate-100/70 print:bg-transparent" />
+                      {/* 비운영 음영 (평일 9:00-10:00) */}
+                      {preOpShadeEnd > 0 && (
+                        <div style={{ position: "absolute", top: 0, height: preOpShadeEnd * PX_PER_MIN, left: 0, right: 0 }} className="bg-slate-100/70 print:bg-transparent" />
+                      )}
+                      {/* 상담가능 구간 (평일 10:00-12:00) */}
+                      {consultStart !== null && (
+                        <div style={{ position: "absolute", top: consultStart * PX_PER_MIN, height: (consultEnd - consultStart) * PX_PER_MIN, left: 1, right: 1, zIndex: 1 }} className="bg-amber-50 border border-amber-200 rounded print:bg-transparent">
+                          <div className="px-1.5 pt-1 leading-tight">
+                            <div className="text-[9px] md:text-[10px] font-extrabold text-amber-600">상담가능</div>
+                            <div className="text-[8px] md:text-[9px] font-bold text-amber-500">10:00 ~ 12:00</div>
+                          </div>
+                        </div>
+                      )}
                       <div style={{ position: "absolute", top: opEndMin * PX_PER_MIN, height: (TOTAL_MINS - opEndMin) * PX_PER_MIN, left: 0, right: 0 }} className="bg-slate-100/70 print:bg-transparent" />
                       {/* 시간 그리드 */}
                       {HOURS.map((_, i) => (
@@ -13336,7 +13349,9 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
                   activeTeachers.map((t) => {
                     const targetName = isTeacherMode ? myName : t.name;
                     const isWeekend = selectedDay === "토" || selectedDay === "일";
-                    const opStartMin = ((isWeekend ? 9 : 10) - TL_START) * 60;
+                    const preOpShadeEnd = isWeekend ? 0 : (10 - TL_START) * 60;
+                    const consultStart = isWeekend ? null : (10 - TL_START) * 60;
+                    const consultEnd = isWeekend ? null : (12 - TL_START) * 60;
                     const opEndMin = (22 - TL_START) * 60;
                     const lessons = getAllStudentLessons(targetName, selectedDay);
                     const windows = getAvailableWindows(targetName, selectedDay);
@@ -13346,8 +13361,19 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
                         className={`${isTeacherMode ? "flex-1 min-w-[200px]" : "w-[120px] md:w-[160px]"} border-r shrink-0 bg-white print:border-slate-300`}
                         style={{ position: "relative", height: TOTAL_HEIGHT }}
                       >
-                        {/* 비운영 음영 */}
-                        <div style={{ position: "absolute", top: 0, height: opStartMin * PX_PER_MIN, left: 0, right: 0 }} className="bg-slate-100/70 print:bg-transparent" />
+                        {/* 비운영 음영 (평일 9:00-10:00) */}
+                        {preOpShadeEnd > 0 && (
+                          <div style={{ position: "absolute", top: 0, height: preOpShadeEnd * PX_PER_MIN, left: 0, right: 0 }} className="bg-slate-100/70 print:bg-transparent" />
+                        )}
+                        {/* 상담가능 구간 (평일 10:00-12:00) */}
+                        {consultStart !== null && (
+                          <div style={{ position: "absolute", top: consultStart * PX_PER_MIN, height: (consultEnd - consultStart) * PX_PER_MIN, left: 1, right: 1, zIndex: 1 }} className="bg-amber-50 border border-amber-200 rounded print:bg-transparent">
+                            <div className="px-1.5 pt-1 leading-tight">
+                              <div className="text-[9px] md:text-[11px] font-extrabold text-amber-600">상담가능</div>
+                              <div className="text-[8px] md:text-[10px] font-bold text-amber-500">10:00 ~ 12:00</div>
+                            </div>
+                          </div>
+                        )}
                         <div style={{ position: "absolute", top: opEndMin * PX_PER_MIN, height: (TOTAL_MINS - opEndMin) * PX_PER_MIN, left: 0, right: 0 }} className="bg-slate-100/70 print:bg-transparent" />
                         {/* 시간 그리드 */}
                         {HOURS.map((_, i) => (
