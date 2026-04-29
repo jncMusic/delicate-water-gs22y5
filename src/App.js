@@ -13429,20 +13429,16 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
 
 };
 
-// [SubjectTimetableView] - 과목별 운영 시간표 (수업 슬롯 + 수강신청 가능 표시)
+// [SubjectTimetableView] - 과목별 수업 시간표 (2줄 압축형)
 const SubjectTimetableView = ({ students, showToast }) => {
   const DAYS = ["월", "화", "수", "목", "금", "토", "일"];
-  const S_PX = 0.8;           // px per minute
-  const TL_S = 9 * 60;        // 타임라인 시작: 09:00 (절대분)
-  const TL_E = 22 * 60;       // 타임라인 종료: 22:00 (절대분)
-  const CELL_H = (TL_E - TL_S) * S_PX; // 624px
   const LESSON_MIN = 45;
+  const TL_E = 22 * 60;
 
   const toMin = (t) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
   const toStr = (min) => `${Math.floor(min / 60)}:${String(min % 60).padStart(2, "0")}`;
-  const getOpStart = (day) => (day === "토" || day === "일") ? TL_S : 12 * 60;
+  const getOpStart = (day) => (day === "토" || day === "일") ? 9 * 60 : 12 * 60;
 
-  // 학생 schedules 기반: 과목 → 요일 → 수업 시작 시간 Set
   const subjectScheduleMap = useMemo(() => {
     const map = {};
     students
@@ -13462,31 +13458,34 @@ const SubjectTimetableView = ({ students, showToast }) => {
 
   const subjectList = Object.keys(subjectScheduleMap).sort();
 
-  // 수업 블록 + 수강신청 가능 슬롯 계산
-  const getSlots = (subject, day) => {
-    const opStart = getOpStart(day);
+  // 수업 시간 + 수강가능 슬롯 계산 (연속 수업은 병합)
+  const getCellInfo = (subject, day) => {
     const times = subjectScheduleMap[subject]?.[day];
-    if (!times || times.size === 0) return [];
+    if (!times || times.size === 0) return null;
+    const opStart = getOpStart(day);
     const lessonMins = Array.from(times).map(toMin).sort((a, b) => a - b);
-    const result = [];
+
+    // 연속 수업 병합
+    const lessonBlocks = [];
+    let bs = lessonMins[0], be = lessonMins[0] + LESSON_MIN;
+    for (let i = 1; i < lessonMins.length; i++) {
+      if (lessonMins[i] === be) { be = lessonMins[i] + LESSON_MIN; }
+      else { lessonBlocks.push({ s: bs, e: be }); bs = lessonMins[i]; be = lessonMins[i] + LESSON_MIN; }
+    }
+    lessonBlocks.push({ s: bs, e: be });
+
+    // 수강가능 슬롯 (opStart~22:00 내 공강 구간을 45분 단위로)
+    const availSlots = [];
     let cursor = opStart;
-    for (const ls of lessonMins) {
-      // 공강 구간: 45분 단위 수강신청 가능 슬롯
+    for (const lb of lessonBlocks) {
       let t = cursor;
-      while (t + LESSON_MIN <= ls) {
-        result.push({ type: "available", startMin: t, endMin: t + LESSON_MIN });
-        t += LESSON_MIN;
-      }
-      result.push({ type: "lesson", startMin: ls, endMin: ls + LESSON_MIN });
-      cursor = Math.max(cursor, ls + LESSON_MIN);
+      while (t + LESSON_MIN <= lb.s) { availSlots.push(t); t += LESSON_MIN; }
+      cursor = Math.max(cursor, lb.e);
     }
-    // 마지막 수업 이후
     let t = cursor;
-    while (t + LESSON_MIN <= TL_E) {
-      result.push({ type: "available", startMin: t, endMin: t + LESSON_MIN });
-      t += LESSON_MIN;
-    }
-    return result;
+    while (t + LESSON_MIN <= TL_E) { availSlots.push(t); t += LESSON_MIN; }
+
+    return { lessonBlocks, availSlots };
   };
 
   const subjectBg = (subject) => {
@@ -13517,11 +13516,8 @@ const SubjectTimetableView = ({ students, showToast }) => {
     }
   };
 
-  const HOUR_LABELS = Array.from({ length: TL_E / 60 - TL_S / 60 + 1 }, (_, i) => i + TL_S / 60);
-
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 h-full flex flex-col overflow-hidden animate-fade-in">
-      {/* 헤더 */}
       <div className="flex justify-between items-center mb-4 shrink-0">
         <h2 className="text-lg font-bold flex items-center text-slate-800">
           <BookOpen className="mr-2 text-indigo-600" /> 과목별 수업 시간표
@@ -13540,142 +13536,92 @@ const SubjectTimetableView = ({ students, showToast }) => {
         </div>
       ) : (
         <div className="flex-1 overflow-auto">
-          <div ref={printRef} className="bg-white p-3 inline-block min-w-full">
-            {/* 인쇄용 제목 */}
-            <div className="text-center mb-3">
+          <div ref={printRef} className="bg-white p-3 min-w-[600px]">
+            <div className="text-center mb-4">
               <p className="text-base font-bold text-slate-800">J&C 음악학원 수업 시간표</p>
-              <p className="text-[10px] text-slate-400">상담 문의: 010-4028-9803</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">상담 문의: 010-4028-9803</p>
             </div>
 
-            <div className="flex">
-              {/* 시간축 */}
-              <div className="shrink-0 w-9" style={{ marginTop: 32 }}>
-                <div style={{ position: "relative", height: CELL_H }}>
-                  {HOUR_LABELS.map((h) => (
-                    <div
-                      key={h}
-                      style={{ position: "absolute", top: (h * 60 - TL_S) * S_PX - 5, right: 4 }}
-                      className="text-[8px] text-slate-400 leading-none"
-                    >
-                      {h}
-                    </div>
-                  ))}
-                </div>
+            <div className="border border-slate-200 rounded-xl overflow-hidden">
+              {/* 요일 헤더 */}
+              <div className="grid bg-slate-50 border-b border-slate-200" style={{ gridTemplateColumns: "100px repeat(7, 1fr)" }}>
+                <div className="px-3 py-2.5 text-[11px] text-slate-400 border-r border-slate-200">과목</div>
+                {DAYS.map((day) => (
+                  <div key={day} className={`py-2.5 text-center text-xs font-bold border-r last:border-r-0 border-slate-200 ${day === "일" ? "text-rose-500" : day === "토" ? "text-blue-500" : "text-slate-600"}`}>
+                    {day}
+                  </div>
+                ))}
               </div>
 
-              {/* 과목 그리드 */}
-              <div className="flex-1 border border-slate-200 rounded-lg overflow-hidden">
-                {/* 요일 헤더 */}
-                <div className="grid border-b border-slate-200 bg-slate-50" style={{ gridTemplateColumns: "90px repeat(7, 1fr)", height: 32 }}>
-                  <div className="flex items-center px-2 text-[10px] text-slate-400 border-r border-slate-200">과목</div>
-                  {DAYS.map((day) => (
-                    <div key={day} className={`flex items-center justify-center text-xs font-bold border-r last:border-r-0 border-slate-200 ${day === "일" ? "text-rose-500" : day === "토" ? "text-blue-500" : "text-slate-600"}`}>
-                      {day}
+              {/* 과목 행 */}
+              {subjectList.map((subject, si) => {
+                const colors = subjectBg(subject);
+                return (
+                  <div
+                    key={subject}
+                    className={`grid ${si > 0 ? "border-t border-slate-200" : ""}`}
+                    style={{ gridTemplateColumns: "100px repeat(7, 1fr)" }}
+                  >
+                    {/* 과목명 */}
+                    <div className={`flex items-center gap-2 px-3 py-3 border-r border-slate-200 ${colors.light}`}>
+                      <div className={`w-2 h-2 rounded-full ${colors.bg} shrink-0`} />
+                      <span className={`font-bold text-xs ${colors.text}`}>{subject}</span>
                     </div>
-                  ))}
-                </div>
 
-                {/* 과목별 행 */}
-                {subjectList.map((subject, si) => {
-                  const colors = subjectBg(subject);
-                  return (
-                    <div
-                      key={subject}
-                      className={`grid ${si > 0 ? "border-t border-slate-200" : ""}`}
-                      style={{ gridTemplateColumns: "90px repeat(7, 1fr)" }}
-                    >
-                      {/* 과목명 */}
-                      <div
-                        className={`flex items-center gap-1.5 px-2 border-r border-slate-200 ${colors.light}`}
-                        style={{ height: CELL_H }}
-                      >
-                        <div className={`w-2 h-2 rounded-full ${colors.bg} shrink-0`} />
-                        <span className={`font-bold text-xs ${colors.text} leading-tight`}>{subject}</span>
-                      </div>
-
-                      {/* 요일별 셀 */}
-                      {DAYS.map((day) => {
-                        const hasTimes = !!(subjectScheduleMap[subject]?.[day]?.size);
-                        const slots = hasTimes ? getSlots(subject, day) : [];
-                        const opStart = getOpStart(day);
-                        const preOpH = (opStart - TL_S) * S_PX; // 평일은 144px 음영
-
-                        return (
-                          <div
-                            key={day}
-                            className="border-r last:border-r-0 border-slate-200 relative"
-                            style={{ height: CELL_H }}
-                          >
-                            {/* 시간 구분선 (배경) */}
-                            {HOUR_LABELS.map((h) => (
-                              <div
-                                key={h}
-                                style={{ position: "absolute", top: (h * 60 - TL_S) * S_PX, left: 0, right: 0 }}
-                                className="border-t border-slate-100"
-                              />
+                    {/* 요일별 셀 */}
+                    {DAYS.map((day) => {
+                      const info = getCellInfo(subject, day);
+                      if (!info) return (
+                        <div key={day} className="border-r last:border-r-0 border-slate-200 flex items-center justify-center py-3">
+                          <span className="text-slate-200 text-base">—</span>
+                        </div>
+                      );
+                      const { lessonBlocks, availSlots } = info;
+                      return (
+                        <div key={day} className="border-r last:border-r-0 border-slate-200 px-1.5 py-2 flex flex-col gap-1">
+                          {/* 수업 시간 태그들 */}
+                          <div className="flex flex-wrap gap-0.5">
+                            {lessonBlocks.map((lb) => (
+                              <span
+                                key={lb.s}
+                                className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${colors.light} ${colors.text} border ${colors.border}`}
+                              >
+                                {toStr(lb.s)}~{toStr(lb.e)}
+                              </span>
                             ))}
-
-                            {hasTimes ? (
-                              <>
-                                {/* 비운영 음영 (평일 09:00-12:00) */}
-                                {preOpH > 0 && (
-                                  <div
-                                    style={{ position: "absolute", top: 0, height: preOpH, left: 0, right: 0 }}
-                                    className="bg-slate-100/80"
-                                  />
-                                )}
-                                {/* 수업/수강가능 슬롯 */}
-                                {slots.map((slot) => {
-                                  const top = (slot.startMin - TL_S) * S_PX;
-                                  const h = (slot.endMin - slot.startMin) * S_PX - 1;
-                                  if (slot.type === "lesson") {
-                                    return (
-                                      <div
-                                        key={slot.startMin}
-                                        style={{ position: "absolute", top, height: h, left: 1, right: 1, zIndex: 2 }}
-                                        className={`${colors.light} border ${colors.border} rounded-sm flex flex-col items-center justify-center overflow-hidden`}
-                                      >
-                                        <span className={`text-[8px] font-bold ${colors.text} leading-tight`}>{toStr(slot.startMin)}</span>
-                                        <span className={`text-[7px] ${colors.text} opacity-70 leading-tight`}>~{toStr(slot.endMin)}</span>
-                                      </div>
-                                    );
-                                  }
-                                  return (
-                                    <div
-                                      key={slot.startMin}
-                                      style={{ position: "absolute", top, height: h, left: 1, right: 1, zIndex: 2 }}
-                                      className="bg-emerald-50 border border-emerald-200 rounded-sm flex items-center justify-center overflow-hidden"
-                                    >
-                                      <span className="text-[7px] text-emerald-600 font-semibold leading-tight text-center">수강신청{"\n"}가능</span>
-                                    </div>
-                                  );
-                                })}
-                              </>
-                            ) : (
-                              <div className="absolute inset-0 flex items-center justify-center text-slate-200 text-base">—</div>
-                            )}
                           </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
-              </div>
+                          {/* 수강가능 슬롯 요약 */}
+                          {availSlots.length > 0 && (
+                            <div className="flex flex-wrap gap-0.5">
+                              {availSlots.slice(0, 3).map((t) => (
+                                <span key={t} className="inline-block px-1.5 py-0.5 rounded text-[9px] font-medium bg-emerald-50 text-emerald-600 border border-emerald-200">
+                                  {toStr(t)}
+                                </span>
+                              ))}
+                              {availSlots.length > 3 && (
+                                <span className="inline-block px-1.5 py-0.5 rounded text-[9px] text-emerald-500 bg-emerald-50 border border-emerald-100">
+                                  +{availSlots.length - 3}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
             </div>
 
             {/* 범례 */}
             <div className="flex items-center gap-4 mt-3 justify-center">
               <div className="flex items-center gap-1.5">
-                <div className="w-3 h-3 rounded-sm bg-indigo-50 border border-indigo-200" />
-                <span className="text-[10px] text-slate-500">수업 진행 중</span>
+                <div className="w-3 h-3 rounded bg-indigo-50 border border-indigo-200" />
+                <span className="text-[10px] text-slate-500">수업 시간</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <div className="w-3 h-3 rounded-sm bg-emerald-50 border border-emerald-200" />
-                <span className="text-[10px] text-slate-500">수강신청 가능</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <div className="w-3 h-3 rounded-sm bg-slate-100" />
-                <span className="text-[10px] text-slate-500">운영 전</span>
+                <div className="w-3 h-3 rounded bg-emerald-50 border border-emerald-200" />
+                <span className="text-[10px] text-slate-500">수강신청 가능 시간</span>
               </div>
             </div>
           </div>
