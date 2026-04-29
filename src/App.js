@@ -13435,7 +13435,11 @@ const SubjectTimetableView = ({ students, showToast }) => {
   const LESSON_MIN = 45;
   const TL_E = 22 * 60;
 
-  const toMin = (t) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+  const toMin = (t) => {
+    if (!t || typeof t !== "string" || !t.includes(":")) return NaN;
+    const [h, m] = t.split(":").map(Number);
+    return isNaN(h) || isNaN(m) ? NaN : h * 60 + m;
+  };
   const toStr = (min) => `${Math.floor(min / 60)}:${String(min % 60).padStart(2, "0")}`;
   const getOpStart = (day) => (day === "토" || day === "일") ? 9 * 60 : 12 * 60;
 
@@ -13463,7 +13467,8 @@ const SubjectTimetableView = ({ students, showToast }) => {
     const times = subjectScheduleMap[subject]?.[day];
     if (!times || times.size === 0) return null;
     const opStart = getOpStart(day);
-    const lessonMins = Array.from(times).map(toMin).sort((a, b) => a - b);
+    const lessonMins = Array.from(times).map(toMin).filter((n) => !isNaN(n)).sort((a, b) => a - b);
+    if (!lessonMins.length) return null;
 
     // 연속 수업 병합
     const lessonBlocks = [];
