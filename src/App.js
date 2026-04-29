@@ -13449,10 +13449,29 @@ const SubjectTimetableView = ({ students, teachers, showToast }) => {
 
   const subjectList = Object.keys(subjectScheduleMap).sort();
 
-  const getEndTime = (timeStr) => {
-    const [h, m] = timeStr.split(":").map(Number);
-    const e = h * 60 + m + 45;
-    return `${Math.floor(e / 60)}:${String(e % 60).padStart(2, "0")}`;
+  const toMin = (t) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+  const toStr = (min) => `${Math.floor(min / 60)}:${String(min % 60).padStart(2, "0")}`;
+
+  const getEndTime = (timeStr) => toStr(toMin(timeStr) + 45);
+
+  // 연속된 수업 구간 병합: [13:30, 14:15] → [{start:13:30, end:15:00}]
+  const mergeConsecutive = (sortedTimes) => {
+    if (!sortedTimes.length) return [];
+    const blocks = [];
+    let blockStart = toMin(sortedTimes[0]);
+    let blockEnd = blockStart + 45;
+    for (let i = 1; i < sortedTimes.length; i++) {
+      const s = toMin(sortedTimes[i]);
+      if (s === blockEnd) {
+        blockEnd = s + 45;
+      } else {
+        blocks.push({ start: toStr(blockStart), end: toStr(blockEnd) });
+        blockStart = s;
+        blockEnd = s + 45;
+      }
+    }
+    blocks.push({ start: toStr(blockStart), end: toStr(blockEnd) });
+    return blocks;
   };
 
   const printRef = useRef(null);
@@ -13545,7 +13564,7 @@ const SubjectTimetableView = ({ students, teachers, showToast }) => {
                       {DAYS.map((day) => {
                         const times = subjectScheduleMap[subject]?.[day];
                         const hasTimes = times && times.size > 0;
-                        const sortedTimes = hasTimes ? Array.from(times).sort() : [];
+                        const blocks = hasTimes ? mergeConsecutive(Array.from(times).sort()) : [];
                         return (
                           <div
                             key={day}
@@ -13554,11 +13573,11 @@ const SubjectTimetableView = ({ students, teachers, showToast }) => {
                             }`}
                           >
                             {hasTimes ? (
-                              <div className="flex flex-col items-center gap-1 w-full">
-                                {sortedTimes.map((t) => (
-                                  <div key={t} className={`text-center w-full px-1 py-0.5 rounded ${colors.light}`}>
-                                    <div className={`text-[11px] font-bold ${colors.text}`}>{t}</div>
-                                    <div className={`text-[10px] font-semibold ${colors.text} opacity-70`}>~ {getEndTime(t)}</div>
+                              <div className="flex flex-col items-center gap-1.5 w-full">
+                                {blocks.map((b) => (
+                                  <div key={b.start} className={`text-center w-full px-1 py-1 rounded ${colors.light}`}>
+                                    <div className={`text-[11px] font-bold ${colors.text}`}>{b.start}</div>
+                                    <div className={`text-[10px] font-semibold ${colors.text} opacity-70`}>~ {b.end}</div>
                                   </div>
                                 ))}
                               </div>
