@@ -13522,88 +13522,122 @@ const SubjectTimetableView = ({ students, teachers, showToast }) => {
     }
   };
 
+  // 과목별로 운영 요일 집계
+  const subjectDayMap = useMemo(() => {
+    const map = {}; // subject -> Set of dayStr
+    teachers.forEach((t) => {
+      const subject = teacherSubjects[t.name];
+      if (!subject || !t.days) return;
+      if (!map[subject]) map[subject] = new Set();
+      t.days.forEach((dayId) => {
+        const dayStr = dayId === 0 ? "일" : DAYS[dayId - 1];
+        map[subject].add(dayStr);
+      });
+    });
+    return map;
+  }, [teachers, teacherSubjects]);
+
+  const subjectList = Object.keys(subjectDayMap).sort();
+
+  const subjectBg = (subject) => {
+    const map = {
+      피아노: { bg: "bg-indigo-500", light: "bg-indigo-50", text: "text-indigo-700", border: "border-indigo-200" },
+      바이올린: { bg: "bg-fuchsia-500", light: "bg-fuchsia-50", text: "text-fuchsia-700", border: "border-fuchsia-200" },
+      플루트: { bg: "bg-emerald-500", light: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200" },
+      첼로: { bg: "bg-amber-500", light: "bg-amber-50", text: "text-amber-700", border: "border-amber-200" },
+      성악: { bg: "bg-rose-500", light: "bg-rose-50", text: "text-rose-700", border: "border-rose-200" },
+      기타: { bg: "bg-sky-500", light: "bg-sky-50", text: "text-sky-700", border: "border-sky-200" },
+      드럼: { bg: "bg-slate-500", light: "bg-slate-50", text: "text-slate-700", border: "border-slate-200" },
+    };
+    return map[subject] || { bg: "bg-gray-400", light: "bg-gray-50", text: "text-gray-700", border: "border-gray-200" };
+  };
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 h-full flex flex-col overflow-hidden animate-fade-in">
+      {/* 헤더 */}
       <div className="flex justify-between items-center mb-6 shrink-0">
         <h2 className="text-lg font-bold flex items-center text-slate-800">
-          <BookOpen className="mr-2 text-indigo-600" /> 과목별 운영 시간표 (외부
-          공유용)
+          <BookOpen className="mr-2 text-indigo-600" /> 과목별 운영 시간표
         </h2>
         <button
           onClick={handleCopyCaption}
           className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-lg shadow-md flex items-center transition-colors"
         >
-          <Copy size={16} className="mr-2" /> 시간표 복사
+          <Copy size={16} className="mr-2" /> 텍스트 복사
         </button>
       </div>
 
-      <div className="flex-1 overflow-auto border rounded-xl bg-white relative">
-        <div className="grid grid-cols-[60px_repeat(7,1fr)] bg-slate-50 border-b sticky top-0 z-10 shadow-sm min-w-[800px]">
-          <div className="p-3 text-center text-xs font-bold text-slate-400 border-r flex items-center justify-center bg-slate-50 sticky left-0 z-20">
-            TIME
-          </div>
-          {DAYS.map((day) => (
-            <div
-              key={day}
-              className={`p-3 text-center text-sm font-bold border-r last:border-r-0 ${
-                day === "일"
-                  ? "text-rose-500 bg-rose-50/30"
-                  : day === "토"
-                  ? "text-blue-500 bg-blue-50/30"
-                  : "text-slate-700"
-              }`}
-            >
-              {day}
-            </div>
-          ))}
+      {subjectList.length === 0 ? (
+        <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
+          등록된 수업 정보가 없습니다.
         </div>
-
-        <div className="divide-y divide-slate-100 min-w-[800px]">
-          {HOURS.map((hour) => (
-            <div
-              key={hour}
-              className="grid grid-cols-[60px_repeat(7,1fr)] min-h-[50px]"
-            >
-              <div className="p-2 text-center text-xs font-bold text-slate-400 border-r bg-white flex items-center justify-center sticky left-0 z-10 font-mono">
-                {hour}:00
+      ) : (
+        <div className="flex-1 overflow-auto">
+          {/* 요일 헤더 */}
+          <div className="grid grid-cols-[140px_repeat(7,1fr)] mb-2 min-w-[640px]">
+            <div />
+            {DAYS.map((day) => (
+              <div
+                key={day}
+                className={`text-center text-sm font-bold pb-2 ${
+                  day === "일" ? "text-rose-500" : day === "토" ? "text-blue-500" : "text-slate-500"
+                }`}
+              >
+                {day}
               </div>
+            ))}
+          </div>
 
-              {DAYS.map((day) => {
-                const key = `${day}-${hour}`;
-                const subjects = availabilityMap[key]
-                  ? Array.from(availabilityMap[key])
-                  : [];
+          {/* 과목별 행 */}
+          <div className="space-y-3 min-w-[640px]">
+            {subjectList.map((subject) => {
+              const colors = subjectBg(subject);
+              const availDays = subjectDayMap[subject] || new Set();
+              return (
+                <div key={subject} className={`rounded-2xl border ${colors.border} ${colors.light} overflow-hidden`}>
+                  <div className="grid grid-cols-[140px_repeat(7,1fr)]">
+                    {/* 과목명 */}
+                    <div className={`flex items-center gap-2 px-4 py-5 border-r ${colors.border}`}>
+                      <div className={`w-2.5 h-2.5 rounded-full ${colors.bg} shrink-0`} />
+                      <span className={`font-bold text-sm ${colors.text}`}>{subject}</span>
+                    </div>
 
-                return (
-                  <div
-                    key={day}
-                    className="border-r last:border-r-0 p-1 flex flex-wrap content-center justify-center gap-1 hover:bg-slate-50 transition-colors"
-                  >
-                    {subjects.length > 0 ? (
-                      subjects.sort().map((subj) => (
-                        <span
-                          key={subj}
-                          className={`text-[10px] px-2 py-1 rounded border font-bold shadow-sm whitespace-nowrap opacity-90 ${getSubjectColor(
-                            subj
-                          )}`}
+                    {/* 요일별 셀 */}
+                    {DAYS.map((day) => {
+                      const isWeekend = day === "토" || day === "일";
+                      const available = availDays.has(day);
+                      return (
+                        <div
+                          key={day}
+                          className={`flex flex-col items-center justify-center py-4 border-r last:border-r-0 ${colors.border} transition-colors ${
+                            available ? "bg-white/70" : "bg-transparent"
+                          }`}
                         >
-                          {subj}
-                        </span>
-                      ))
-                    ) : (
-                      <div className="w-full h-full"></div>
-                    )}
+                          {available ? (
+                            <>
+                              <div className={`w-2 h-2 rounded-full ${colors.bg} mb-1.5`} />
+                              <span className={`text-[11px] font-bold ${colors.text}`}>
+                                {isWeekend ? "09:00" : "10:30"}
+                              </span>
+                              <span className="text-[10px] text-slate-400 leading-tight">~ 22:00</span>
+                            </>
+                          ) : (
+                            <span className="text-slate-200 text-lg">—</span>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
-            </div>
-          ))}
-        </div>
-      </div>
+                </div>
+              );
+            })}
+          </div>
 
-      <div className="mt-4 text-center text-xs text-slate-400">
-        * 평일 10:30~22:00, 주말 09:00~22:00 기준 자동 생성
-      </div>
+          <p className="mt-5 text-center text-xs text-slate-400">
+            평일 10:30 ~ 22:00 · 주말 09:00 ~ 22:00 기준
+          </p>
+        </div>
+      )}
     </div>
   );
 };
