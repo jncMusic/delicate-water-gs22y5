@@ -40,15 +40,13 @@ const sendAligoSms = async (receiver, msg) => {
 
 const sendKyuljesaengnim = async (student) => {
   const sessions = getEffectiveSessions(student);
-  // 이름: [J&C]과목-이름 형식
-  const formattedName = `[J&C]${student.subject || ""}-${student.name}`;
-  // 과정명: 1:1 개인레슨 N회 형식
+  const isAdult = student.grade === "성인";
+  const nameSuffix = isAdult ? "님" : " 학생";
+  const formattedName = `[J&C]${student.subject || ""}-${student.name}${nameSuffix}`;
   const formattedSubject = `1:1 개인레슨 ${sessions}회`;
-  // 안내 메시지: 최종 결제일 포함
-  const lastPayStr = student.lastPaymentDate
-    ? `최종 결제일: ${student.lastPaymentDate}`
+  const note = student.lastPaymentDate
+    ? `최종결제일: ${student.lastPaymentDate}`
     : "";
-  const note = `${student.name} 학생의 ${student.subject || ""} 1:1 개인레슨 ${sessions}회분 ${Number(student.tuitionFee || 0).toLocaleString()}원 결제 안내입니다.${lastPayStr ? `\n${lastPayStr}` : ""}`;
   const res = await fetch(PAYMINT_SEND_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
