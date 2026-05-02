@@ -9983,6 +9983,8 @@ const PaymentView = ({
   const [quickPayStudent, setQuickPayStudent] = useState(null);
   const [quickPayDate, setQuickPayDate] = useState("");
   const [quickPayMethod, setQuickPayMethod] = useState("");
+  const [quickPaySessions, setQuickPaySessions] = useState(4);
+  const [quickPayAmount, setQuickPayAmount] = useState("");
 
   // 결제 처리 탭 state
   const [processMode, setProcessMode] = useState(false);
@@ -9990,6 +9992,8 @@ const PaymentView = ({
   const [completedPeriod, setCompletedPeriod] = useState("week");
   const [processQuickPay, setProcessQuickPay] = useState(null);
   const [processPayDate, setProcessPayDate] = useState(toLocalDateStr());
+  const [processPaySessions, setProcessPaySessions] = useState(4);
+  const [processPayAmount, setProcessPayAmount] = useState("");
 
   // 수강 현황 계산 헬퍼
   const getStudentProgress = (s) => {
@@ -10182,10 +10186,18 @@ const PaymentView = ({
     return logs.length > 0 ? logs[0].sentAt : null;
   };
 
-  // 이번달 발송 여부 (이번달 vs 지난달 이전 구분용)
-  const isThisMonth = (dateStr) => {
-    if (!dateStr) return false;
-    return dateStr.slice(0, 7) === new Date().toISOString().slice(0, 7);
+  // 안내일 이후 결제 여부: 마지막 결제일이 안내일보다 나중이면 결제 완료
+  const isPaidAfterNotif = (student, notifDate) => {
+    if (!notifDate) return false;
+    return (student.lastPaymentDate || "") > notifDate;
+  };
+
+  // 안내 발송일 레이블: 30일 이내면 "N일 전", 그 이상이면 "오래됨"
+  const notifAgeLabel = (dateStr) => {
+    if (!dateStr) return "";
+    const days = Math.round((new Date() - new Date(dateStr)) / (1000 * 60 * 60 * 24));
+    if (days <= 30) return days === 0 ? "(오늘)" : `(${days}일 전)`;
+    return "(오래됨)";
   };
 
   // 체크박스 토글
@@ -10200,17 +10212,21 @@ const PaymentView = ({
     if (!quickPayStudent || !quickPayDate) return;
     try {
       const method = quickPayMethod || quickPayStudent.lastPaymentMethod || "";
+      const amount = parseInt(quickPayAmount) || parseInt(quickPayStudent.tuitionFee || 0);
       await onSavePayment(
         quickPayStudent.id,
         quickPayDate,
-        parseInt(quickPayStudent.tuitionFee || 0),
+        amount,
         quickPayDate,
-        method
+        method,
+        quickPaySessions
       );
       showToast(`${quickPayStudent.name} 수납 완료${method ? ` (${method})` : ""}`, "success");
       setQuickPayStudent(null);
       setQuickPayDate("");
       setQuickPayMethod("");
+      setQuickPaySessions(4);
+      setQuickPayAmount("");
     } catch (e) {
       showToast("저장 오류: " + e.message, "error");
     }
@@ -10313,123 +10329,196 @@ const PaymentView = ({
       )}
 
       {/* 결제 완료 간편 입력 모달 */}
-      {quickPayStudent && (
-        <div className="fixed inset-0 bg-black/60 z-[110] flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6">
-            <h3 className="text-lg font-bold mb-1 flex items-center text-emerald-700">
-              <CreditCard className="mr-2" size={20} /> 결제 완료 입력
-            </h3>
-            <p className="text-sm text-slate-500 mb-4">{quickPayStudent.name} ({quickPayStudent.subject})</p>
-            <div className="mb-4">
-              <label className="block text-xs font-bold text-slate-500 mb-1">결제일자</label>
-              <input
-                type="date"
-                value={quickPayDate}
-                onChange={(e) => setQuickPayDate(e.target.value)}
-                className="w-full p-3 border rounded-xl bg-slate-50 focus:outline-emerald-500 text-sm"
-              />
-            </div>
-            <div className="mb-3">
-              <label className="block text-xs font-bold text-slate-500 mb-1">결제금액</label>
-              <div className="p-3 border rounded-xl bg-slate-50 text-sm font-bold text-indigo-600">
-                {Number(quickPayStudent.tuitionFee || 0).toLocaleString()}원
+      {quickPayStudent && (() => {
+        const baseSessions = getEffectiveSessions(quickPayStudent);
+        const baseFee = Number(quickPayStudent.tuitionFee || 0);
+        const perSession = baseSessions > 0 ? Math.round(baseFee / baseSessions) : 0;
+        const displayAmount = quickPayAmount || String(Math.round(perSession * quickPaySessions));
+        return (
+          <div className="fixed inset-0 bg-black/60 z-[110] flex items-center justify-center p-4 backdrop-blur-sm">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6">
+              <h3 className="text-lg font-bold mb-1 flex items-center text-emerald-700">
+                <CreditCard className="mr-2" size={20} /> 결제 완료 입력
+              </h3>
+              <p className="text-sm text-slate-500 mb-4">{quickPayStudent.name} ({quickPayStudent.subject})</p>
+              <div className="mb-4">
+                <label className="block text-xs font-bold text-slate-500 mb-1">결제일자</label>
+                <input
+                  type="date"
+                  value={quickPayDate}
+                  onChange={(e) => setQuickPayDate(e.target.value)}
+                  className="w-full p-3 border rounded-xl bg-slate-50 focus:outline-emerald-500 text-sm"
+                />
               </div>
-            </div>
-            <div className="mb-4">
-              <label className="block text-xs font-bold text-slate-500 mb-1">
-                결제방법
-                {quickPayStudent.lastPaymentMethod && (
-                  <span className="ml-2 text-[10px] text-slate-400 font-normal">
-                    (이전: {quickPayStudent.lastPaymentMethod})
-                  </span>
-                )}
-              </label>
-              <div className="flex flex-wrap gap-1">
-                {["현장", "계좌이체", "기타", "결제선생"].map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => setQuickPayMethod(m)}
-                    className={`px-3 py-1.5 text-xs rounded-lg border font-medium transition-all ${
-                      quickPayMethod === m
-                        ? m === "결제선생"
-                          ? "bg-blue-600 text-white border-blue-600"
-                          : "bg-indigo-600 text-white border-indigo-600"
-                        : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
-                    }`}
-                  >
-                    {m}
-                  </button>
-                ))}
+              <div className="mb-3">
+                <label className="block text-xs font-bold text-slate-500 mb-1">결제 회차</label>
+                <div className="flex gap-2">
+                  {[2, 4, 8].map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => {
+                        setQuickPaySessions(s);
+                        setQuickPayAmount(String(Math.round(perSession * s)));
+                      }}
+                      className={`flex-1 py-2 rounded-lg text-sm font-bold border-2 transition-colors ${
+                        quickPaySessions === s
+                          ? "bg-indigo-600 text-white border-indigo-600"
+                          : "bg-white text-slate-500 border-slate-200 hover:border-indigo-300 hover:text-indigo-600"
+                      }`}
+                    >
+                      {s}회
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-            <div className="flex gap-2 justify-end mt-4">
-              <button onClick={() => { setQuickPayStudent(null); setQuickPayDate(""); setQuickPayMethod(""); }} className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg font-bold">취소</button>
-              <button
-                onClick={handleQuickPaySave}
-                disabled={!quickPayDate}
-                className="px-6 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 shadow-md disabled:opacity-40"
-              >
-                저장
-              </button>
+              <div className="mb-3">
+                <label className="block text-xs font-bold text-slate-500 mb-1">결제금액</label>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={displayAmount ? Number(displayAmount).toLocaleString() : ""}
+                    onChange={(e) => setQuickPayAmount(e.target.value.replace(/[^0-9]/g, ""))}
+                    className="flex-1 p-3 border border-indigo-300 rounded-xl bg-slate-50 text-sm font-bold text-indigo-600 focus:outline-indigo-500 text-right"
+                  />
+                  <span className="text-slate-500 text-sm shrink-0">원</span>
+                </div>
+              </div>
+              <div className="mb-4">
+                <label className="block text-xs font-bold text-slate-500 mb-1">
+                  결제방법
+                  {quickPayStudent.lastPaymentMethod && (
+                    <span className="ml-2 text-[10px] text-slate-400 font-normal">
+                      (이전: {quickPayStudent.lastPaymentMethod})
+                    </span>
+                  )}
+                </label>
+                <div className="flex flex-wrap gap-1">
+                  {["현장", "계좌이체", "기타", "결제선생"].map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => setQuickPayMethod(m)}
+                      className={`px-3 py-1.5 text-xs rounded-lg border font-medium transition-all ${
+                        quickPayMethod === m
+                          ? m === "결제선생"
+                            ? "bg-blue-600 text-white border-blue-600"
+                            : "bg-indigo-600 text-white border-indigo-600"
+                          : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
+                      }`}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex gap-2 justify-end mt-4">
+                <button onClick={() => { setQuickPayStudent(null); setQuickPayDate(""); setQuickPayMethod(""); setQuickPaySessions(4); setQuickPayAmount(""); }} className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg font-bold">취소</button>
+                <button
+                  onClick={handleQuickPaySave}
+                  disabled={!quickPayDate}
+                  className="px-6 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 shadow-md disabled:opacity-40"
+                >
+                  저장
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* 결제 처리: 수납 완료 입력 모달 */}
-      {processQuickPay && (
-        <div className="fixed inset-0 bg-black/60 z-[110] flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6">
-            <h3 className="text-lg font-bold mb-1 flex items-center text-emerald-700">
-              <CreditCard className="mr-2" size={20} /> 수납 완료 처리
-            </h3>
-            <p className="text-sm text-slate-500 mb-1">{processQuickPay.student.name} ({processQuickPay.student.subject})</p>
-            <span className={`text-xs px-2 py-0.5 rounded-full font-medium mb-4 inline-block ${
-              processQuickPay.method === "계좌이체" ? "bg-emerald-100 text-emerald-700" : "bg-indigo-100 text-indigo-700"
-            }`}>{processQuickPay.method}</span>
-            <div className="mb-4 mt-3">
-              <label className="block text-xs font-bold text-slate-500 mb-1">결제일자</label>
-              <input
-                type="date"
-                value={processPayDate}
-                onChange={(e) => setProcessPayDate(e.target.value)}
-                className="w-full p-3 border rounded-xl bg-slate-50 focus:outline-emerald-500 text-sm"
-              />
-            </div>
-            <div className="mb-3">
-              <label className="block text-xs font-bold text-slate-500 mb-1">결제금액</label>
-              <div className="p-3 border rounded-xl bg-slate-50 text-sm font-bold text-indigo-600">
-                {Number(processQuickPay.student.tuitionFee || 0).toLocaleString()}원
+      {processQuickPay && (() => {
+        const st = processQuickPay.student;
+        const baseSessions = getEffectiveSessions(st);
+        const baseFee = Number(st.tuitionFee || 0);
+        const perSession = baseSessions > 0 ? Math.round(baseFee / baseSessions) : 0;
+        const displayAmount = processPayAmount || String(Math.round(perSession * processPaySessions));
+        return (
+          <div className="fixed inset-0 bg-black/60 z-[110] flex items-center justify-center p-4 backdrop-blur-sm">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6">
+              <h3 className="text-lg font-bold mb-1 flex items-center text-emerald-700">
+                <CreditCard className="mr-2" size={20} /> 수납 완료 처리
+              </h3>
+              <p className="text-sm text-slate-500 mb-1">{st.name} ({st.subject})</p>
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium mb-4 inline-block ${
+                processQuickPay.method === "계좌이체" ? "bg-emerald-100 text-emerald-700" : "bg-indigo-100 text-indigo-700"
+              }`}>{processQuickPay.method}</span>
+              <div className="mb-4 mt-3">
+                <label className="block text-xs font-bold text-slate-500 mb-1">결제일자</label>
+                <input
+                  type="date"
+                  value={processPayDate}
+                  onChange={(e) => setProcessPayDate(e.target.value)}
+                  className="w-full p-3 border rounded-xl bg-slate-50 focus:outline-emerald-500 text-sm"
+                />
+              </div>
+              <div className="mb-3">
+                <label className="block text-xs font-bold text-slate-500 mb-1">결제 회차</label>
+                <div className="flex gap-2">
+                  {[2, 4, 8].map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => {
+                        setProcessPaySessions(s);
+                        setProcessPayAmount(String(Math.round(perSession * s)));
+                      }}
+                      className={`flex-1 py-2 rounded-lg text-sm font-bold border-2 transition-colors ${
+                        processPaySessions === s
+                          ? "bg-indigo-600 text-white border-indigo-600"
+                          : "bg-white text-slate-500 border-slate-200 hover:border-indigo-300 hover:text-indigo-600"
+                      }`}
+                    >
+                      {s}회
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="mb-3">
+                <label className="block text-xs font-bold text-slate-500 mb-1">결제금액</label>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={displayAmount ? Number(displayAmount).toLocaleString() : ""}
+                    onChange={(e) => setProcessPayAmount(e.target.value.replace(/[^0-9]/g, ""))}
+                    className="flex-1 p-3 border border-indigo-300 rounded-xl bg-slate-50 text-sm font-bold text-indigo-600 focus:outline-indigo-500 text-right"
+                  />
+                  <span className="text-slate-500 text-sm shrink-0">원</span>
+                </div>
+              </div>
+              <div className="flex gap-2 justify-end mt-4">
+                <button onClick={() => { setProcessQuickPay(null); setProcessPaySessions(4); setProcessPayAmount(""); }} className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg font-bold">취소</button>
+                <button
+                  onClick={async () => {
+                    if (!processPayDate) return;
+                    try {
+                      const amount = parseInt(processPayAmount) || parseInt(st.tuitionFee || 0);
+                      await onSavePayment(
+                        st.id,
+                        processPayDate,
+                        amount,
+                        processPayDate,
+                        processQuickPay.method,
+                        processPaySessions
+                      );
+                      showToast(`${st.name} 수납 완료`, "success");
+                      setProcessQuickPay(null);
+                      setProcessPaySessions(4);
+                      setProcessPayAmount("");
+                    } catch (e) {
+                      showToast("저장 오류: " + e.message, "error");
+                    }
+                  }}
+                  disabled={!processPayDate}
+                  className="px-6 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 shadow-md disabled:opacity-40"
+                >
+                  완료 처리
+                </button>
               </div>
             </div>
-            <div className="flex gap-2 justify-end mt-4">
-              <button onClick={() => setProcessQuickPay(null)} className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg font-bold">취소</button>
-              <button
-                onClick={async () => {
-                  if (!processPayDate) return;
-                  try {
-                    await onSavePayment(
-                      processQuickPay.student.id,
-                      processPayDate,
-                      parseInt(processQuickPay.student.tuitionFee || 0),
-                      processPayDate,
-                      processQuickPay.method
-                    );
-                    showToast(`${processQuickPay.student.name} 수납 완료`, "success");
-                    setProcessQuickPay(null);
-                  } catch (e) {
-                    showToast("저장 오류: " + e.message, "error");
-                  }
-                }}
-                disabled={!processPayDate}
-                className="px-6 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 shadow-md disabled:opacity-40"
-              >
-                완료 처리
-              </button>
-            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* 일괄 메시지 발송 모달 */}
       {showBulkModal && (
@@ -10831,17 +10920,17 @@ const PaymentView = ({
                   {notifMode ? (
                     <>
                       <td className="py-3 px-4 text-xs">
-                        {notifSt === "paid" ? (
+                        {notifSt === "paid" || isPaidAfterNotif(s, lastNotif) ? (
                           <span className="font-medium text-blue-600">
                             ✅ {lastNotif} 결제완료
                           </span>
                         ) : notifSt === "done" ? (
-                          <span className={`font-medium ${isThisMonth(lastNotif) ? "text-emerald-600" : "text-emerald-400"}`}>
-                            🟢 {lastNotif}{!isThisMonth(lastNotif) && " (지난달)"}
+                          <span className="font-medium text-emerald-600">
+                            🟢 {lastNotif} {notifAgeLabel(lastNotif)}
                           </span>
                         ) : notifSt === "sms-only" ? (
-                          <span className={`font-medium ${isThisMonth(lastNotif) ? "text-amber-600" : "text-amber-400"}`}>
-                            🟡 {lastNotif}{!isThisMonth(lastNotif) && " (지난달)"}
+                          <span className="font-medium text-amber-600">
+                            🟡 {lastNotif} {notifAgeLabel(lastNotif)}
                           </span>
                         ) : (
                           <span className="text-rose-400">🔴 미발송</span>
@@ -11384,7 +11473,8 @@ export default function App() {
     date,
     amount,
     realSessionStartDate = date,
-    method = ""
+    method = "",
+    totalSessionsOverride = null
   ) => {
     const safeAppId = APP_ID || "jnc-music-v2";
     try {
@@ -11423,7 +11513,7 @@ export default function App() {
         amount,
         type: "tuition",
         sessionStartDate: realSessionStartDate,
-        totalSessions: getEffectiveSessions(student),
+        totalSessions: totalSessionsOverride ?? getEffectiveSessions(student),
         createdAt: new Date().toISOString(),
         ...(method && { method }),
       };
