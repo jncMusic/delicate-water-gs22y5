@@ -38,17 +38,14 @@ const sendAligoSms = async (receiver, msg) => {
   return data;
 };
 
-const sendKyuljesaengnim = async (student) => {
-  const sessions = getEffectiveSessions(student);
-  // 이름: [J&C]과목-이름 형식
-  const formattedName = `[J&C]${student.subject || ""}-${student.name}`;
-  // 과정명: 1:1 개인레슨 N회 형식
+const sendKyuljesaengnim = async (student, override = {}) => {
+  const sessions = override.sessions ?? getEffectiveSessions(student);
+  const price = override.price ?? Number(student.tuitionFee || 0);
+  const isAdult = student.grade === "성인";
+  const nameSuffix = isAdult ? "님" : " 학생";
+  const formattedName = `[J&C]${student.subject || ""}-${student.name}${nameSuffix}`;
   const formattedSubject = `1:1 개인레슨 ${sessions}회`;
-  // 안내 메시지: 최종 결제일 포함
-  const lastPayStr = student.lastPaymentDate
-    ? `최종 결제일: ${student.lastPaymentDate}`
-    : "";
-  const note = `${student.name} 학생의 ${student.subject || ""} 1:1 개인레슨 ${sessions}회분 ${Number(student.tuitionFee || 0).toLocaleString()}원 결제 안내입니다.${lastPayStr ? `\n${lastPayStr}` : ""}`;
+  const note = student.lastPaymentDate ? `최종결제일: ${student.lastPaymentDate}` : "";
   const res = await fetch(PAYMINT_SEND_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -56,7 +53,7 @@ const sendKyuljesaengnim = async (student) => {
       studentId: student.id,
       studentName: formattedName,
       phone: student.phone || "",
-      price: String(student.tuitionFee || 0),
+      price: String(price),
       subject: formattedSubject,
       totalSessions: sessions,
       lastPaymentDate: student.lastPaymentDate || "",
@@ -83,6 +80,118 @@ const getEffectiveSessions = (student) => {
 };
 
 // -----------------------------------------------------------------
+// KyuljePreviewModal - 결제선생 발송 전 미리보기 확인 모달
+// -----------------------------------------------------------------
+const KyuljePreviewRow = ({ label, children }) => (
+  <div className="flex items-start justify-between gap-3 py-2 border-b border-slate-100 last:border-b-0">
+    <span className="text-xs text-slate-400 shrink-0 mt-0.5 w-20">{label}</span>
+    <span className="text-sm text-slate-800 text-right flex-1">{children}</span>
+  </div>
+);
+
+const SESSION_OPTIONS = [2, 4, 8];
+
+const KyuljePreviewModal = ({ student, onConfirm, onClose, sending }) => {
+  const baseSessions = getEffectiveSessions(student);
+  const baseFee = Number(student?.tuitionFee || 0);
+  const perSession = baseSessions > 0 ? Math.round(baseFee / baseSessions) : 0;
+
+  const defaultSessions = SESSION_OPTIONS.includes(baseSessions) ? baseSessions : 4;
+  const [selectedSessions, setSelectedSessions] = React.useState(defaultSessions);
+  const [priceInput, setPriceInput] = React.useState(String(Math.round(perSession * defaultSessions)));
+
+  if (!student) return null;
+
+  const handleSessionChange = (s) => {
+    setSelectedSessions(s);
+    setPriceInput(String(Math.round(perSession * s)));
+  };
+
+  const finalPrice = Number(priceInput.replace(/[^0-9]/g, "")) || 0;
+  const isAdult = student.grade === "성인";
+  const nameSuffix = isAdult ? "님" : " 학생";
+  const formattedName = `[J&C]${student.subject || ""}-${student.name}${nameSuffix}`;
+  const note = student.lastPaymentDate ? `최종결제일: ${student.lastPaymentDate}` : "";
+
+  return (
+    <div className="fixed inset-0 bg-black/70 z-[220] flex items-center justify-center p-4 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+        {/* 헤더 */}
+        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-slate-100">
+          <div>
+            <p className="text-base font-bold text-slate-800">💳 결제선생 발송 확인</p>
+            <p className="text-xs text-slate-400 mt-0.5">회차와 금액을 확인 후 발송하세요.</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1">
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* 회차 선택 */}
+        <div className="px-5 pt-4 pb-2">
+          <p className="text-xs text-slate-400 mb-2 font-medium">결제 회차 선택</p>
+          <div className="flex gap-2">
+            {SESSION_OPTIONS.map((s) => (
+              <button
+                key={s}
+                onClick={() => handleSessionChange(s)}
+                className={`flex-1 py-2.5 rounded-xl text-sm font-bold border-2 transition-colors ${
+                  selectedSessions === s
+                    ? "bg-indigo-600 text-white border-indigo-600"
+                    : "bg-white text-slate-500 border-slate-200 hover:border-indigo-300 hover:text-indigo-600"
+                }`}
+              >
+                {s}회
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 내용 */}
+        <div className="px-5 py-2">
+          <KyuljePreviewRow label="받는 사람">
+            <span className="font-bold text-slate-900">{formattedName}</span>
+          </KyuljePreviewRow>
+          <KyuljePreviewRow label="연락처">{student.phone || "—"}</KyuljePreviewRow>
+          <KyuljePreviewRow label="품목">1:1 개인레슨 {selectedSessions}회</KyuljePreviewRow>
+          <KyuljePreviewRow label="청구 금액">
+            <div className="flex items-center gap-1">
+              <input
+                type="text"
+                inputMode="numeric"
+                value={priceInput ? Number(priceInput).toLocaleString() : ""}
+                onChange={(e) => setPriceInput(e.target.value.replace(/[^0-9]/g, ""))}
+                className="w-28 text-right border border-indigo-300 rounded-lg px-2 py-1 text-sm font-bold text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              />
+              <span className="text-slate-500 text-sm">원</span>
+            </div>
+          </KyuljePreviewRow>
+          <KyuljePreviewRow label="안내 메시지">
+            {note || <span className="text-slate-300">—</span>}
+          </KyuljePreviewRow>
+        </div>
+
+        {/* 버튼 */}
+        <div className="px-5 pb-5 pt-3 flex gap-2">
+          <button
+            onClick={onClose}
+            className="flex-1 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-600 font-bold hover:bg-slate-50 transition-colors"
+          >
+            취소
+          </button>
+          <button
+            onClick={() => onConfirm({ sessions: selectedSessions, price: finalPrice })}
+            disabled={sending || finalPrice <= 0}
+            className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white rounded-xl text-sm font-bold transition-colors"
+          >
+            {sending ? "발송 중..." : `✓ ${finalPrice.toLocaleString()}원 발송`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // BulkMessageModal - 일괄 메시지 발송 (기존 로직 유지, generatePaymentMessage는 prop으로 전달)
 // -----------------------------------------------------------------
 export const BulkMessageModal = ({
@@ -167,7 +276,7 @@ export const BulkMessageModal = ({
     }
   };
 
-  const handleSendAll = async (s) => {
+  const handleSendAll = async (s, kyuljeOverride = {}) => {
     const ch = sendChannels[s.id] || { sms: true, kyuljesaengnim: false };
     const channelArr = [];
     let kyuljesaengnimExtra = {};
@@ -187,7 +296,7 @@ export const BulkMessageModal = ({
     }
     if (ch.kyuljesaengnim) {
       try {
-        const result = await sendKyuljesaengnim(s);
+        const result = await sendKyuljesaengnim(s, kyuljeOverride);
         channelArr.push("결제선생");
         kyuljesaengnimExtra = {
           billId: result.billId,
@@ -411,6 +520,19 @@ export const BulkMessageModal = ({
           </button>
         </div>
       </div>
+      {kyuljePreviewStudent && (
+        <KyuljePreviewModal
+          student={kyuljePreviewStudent}
+          sending={kyuljeSending}
+          onClose={() => setKyuljePreviewStudent(null)}
+          onConfirm={async (override) => {
+            setKyuljeSending(true);
+            await handleSendAll(kyuljePreviewStudent, override);
+            setKyuljeSending(false);
+            setKyuljePreviewStudent(null);
+          }}
+        />
+      )}
     </div>
   );
 };
@@ -455,6 +577,25 @@ export const PaymentView = ({
   const [msgStudent, setMsgStudent] = useState(null);
   const [msgSending, setMsgSending] = useState(false);
   const [msgStyle, setMsgStyle] = useState("detailed");
+
+  // ── 결제선생 미리보기 (공통) ───────────────────────────────────
+  const [kyuljePreviewStudent, setKyuljePreviewStudent] = useState(null);
+  const [kyuljeSending, setKyuljeSending] = useState(false);
+
+  const handleKyuljeSend = async (student, override = {}) => {
+    try {
+      const result = await sendKyuljesaengnim(student, override);
+      if (onSaveMessageLog)
+        await onSaveMessageLog({
+          studentId: student.id, studentName: student.name, phone: student.phone || "",
+          sentAt: toLocalDateStr(), channels: ["결제선생"], messageType: "결제안내",
+          sentBy: user?.name || "원장", billId: result.billId, shortURL: result.shortURL,
+        });
+      showToast(`${student.name} 결제선생 발송 완료`, "success");
+    } catch (e) {
+      showToast("결제선생 발송 실패: " + e.message, "error");
+    }
+  };
 
   // ── 결제확인(confirm) 탭 상태 ─────────────────────────────────
   const [paymentMethods, setPaymentMethods] = useState({});
@@ -2259,6 +2400,19 @@ export const PaymentView = ({
           </div>
         )}
       </div>
+      {kyuljePreviewStudent && (
+        <KyuljePreviewModal
+          student={kyuljePreviewStudent}
+          sending={kyuljeSending}
+          onClose={() => setKyuljePreviewStudent(null)}
+          onConfirm={async (override) => {
+            setKyuljeSending(true);
+            await handleKyuljeSend(kyuljePreviewStudent, override);
+            setKyuljeSending(false);
+            setKyuljePreviewStudent(null);
+          }}
+        />
+      )}
     </div>
   );
 };
