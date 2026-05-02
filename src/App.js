@@ -2039,28 +2039,28 @@ const DashboardView = ({
   }, [students, consultations, user]);
 
   // 오늘 회차 완료 학생 (관리자 — 결제 안내 자동화)
+  // 결제 이력 기반 잔여 회차로 판단 (단순 모듈로 방식 대신)
   const todayCycleComplete = useMemo(() => {
     if (user.role !== "admin") return [];
     const todayStr = toLocalDateStr();
     return students.filter((s) => {
       if (s.status !== "재원") return false;
       const history = s.attendanceHistory || [];
-      const todayRecord = history.find(
+      const hasTodayRecord = history.some(
         (h) => h.date === todayStr && (h.status === "present" || h.status === "canceled")
       );
-      if (!todayRecord) return false;
-      const total = getEffectiveSessions(s);
-      const sessions = history
+      if (!hasTodayRecord) return false;
+
+      const totalAttended = history
         .filter((h) => h.status === "present" || h.status === "canceled")
-        .sort((a, b) => a.date.localeCompare(b.date));
-      let cumulative = 0;
-      for (const h of sessions) {
-        const cnt = h.status === "canceled" ? 1 : (h.count || 1);
-        cumulative += cnt;
-        if (h.date === todayStr) return cumulative % total === 0;
-        if (h.date > todayStr) break;
-      }
-      return false;
+        .reduce((sum, h) => sum + (h.status === "canceled" ? 1 : (h.count || 1)), 0);
+      const sortedPays = [...(s.paymentHistory || [])].sort((a, b) => a.date.localeCompare(b.date));
+      const scheduleBasedUnit = Object.keys(s.schedules || {}).length >= 2 ? 8 : 4;
+      const legacyFallback = sortedPays.find((p) => p.totalSessions > 0)?.totalSessions || scheduleBasedUnit;
+      const totalPaidCapacity = sortedPays.reduce(
+        (sum, p) => sum + (p.totalSessions || legacyFallback), 0
+      );
+      return totalPaidCapacity - totalAttended <= 0;
     });
   }, [students, user]);
 
