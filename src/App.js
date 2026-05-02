@@ -9387,36 +9387,6 @@ const StudentManagementModal = ({
                   ))}
                 </div>
 
-                {/* 주 수업 빈도 선택 (요일 수에 따라 자동 반영, 수동 조정 가능) */}
-                <div className="mt-4">
-                  <label className="text-xs font-bold text-slate-500 mb-2 block">
-                    주 수업 빈도
-                  </label>
-                  <div className="flex gap-2">
-                    {[1, 2].map((freq) => (
-                      <button
-                        key={freq}
-                        type="button"
-                        onClick={() =>
-                          setFormData((prev) => ({
-                            ...prev,
-                            weeklyFrequency: freq,
-                          }))
-                        }
-                        className={`flex-1 py-2 rounded-xl text-sm font-bold border transition-all ${
-                          (formData.weeklyFrequency || 1) === freq
-                            ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
-                            : "bg-white text-slate-500 border-slate-300 hover:border-indigo-400"
-                        }`}
-                      >
-                        주{freq}회
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-[11px] text-slate-400 mt-1.5">
-                    * 요일을 2개 이상 입력하면 자동으로 주2회로 변경됩니다.
-                  </p>
-                </div>
               </div>
 
               <div className="space-y-1">
