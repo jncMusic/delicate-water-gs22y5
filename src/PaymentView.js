@@ -253,6 +253,8 @@ export const BulkMessageModal = ({
   };
 
   const [sending, setSending] = useState({});
+  const [kyuljePreviewStudent, setKyuljePreviewStudent] = useState(null);
+  const [kyuljeSending, setKyuljeSending] = useState(false);
 
   const handleMarkSent = async (s, channels = ["sms"], extra = {}) => {
     if (sent[s.id]) return;
@@ -460,7 +462,11 @@ export const BulkMessageModal = ({
                     <Copy size={13} /> 복사
                   </button>
                   <button
-                    onClick={() => handleSendAll(activeStudent)}
+                    onClick={() => {
+                      const ch = sendChannels[activeStudent.id] || { sms: true, kyuljesaengnim: false };
+                      if (ch.kyuljesaengnim) setKyuljePreviewStudent(activeStudent);
+                      else handleSendAll(activeStudent);
+                    }}
                     disabled={!!sent[activeStudent.id] || !!sending[activeStudent.id]}
                     className={`px-3 py-1.5 text-xs rounded-lg font-bold flex items-center gap-1 transition-colors ${
                       sent[activeStudent.id]
