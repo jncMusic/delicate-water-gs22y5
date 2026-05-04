@@ -744,6 +744,35 @@ export const PaymentView = ({
     return results.sort((a, b) => b.payment.date.localeCompare(a.payment.date));
   }, [students]);
 
+  // ── 최근 결제자 목록 (기간별) ─────────────────────────────────
+  const [recentPaidPeriod, setRecentPaidPeriod] = useState("week");
+  const recentPaidList = useMemo(() => {
+    const now = new Date();
+    const d = new Date(now);
+    if (recentPaidPeriod === "today") {
+      d.setDate(d.getDate());
+    } else if (recentPaidPeriod === "week") {
+      d.setDate(d.getDate() - 6);
+    } else {
+      d.setDate(d.getDate() - 29);
+    }
+    const startStr = toLocalDateStr(d);
+    const todayStr = toLocalDateStr();
+    const results = [];
+    students.filter((s) => s.status === "재원").forEach((s) => {
+      (s.paymentHistory || []).forEach((p) => {
+        if (p.date >= startStr && p.date <= todayStr) {
+          // 결제일 이전 발송 이력 확인
+          const notifLog = (messageLogs || [])
+            .filter((l) => l.studentId === s.id && l.sentAt <= p.date)
+            .sort((a, b) => b.sentAt.localeCompare(a.sentAt))[0] || null;
+          results.push({ student: s, payment: p, notifLog });
+        }
+      });
+    });
+    return results.sort((a, b) => b.payment.date.localeCompare(a.payment.date) || a.student.name.localeCompare(b.student.name));
+  }, [students, messageLogs, recentPaidPeriod]);
+
   // ── 1주일 이내 결제 안내 대상 (수납현황 탭) ──────────────────
   const weeklyDueList = useMemo(() => {
     const todayStr = toLocalDateStr();
@@ -1700,47 +1729,84 @@ export const PaymentView = ({
             <div className="border rounded-xl overflow-hidden flex flex-col">
               <div className="bg-emerald-50 px-4 py-2.5 flex items-center gap-2 border-b shrink-0">
                 <CheckCircle size={15} className="text-emerald-600" />
-                <span className="font-bold text-emerald-700 text-sm">오늘 결제 완료</span>
-                <span className="bg-emerald-200 text-emerald-800 text-xs px-1.5 py-0.5 rounded-full">{todayPaidList.length}건</span>
+                <span className="font-bold text-emerald-700 text-sm">최근 결제자</span>
+                <span className="bg-emerald-200 text-emerald-800 text-xs px-1.5 py-0.5 rounded-full">{recentPaidList.length}건</span>
+                <div className="ml-auto flex rounded-lg overflow-hidden border border-emerald-200 text-xs">
+                  {[["today", "오늘"], ["week", "7일"], ["month", "30일"]].map(([val, label]) => (
+                    <button
+                      key={val}
+                      onClick={() => setRecentPaidPeriod(val)}
+                      className={`px-2.5 py-1 font-medium transition-colors ${recentPaidPeriod === val ? "bg-emerald-600 text-white" : "bg-white text-emerald-700 hover:bg-emerald-50"}`}
+                    >{label}</button>
+                  ))}
+                </div>
               </div>
-              {todayPaidList.length === 0 ? (
-                <div className="py-8 text-center text-slate-400 text-sm">오늘 결제 완료된 내역이 없습니다.</div>
+              {recentPaidList.length === 0 ? (
+                <div className="py-8 text-center text-slate-400 text-sm">해당 기간 결제 내역이 없습니다.</div>
               ) : (
-                <div className="overflow-auto max-h-60">
-                <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-slate-50 border-b text-xs text-slate-400 uppercase">
-                    <tr>
-                      <th className="py-2.5 px-4 text-left">이름 / 과목</th>
-                      <th className="py-2.5 px-4 text-left">강사</th>
-                      <th className="py-2.5 px-4 text-right">금액</th>
-                      <th className="py-2.5 px-4 text-center">결제방법</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white">
-                    {todayPaidList.map(({ student: s, payment: p }, i) => (
-                      <tr key={`${s.id}-${i}`} className="hover:bg-emerald-50 transition-colors">
-                        <td className="py-2.5 px-4">
-                          <div className="font-medium">{s.name}</div>
-                          <div className="text-xs text-slate-400">{s.subject}</div>
-                        </td>
-                        <td className="py-2.5 px-4 text-slate-600">{s.teacher || "-"}</td>
-                        <td className="py-2.5 px-4 text-right font-bold text-indigo-600">
-                          {Number(p.amount || 0).toLocaleString()}원
-                        </td>
-                        <td className="py-2.5 px-4 text-center">
-                          {p.method ? (
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                              p.method === "결제선생" ? "bg-blue-100 text-blue-700" :
-                              p.method === "현장" ? "bg-indigo-100 text-indigo-700" :
-                              p.method === "계좌이체" ? "bg-emerald-100 text-emerald-700" :
-                              "bg-slate-100 text-slate-600"
-                            }`}>{p.method}</span>
-                          ) : <span className="text-slate-300">-</span>}
-                        </td>
+                <div className="overflow-auto max-h-72">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-slate-50 border-b text-xs text-slate-400 uppercase">
+                      <tr>
+                        <th className="py-2.5 px-4 text-left">이름 / 과목</th>
+                        <th className="py-2.5 px-4 text-left">강사</th>
+                        <th className="py-2.5 px-4 text-center">결제일</th>
+                        <th className="py-2.5 px-4 text-right">금액</th>
+                        <th className="py-2.5 px-4 text-center">방법</th>
+                        <th className="py-2.5 px-4 text-center">안내</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {recentPaidList.map(({ student: s, payment: p, notifLog }, i) => {
+                        const methodColor = p.method === "결제선생" ? "bg-blue-100 text-blue-700" :
+                          p.method === "현장" ? "bg-indigo-100 text-indigo-700" :
+                          p.method === "계좌이체" ? "bg-emerald-100 text-emerald-700" :
+                          "bg-slate-100 text-slate-600";
+                        const notifCh = notifLog?.channels || [];
+                        return (
+                          <tr key={`${s.id}-${p.date}-${i}`} className="hover:bg-emerald-50 transition-colors cursor-pointer" onClick={() => onOpenStudentDetail?.(s)}>
+                            <td className="py-2.5 px-4">
+                              <div className="font-medium">{s.name}</div>
+                              <div className="text-xs text-slate-400">{s.subject}</div>
+                            </td>
+                            <td className="py-2.5 px-4 text-slate-600 text-xs">{s.teacher || "-"}</td>
+                            <td className="py-2.5 px-4 text-center text-xs text-slate-500">
+                              {p.date.slice(5).replace("-", "/")}
+                            </td>
+                            <td className="py-2.5 px-4 text-right font-bold text-indigo-600">
+                              {Number(p.amount || 0).toLocaleString()}원
+                            </td>
+                            <td className="py-2.5 px-4 text-center">
+                              {p.method ? (
+                                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${methodColor}`}>{p.method}</span>
+                              ) : <span className="text-slate-300">-</span>}
+                            </td>
+                            <td className="py-2.5 px-4 text-center text-xs">
+                              {notifLog ? (
+                                notifCh.includes("결제선생") ? (
+                                  <span className="text-blue-600 font-medium">💳 발송</span>
+                                ) : notifCh.includes("sms") ? (
+                                  <span className="text-amber-600 font-medium">📱 문자</span>
+                                ) : (
+                                  <span className="text-slate-400">발송</span>
+                                )
+                              ) : (
+                                <span className="text-slate-300">-</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {recentPaidList.length > 0 && (
+                <div className="px-4 py-2 bg-slate-50 border-t text-xs text-slate-500 flex justify-between">
+                  <span>합계 {recentPaidList.length}건</span>
+                  <span className="font-bold text-indigo-700">
+                    {recentPaidList.reduce((sum, { payment: p }) => sum + Number(p.amount || 0), 0).toLocaleString()}원
+                  </span>
                 </div>
               )}
             </div>
