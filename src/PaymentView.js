@@ -1225,16 +1225,9 @@ export const PaymentView = ({
                 </button>
               )}
               <button
-                onClick={async () => {
-                  try {
-                    const result = await sendKyuljesaengnim(msgStudent);
-                    if (onSaveMessageLog)
-                      await onSaveMessageLog({ studentId: msgStudent.id, studentName: msgStudent.name, phone: msgStudent.phone || "", sentAt: new Date().toISOString().split("T")[0], channels: ["결제선생"], messageType: "결제안내", sentBy: user?.name || "원장", billId: result.billId, shortURL: result.shortURL });
-                    showToast(`${msgStudent.name} 결제선생 발송 완료`, "success");
-                    setShowMsgPreview(false);
-                  } catch (e) {
-                    showToast("결제선생 발송 실패: " + e.message, "error");
-                  }
+                onClick={() => {
+                  setShowMsgPreview(false);
+                  setKyuljePreviewStudent(msgStudent);
                 }}
                 disabled={msgSending}
                 className="px-6 py-2.5 rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700 shadow-lg flex items-center disabled:opacity-60"
@@ -1533,7 +1526,7 @@ export const PaymentView = ({
                                 <MessageSquareText size={12} className="inline mr-0.5" />안내
                               </button>
                               <button
-                                onClick={(e) => { e.stopPropagation(); sendKyuljesaengnim(s).then(async (result) => { if (onSaveMessageLog) await onSaveMessageLog({ studentId: s.id, studentName: s.name, phone: s.phone || "", sentAt: toLocalDateStr(), channels: ["결제선생"], messageType: "결제안내", sentBy: user?.name || "원장", billId: result.billId, shortURL: result.shortURL }); showToast(`${s.name} 결제선생 발송 완료`, "success"); }).catch(err => showToast("결제선생 발송 실패: " + err.message, "error")); }}
+                                onClick={(e) => { e.stopPropagation(); setKyuljePreviewStudent(s); }}
                                 className="px-2 py-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 font-medium"
                               >
                                 💳
@@ -1638,7 +1631,7 @@ export const PaymentView = ({
                                   <MessageSquareText size={12} className="inline mr-0.5" />안내
                                 </button>
                                 <button
-                                  onClick={(e) => { e.stopPropagation(); sendKyuljesaengnim(s).then(async (result) => { if (onSaveMessageLog) await onSaveMessageLog({ studentId: s.id, studentName: s.name, phone: s.phone || "", sentAt: toLocalDateStr(), channels: ["결제선생"], messageType: "결제안내", sentBy: user?.name || "원장", billId: result.billId, shortURL: result.shortURL }); showToast(`${s.name} 결제선생 발송 완료`, "success"); }).catch(err => showToast("결제선생 발송 실패: " + err.message, "error")); }}
+                                  onClick={(e) => { e.stopPropagation(); setKyuljePreviewStudent(s); }}
                                   className="px-2 py-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 font-medium"
                                 >
                                   💳
