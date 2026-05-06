@@ -9703,8 +9703,9 @@ h1,h2 { text-align:center; letter-spacing:6px; margin-bottom:14px; }
 h1 { font-size:17pt; } h2 { font-size:15pt; }
 .date-line { text-align:right; margin-bottom:12px; font-size:10pt; }
 table { width:100%; border-collapse:collapse; }
-td,th { border:1px solid #666; padding:7px 10px; font-size:10.5pt; vertical-align:middle; }
-.lbl { background:#f0f0f0; font-weight:bold; text-align:center; white-space:nowrap; width:110px; }
+td,th { border:1px solid #666; padding:11px 12px; font-size:12pt; vertical-align:middle; }
+.lbl { background:#f0f0f0; font-weight:bold; text-align:center; white-space:nowrap; }
+.val { text-align:center; }
 .fixed { background:#fafafa; font-size:10pt; line-height:1.7; }
 .sig { text-align:center; margin-top:10px; }
 .sec { font-weight:bold; font-size:11pt; margin:14px 0 6px; }
@@ -9714,16 +9715,17 @@ td,th { border:1px solid #666; padding:7px 10px; font-size:10.5pt; vertical-alig
 <h1>J&amp;C  Music  Academy  등록원서</h1>
 <div class="date-line">20__ 년 __ 월 __ 일</div>
 <table>
-<tr><td class="lbl">성 명</td><td>${s.name||""}</td><td class="lbl" style="width:70px">성 별</td><td style="width:90px">&nbsp;</td></tr>
-<tr><td class="lbl">생년월일</td><td>&nbsp;</td><td class="lbl">연 락 처</td><td>${s.phone||""}</td></tr>
-<tr><td class="lbl">주 소</td><td colspan="3">&nbsp;</td></tr>
-<tr><td class="lbl">학교 / 소속</td><td colspan="3">${schoolGrade||"&nbsp;"}</td></tr>
-<tr><td class="lbl">수 강 과 목</td><td colspan="3">${s.subject||"&nbsp;"}</td></tr>
-<tr><td class="lbl">배우는 목적</td><td colspan="3">취미</td></tr>
-<tr><td class="lbl">첫 수업일자</td><td>${s.registrationDate||""}</td><td class="lbl">담당 선생님</td><td>${s.teacher ? s.teacher+" 선생님" : ""}</td></tr>
-<tr><td class="lbl">수업 요일<br>및 시간</td><td colspan="3">${scheduleStr||"&nbsp;"}</td></tr>
-<tr><td class="lbl">소개 / 경로</td><td colspan="3">&nbsp;</td></tr>
-<tr><td class="lbl">결제방법 /<br>결제일 / 금액</td><td colspan="3">${fee ? "수강료: "+fee : "&nbsp;"}</td></tr>
+<colgroup><col style="width:16%"><col style="width:34%"><col style="width:16%"><col style="width:34%"></colgroup>
+<tr><td class="lbl">성 명</td><td class="val">${s.name||""}</td><td class="lbl">성 별</td><td class="val">&nbsp;</td></tr>
+<tr><td class="lbl">생년월일</td><td class="val">&nbsp;</td><td class="lbl">연 락 처</td><td class="val">${s.phone||""}</td></tr>
+<tr><td class="lbl">주 소</td><td colspan="3" class="val">&nbsp;</td></tr>
+<tr><td class="lbl">학교 / 소속</td><td colspan="3" class="val">${schoolGrade||"&nbsp;"}</td></tr>
+<tr><td class="lbl">수 강 과 목</td><td colspan="3" class="val">${s.subject||"&nbsp;"}</td></tr>
+<tr><td class="lbl">배우는 목적</td><td colspan="3" class="val">취미</td></tr>
+<tr><td class="lbl">등록일</td><td class="val">${s.registrationDate||""}</td><td class="lbl">담당 선생님</td><td class="val">${s.teacher ? s.teacher+" 선생님" : ""}</td></tr>
+<tr><td class="lbl">수업 요일<br>및 시간</td><td colspan="3" class="val">${scheduleStr||"&nbsp;"}</td></tr>
+<tr><td class="lbl">소개 / 경로</td><td colspan="3" class="val">&nbsp;</td></tr>
+<tr><td class="lbl">결제방법 /<br>결제일 / 금액</td><td colspan="3" class="val">${fee ? "수강료: "+fee : "&nbsp;"}</td></tr>
 <tr><td class="lbl">노쇼 및<br>당일취소 안내</td><td colspan="3" class="fixed">
 본 원은 당일취소 및 노쇼에 대해 1회분 수업이 차감됩니다.<br>
 단, 호흡기질환/경조사 등에 대해서는 차감되지 않습니다.<br>
