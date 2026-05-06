@@ -9682,6 +9682,109 @@ const StudentManagementModal = ({
               원생 삭제
             </button>
           )}
+          {student?.id && (
+            <button
+              onClick={() => {
+                const s = formData;
+                const scheduleStr = Object.entries(s.schedules || {})
+                  .map(([day, time]) => `${day}요일 ${time || ""}`)
+                  .join(",  ");
+                const fee = s.tuitionFee ? Number(s.tuitionFee).toLocaleString() + "원" : "";
+                const schoolGrade = [s.school, s.grade && s.grade !== "성인" ? s.grade : ""].filter(Boolean).join(" ");
+                const html = `<!DOCTYPE html>
+<html lang="ko"><head><meta charset="UTF-8"><title>J&C 등록서류</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:"Malgun Gothic","맑은 고딕",sans-serif; font-size:11pt; color:#111; }
+@page { size:A4; margin:18mm 16mm; }
+.page { page-break-after:always; }
+.page:last-child { page-break-after:avoid; }
+h1,h2 { text-align:center; letter-spacing:6px; margin-bottom:14px; }
+h1 { font-size:17pt; } h2 { font-size:15pt; }
+.date-line { text-align:right; margin-bottom:12px; font-size:10pt; }
+table { width:100%; border-collapse:collapse; }
+td,th { border:1px solid #666; padding:7px 10px; font-size:10.5pt; vertical-align:middle; }
+.lbl { background:#f0f0f0; font-weight:bold; text-align:center; white-space:nowrap; width:110px; }
+.fixed { background:#fafafa; font-size:10pt; line-height:1.7; }
+.sig { text-align:center; margin-top:10px; }
+.sec { font-weight:bold; font-size:11pt; margin:14px 0 6px; }
+.sub { font-size:9.5pt; font-weight:normal; }
+</style></head><body>
+<div class="page">
+<h1>J&amp;C  Music  Academy  등록원서</h1>
+<div class="date-line">20__ 년 __ 월 __ 일</div>
+<table>
+<tr><td class="lbl">성 명</td><td>${s.name||""}</td><td class="lbl" style="width:70px">성 별</td><td style="width:90px">&nbsp;</td></tr>
+<tr><td class="lbl">생년월일</td><td>&nbsp;</td><td class="lbl">연 락 처</td><td>${s.phone||""}</td></tr>
+<tr><td class="lbl">주 소</td><td colspan="3">&nbsp;</td></tr>
+<tr><td class="lbl">학교 / 소속</td><td colspan="3">${schoolGrade||"&nbsp;"}</td></tr>
+<tr><td class="lbl">수 강 과 목</td><td colspan="3">${s.subject||"&nbsp;"}</td></tr>
+<tr><td class="lbl">배우는 목적</td><td colspan="3">취미</td></tr>
+<tr><td class="lbl">첫 수업일자</td><td>${s.registrationDate||""}</td><td class="lbl">담당 선생님</td><td>${s.teacher ? s.teacher+" 선생님" : ""}</td></tr>
+<tr><td class="lbl">수업 요일<br>및 시간</td><td colspan="3">${scheduleStr||"&nbsp;"}</td></tr>
+<tr><td class="lbl">소개 / 경로</td><td colspan="3">&nbsp;</td></tr>
+<tr><td class="lbl">결제방법 /<br>결제일 / 금액</td><td colspan="3">${fee ? "수강료: "+fee : "&nbsp;"}</td></tr>
+<tr><td class="lbl">노쇼 및<br>당일취소 안내</td><td colspan="3" class="fixed">
+본 원은 당일취소 및 노쇼에 대해 1회분 수업이 차감됩니다.<br>
+단, 호흡기질환/경조사 등에 대해서는 차감되지 않습니다.<br>
+전날까지 연락 주시면 자유롭게 수업 변경이 가능합니다.
+<div class="sig">확인 : ________________ (인)</div></td></tr>
+<tr><td class="lbl">기타 특기사항</td><td colspan="3" style="height:44px">&nbsp;</td></tr>
+<tr><td class="lbl">개인정보<br>이용 동의</td><td colspan="3" class="fixed">
+본 학원의 원비 결제와 원활한 수업 진행을 위해 학생의 연락처와 성명 등 개인정보를 활용하는데 동의합니다.
+<div class="sig" style="margin-top:10px">동의 (　) &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 작성자 : ________________ (인)</div></td></tr>
+</table>
+</div>
+<div class="page">
+<h2>J&amp;C  Music  Academy  입학 안내문</h2>
+<div class="sec">1. 환불 규정 안내 &nbsp;<span class="sub">(학원법 시행령 제18조 3항에 의거)</span></div>
+<table>
+<tr><th class="lbl">구 분</th><th class="lbl">환불 금액</th></tr>
+<tr><td class="lbl">첫 수업 전 환불</td><td style="text-align:center">100% 환불</td></tr>
+<tr><td class="lbl">1/3 경과 전 환불</td><td style="text-align:center">납부 수강료 2/3 해당 금액</td></tr>
+<tr><td class="lbl">1/2 경과 전 환불</td><td style="text-align:center">납부 수강료 1/2 해당 금액</td></tr>
+<tr><td class="lbl">1/2 경과 후 환불</td><td style="text-align:center">환불 불가</td></tr>
+</table>
+<p style="font-size:9.5pt;margin-top:3px">※ 환불정산: 주 1회(4회 기준) 횟수 기준으로 적용</p>
+<div class="sec">2. 수강 안내</div>
+<table>
+<tr><td class="lbl">수업 결제 안내</td><td>결제는 4회차 종료 후, 다음 1회차 수업 시작 전까지 완료 부탁드립니다.<br><span style="font-size:9.5pt">· 수강료 2회 미납 시 3회차 수업 준비가 어려울 수 있습니다.</span></td></tr>
+<tr><td class="lbl">등록 기간</td><td>4회차 단위로 운영되며, 등록 기간은 별도로 안내드립니다.</td></tr>
+<tr><td class="lbl">노쇼 · 당일취소</td><td>당일취소 및 노쇼는 1회분 수업이 차감됩니다.<br>공휴일 및 기타 학원 사정으로 수업이 진행되지 않는 경우 회차 차감 없음.<br><span style="font-size:9.5pt">전날까지 연락 시 자유롭게 수업 변경 가능합니다.</span></td></tr>
+<tr><td class="lbl">가족 할인</td><td>두 번째 과목 등록 시 해당 과목 수강료에서 30,000원 할인<br><span style="font-size:9.5pt">(1인 2과목 또는 가족 구성원 모두 동일 적용)</span></td></tr>
+</table>
+<div class="sec">3. 결제 안내</div>
+<table>
+<tr><td class="lbl">수 강 료</td><td>등록 시 안내드린 금액 기준${fee ? " &nbsp;·&nbsp; <b>"+fee+"</b>" : ""} &nbsp;·&nbsp; 과목 추가 시 30,000원 할인 적용</td></tr>
+<tr><td class="lbl" style="vertical-align:top">결제 방법</td><td>
+· 방문 결제 &nbsp;&nbsp;: 카드 / 현금<br>
+· 계좌이체 &nbsp;&nbsp;: 하나은행 125-91025-766307 &nbsp; 강열혁 (제이앤씨음악학원)<br>
+· 제로페이 &nbsp;&nbsp;: 방문 시 이용 가능<br>
+· 온라인 결제 : 카드 결제 희망 시 담당 선생님께 문의 — 결제선생(카카오톡 페이지) 링크 발송
+</td></tr>
+</table>
+<div class="sec">4. 학원 안내</div>
+<table>
+<tr><td class="lbl">위 치</td><td>서울 양천구 목동서로 35, 목동프라자 3층</td></tr>
+<tr><td class="lbl">전 화</td><td>010-4028-9803</td></tr>
+<tr><td class="lbl">홈페이지</td><td>www.jncmusic.kr</td></tr>
+<tr><td class="lbl">운영 시간</td><td>평일(월~금) 10:30 ~ 22:00 &nbsp;·&nbsp; 주말(토·일) 09:00 ~ 22:00</td></tr>
+</table>
+<p style="text-align:center;margin-top:20px;font-size:10pt">※ 중요사항은 꼼꼼히 읽어 주세요. 감사합니다.</p>
+<p style="text-align:right;margin-top:8px;font-weight:bold;font-size:11pt">J&amp;C Music Academy</p>
+</div>
+</body></html>`;
+                const win = window.open("", "_blank", "width=820,height=1100");
+                if (!win) { alert("팝업이 차단되었습니다. 팝업 허용 후 다시 시도해주세요."); return; }
+                win.document.write(html);
+                win.document.close();
+                win.onload = () => win.print();
+              }}
+              className="px-5 py-2.5 rounded-xl border border-slate-300 font-bold text-slate-600 hover:bg-slate-100 transition-colors flex items-center gap-2"
+            >
+              <Printer size={18} /> 등록서류 인쇄
+            </button>
+          )}
           <button
             onClick={onClose}
             className="px-6 py-3 text-slate-500 font-bold hover:bg-slate-100 rounded-xl transition-colors"
