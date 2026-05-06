@@ -9690,7 +9690,9 @@ const StudentManagementModal = ({
                   .map(([day, time]) => `${day}요일 ${time || ""}`)
                   .join(",  ");
                 const scheduleDays = Object.keys(s.schedules || {}).join("·");
-                const teacherSchedule = [s.teacher ? s.teacher + " 선생님" : "", scheduleDays ? scheduleDays + "요일 출강" : ""].filter(Boolean).join(" / ");
+                const assignedTeacher = teachers?.find(t => t.name === s.teacher);
+                const teacherDays = assignedTeacher?.days?.length ? assignedTeacher.days.join("·") : scheduleDays;
+                const teacherSchedule = [s.teacher ? s.teacher + " 선생님" : "", teacherDays ? teacherDays + "요일 출강" : ""].filter(Boolean).join(" / ");
                 const fee = s.tuitionFee ? Number(s.tuitionFee).toLocaleString() + "원" : "";
                 const schoolGrade = [s.school, s.grade && s.grade !== "성인" ? s.grade : ""].filter(Boolean).join(" ");
                 const html = `<!DOCTYPE html>
