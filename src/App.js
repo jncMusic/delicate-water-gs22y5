@@ -13725,16 +13725,33 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
                     </td>
                     {SHEET_DAYS.map((day) => {
                       const lessons = getCell(teacher.name, day);
+                      const items = [];
+                      lessons.forEach((l, i) => {
+                        if (i > 0) {
+                          const prevEnd = lessons[i - 1].min + LESSON_MIN;
+                          const gap = l.min - prevEnd;
+                          if (gap >= 45) {
+                            const fmt = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+                            items.push(
+                              <div key={`gap-${i}`} className="flex items-center gap-1 my-0.5 px-1 py-0.5 rounded bg-emerald-50 border border-emerald-200 whitespace-nowrap">
+                                <span className="text-emerald-600 text-[9px] font-bold">▸ 신규배정 가능</span>
+                                <span className="text-emerald-500 text-[9px] tabular-nums">{fmt(prevEnd)}~{fmt(l.min)}</span>
+                              </div>
+                            );
+                          }
+                        }
+                        items.push(
+                          <div key={i} className="flex items-baseline gap-1 py-0.5 whitespace-nowrap">
+                            <span className="text-slate-400 tabular-nums text-[10px]">
+                              {String(Math.floor(l.min / 60)).padStart(2, "0")}:{String(l.min % 60).padStart(2, "0")}
+                            </span>
+                            <span className="font-medium text-slate-800">{l.name}</span>
+                          </div>
+                        );
+                      });
                       return (
                         <td key={day} className="border border-slate-300 px-2 py-1.5 align-top min-w-[90px]">
-                          {lessons.map((l, i) => (
-                            <div key={i} className="flex items-baseline gap-1 py-0.5 whitespace-nowrap">
-                              <span className="text-slate-400 tabular-nums text-[10px]">
-                                {String(Math.floor(l.min / 60)).padStart(2, "0")}:{String(l.min % 60).padStart(2, "0")}
-                              </span>
-                              <span className="font-medium text-slate-800">{l.name}</span>
-                            </div>
-                          ))}
+                          {items}
                         </td>
                       );
                     })}
