@@ -9691,7 +9691,10 @@ const StudentManagementModal = ({
                   .join(",  ");
                 const scheduleDays = Object.keys(s.schedules || {}).join("·");
                 const assignedTeacher = teachers?.find(t => t.name === s.teacher);
-                const teacherDays = assignedTeacher?.days?.length ? assignedTeacher.days.join("·") : scheduleDays;
+                const DAY_ID_TO_KR = {1:"월",2:"화",3:"수",4:"목",5:"금",6:"토",0:"일"};
+                const teacherDays = assignedTeacher?.days?.length
+                  ? assignedTeacher.days.map(d => DAY_ID_TO_KR[d] ?? d).join("·")
+                  : scheduleDays;
                 const teacherSchedule = [s.teacher ? s.teacher + " 선생님" : "", teacherDays ? teacherDays + "요일 출강" : ""].filter(Boolean).join(" / ");
                 const fee = s.tuitionFee ? Number(s.tuitionFee).toLocaleString() + "원" : "";
                 const schoolGrade = [s.school, s.grade && s.grade !== "성인" ? s.grade : ""].filter(Boolean).join(" ");
