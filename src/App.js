@@ -13188,22 +13188,24 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
 
         {/* 2열: 파트 필터 & 보기 모드 & 요일 선택 */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 bg-slate-50/50 p-2 rounded-xl border border-slate-100">
-          {/* 파트 선택 버튼들 */}
-          <div className="flex gap-1 overflow-x-auto max-w-full no-scrollbar pb-1 md:pb-0">
-            {PARTS.map((part) => (
-              <button
-                key={part.id}
-                onClick={() => setSelectedPart(part.id)}
-                className={`px-3 py-1.5 rounded-lg text-xs md:text-sm font-bold whitespace-nowrap transition-all border ${
-                  selectedPart === part.id
-                    ? "bg-indigo-600 text-white border-indigo-600 shadow-md"
-                    : "bg-white text-slate-500 border-slate-200 hover:bg-slate-100"
-                }`}
-              >
-                {part.label}
-              </button>
-            ))}
-          </div>
+          {/* 파트 선택 버튼들 (출강표 모드에서는 숨김) */}
+          {viewMode !== "sheet" && (
+            <div className="flex gap-1 overflow-x-auto max-w-full no-scrollbar pb-1 md:pb-0">
+              {PARTS.map((part) => (
+                <button
+                  key={part.id}
+                  onClick={() => setSelectedPart(part.id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs md:text-sm font-bold whitespace-nowrap transition-all border ${
+                    selectedPart === part.id
+                      ? "bg-indigo-600 text-white border-indigo-600 shadow-md"
+                      : "bg-white text-slate-500 border-slate-200 hover:bg-slate-100"
+                  }`}
+                >
+                  {part.label}
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="flex gap-2 w-full md:w-auto justify-end">
             {/* 보기 모드 (관리자: 출강표/요일, 강사: 오늘/주간) */}
@@ -13222,7 +13224,7 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
             </div>
 
             {/* 요일 선택 (관리자 or 강사 일간모드) */}
-            {(!isTeacherMode || (isTeacherMode && viewMode === "daily")) && (
+            {viewMode !== "sheet" && (!isTeacherMode || (isTeacherMode && viewMode === "daily")) && (
               <div className="flex bg-white border border-slate-200 p-1 rounded-lg overflow-x-auto max-w-[180px] md:max-w-none no-scrollbar">
                 {DAYS.map((day) => (
                   <button
@@ -13438,7 +13440,7 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
       </div>
       )}
 
-      {/* ── 출강표 뷰 ──────────────────────────────────────────── */}
+      {/* ── 출강표 뷰 (강사별 매트릭스 테이블) ──────────────────── */}
       {viewMode === "sheet" && !isTeacherMode && (() => {
         const SHEET_DAYS = ["월", "화", "수", "목", "금", "토", "일"];
         const toMin = (t) => {
@@ -13446,103 +13448,75 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
           const [h, m] = t.split(":").map(Number);
           return h * 60 + m;
         };
-        const toStr = (min) => `${Math.floor(min / 60)}:${String(min % 60).padStart(2, "0")}`;
 
+        // 파트 필터 없이 재원 학생이 있는 강사 전체
         const sheetTeachers = teachers.filter((t) =>
-          students.some((s) => {
-            if (s.teacher !== t.name || s.status !== "재원") return false;
-            if (selectedPart !== "전체" && getPartBySubject(s.subject || "") !== selectedPart) return false;
-            return SHEET_DAYS.some((d) => getLessonTime(s, d));
-          })
+          students.some((s) =>
+            s.teacher === t.name &&
+            s.status === "재원" &&
+            SHEET_DAYS.some((d) => getLessonTime(s, d))
+          )
         );
+
+        // 강사·요일별 수업 목록 (시간순)
+        const getCell = (teacherName, day) =>
+          students
+            .filter((s) => s.teacher === teacherName && s.status === "재원" && getLessonTime(s, day))
+            .map((s) => ({ name: s.name, min: toMin(getLessonTime(s, day)) }))
+            .filter((x) => !isNaN(x.min))
+            .sort((a, b) => a.min - b.min);
+
+        if (sheetTeachers.length === 0) {
+          return (
+            <div ref={printRef} className="flex-1 flex items-center justify-center text-slate-400 text-sm">
+              재원 학생이 배정된 강사가 없습니다.
+            </div>
+          );
+        }
 
         return (
           <div ref={printRef} className="flex-1 overflow-auto p-4 bg-white">
-            <div className="flex flex-col gap-8">
-              {sheetTeachers.map((teacher) => {
-                const teacherDays = SHEET_DAYS.filter((day) =>
-                  students.some((s) => {
-                    if (s.teacher !== teacher.name || s.status !== "재원") return false;
-                    if (selectedPart !== "전체" && getPartBySubject(s.subject || "") !== selectedPart) return false;
-                    return !!getLessonTime(s, day);
-                  })
-                );
-                if (teacherDays.length === 0) return null;
-
-                const daySlots = {};
-                teacherDays.forEach((day) => {
-                  const lessons = students
-                    .filter((s) => {
-                      if (s.teacher !== teacher.name || s.status !== "재원") return false;
-                      if (selectedPart !== "전체" && getPartBySubject(s.subject || "") !== selectedPart) return false;
-                      return !!getLessonTime(s, day);
-                    })
-                    .map((s) => {
-                      const t = getLessonTime(s, day);
-                      return { name: s.name, min: toMin(t) };
-                    })
-                    .filter((x) => !isNaN(x.min))
-                    .sort((a, b) => a.min - b.min);
-
-                  if (lessons.length === 0) return;
-                  const earliest = lessons[0].min;
-                  const latest = lessons[lessons.length - 1].min;
-                  const slots = [];
-                  for (let t = earliest; t <= latest; t += 45) {
-                    const match = lessons.find((l) => l.min === t);
-                    slots.push({ startMin: t, endMin: t + 45, student: match || null });
-                  }
-                  daySlots[day] = slots;
-                });
-
-                const maxRows = Math.max(...Object.values(daySlots).map((s) => s.length));
-
-                return (
-                  <div key={teacher.name} className="border border-slate-300 rounded-lg overflow-hidden">
-                    <div className="bg-slate-100 px-4 py-2 border-b border-slate-300">
-                      <span className="font-bold text-slate-800 text-sm">{teacher.name} 선생님</span>
-                    </div>
-                    <table className="w-full text-xs border-collapse">
-                      <thead>
-                        <tr className="bg-slate-50">
-                          <th className="border border-slate-200 px-3 py-2 text-center font-bold text-slate-600 w-12">요일</th>
-                          {teacherDays.map((day) => (
-                            <th key={day} className="border border-slate-200 px-3 py-2 text-center font-bold text-slate-700 min-w-[140px]">{day}</th>
+            <table className="w-full text-xs border-collapse min-w-[600px]">
+              <thead>
+                <tr className="bg-slate-100">
+                  <th className="border border-slate-300 px-3 py-2.5 text-center font-bold text-slate-600 w-24 text-sm">강사</th>
+                  {SHEET_DAYS.map((day) => (
+                    <th
+                      key={day}
+                      className={`border border-slate-300 px-3 py-2.5 text-center font-bold text-sm ${
+                        day === "일" ? "text-rose-600" : day === "토" ? "text-blue-600" : "text-slate-700"
+                      }`}
+                    >
+                      {day}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {sheetTeachers.map((teacher, ti) => (
+                  <tr key={teacher.name} className={ti % 2 === 0 ? "bg-white" : "bg-slate-50/60"}>
+                    <td className="border border-slate-300 px-3 py-2 text-center font-bold text-slate-700 text-xs whitespace-nowrap align-middle bg-slate-50">
+                      {teacher.name} T
+                    </td>
+                    {SHEET_DAYS.map((day) => {
+                      const lessons = getCell(teacher.name, day);
+                      return (
+                        <td key={day} className="border border-slate-300 px-2 py-1.5 align-top min-w-[90px]">
+                          {lessons.map((l, i) => (
+                            <div key={i} className="flex items-baseline gap-1 py-0.5 whitespace-nowrap">
+                              <span className="text-slate-400 tabular-nums text-[10px]">
+                                {String(Math.floor(l.min / 60)).padStart(2, "0")}:{String(l.min % 60).padStart(2, "0")}
+                              </span>
+                              <span className="font-medium text-slate-800">{l.name}</span>
+                            </div>
                           ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {Array.from({ length: maxRows }).map((_, rowIdx) => (
-                          <tr key={rowIdx} className={rowIdx % 2 === 0 ? "bg-white" : "bg-slate-50/40"}>
-                            {rowIdx === Math.floor(maxRows / 2) ? (
-                              <td className="border border-slate-200 px-2 py-1.5 text-center text-slate-400 font-bold align-middle" rowSpan={1}>시간</td>
-                            ) : rowIdx === 0 ? (
-                              <td className="border border-slate-200 px-2 py-1.5 text-center" rowSpan={1}></td>
-                            ) : (
-                              <td className="border border-slate-200"></td>
-                            )}
-                            {teacherDays.map((day) => {
-                              const slot = daySlots[day]?.[rowIdx];
-                              if (!slot) return <td key={day} className="border border-slate-200 px-3 py-1.5"></td>;
-                              const timeLabel = `${toStr(slot.startMin)}-${toStr(slot.endMin)}`;
-                              return (
-                                <td key={day} className="border border-slate-200 px-3 py-1.5 whitespace-nowrap">
-                                  {slot.student ? (
-                                    <span className="text-slate-800">{timeLabel} <span className="font-medium">{slot.student.name}</span></span>
-                                  ) : (
-                                    <span className="text-slate-400">{timeLabel} <span className="text-slate-300">______</span></span>
-                                  )}
-                                </td>
-                              );
-                            })}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                );
-              })}
-            </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         );
       })()}
