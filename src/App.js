@@ -143,14 +143,14 @@ const PAYMINT_SEND_URL = process.env.REACT_APP_PAYMINT_API_URL || "https://jncmu
 // student: { id, name, phone, tuitionFee, subject, totalSessions, lastPaymentDate }
 const sendKyuljesaengnim = async (student) => {
   const sessions = getEffectiveSessions(student);
-  // 이름: [J&C]과목-이름 형식
   const formattedName = `[J&C]${student.subject || ""}-${student.name}`;
-  // 과정명: 1:1 개인레슨 N회 형식
   const formattedSubject = `1:1 개인레슨 ${sessions}회`;
-  // 안내 메시지: 최종 결제일 포함
-  const lastPayStr = student.lastPaymentDate
-    ? `최종 결제일: ${student.lastPaymentDate}`
-    : "";
+  // generatePaymentMessage와 동일하게 paymentHistory 기준으로 최종 결제일 계산
+  const allPayments = (student.paymentHistory || []).sort((a, b) => a.date.localeCompare(b.date));
+  const computedLastPayDate = allPayments.length > 0
+    ? allPayments[allPayments.length - 1].date
+    : (student.lastPaymentDate || "");
+  const lastPayStr = computedLastPayDate ? `최종 결제일: ${computedLastPayDate}` : "";
   const note = `${student.name} 학생의 ${student.subject || ""} 1:1 개인레슨 ${sessions}회분 ${Number(student.tuitionFee || 0).toLocaleString()}원 결제 안내입니다.${lastPayStr ? `\n${lastPayStr}` : ""}`;
   const res = await fetch(PAYMINT_SEND_URL, {
     method: "POST",
@@ -162,7 +162,7 @@ const sendKyuljesaengnim = async (student) => {
       price: String(student.tuitionFee || 0),
       subject: formattedSubject,
       totalSessions: sessions,
-      lastPaymentDate: student.lastPaymentDate || "",
+      lastPaymentDate: computedLastPayDate,
       note,
     }),
   });
