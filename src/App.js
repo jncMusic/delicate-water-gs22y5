@@ -13244,6 +13244,7 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
       </div>
 
       {/* 시간표 영역 (인쇄 대상) */}
+      {viewMode !== "sheet" && (
       <div
         className="flex-1 overflow-auto border rounded-xl bg-slate-50/50 relative print:overflow-visible print:bg-white print:border-none"
         ref={printRef}
@@ -13435,6 +13436,116 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
           </div>
         </div>
       </div>
+      )}
+
+      {/* ── 출강표 뷰 ──────────────────────────────────────────── */}
+      {viewMode === "sheet" && !isTeacherMode && (() => {
+        const SHEET_DAYS = ["월", "화", "수", "목", "금", "토", "일"];
+        const toMin = (t) => {
+          if (!t || !t.includes(":")) return NaN;
+          const [h, m] = t.split(":").map(Number);
+          return h * 60 + m;
+        };
+        const toStr = (min) => `${Math.floor(min / 60)}:${String(min % 60).padStart(2, "0")}`;
+
+        const sheetTeachers = teachers.filter((t) =>
+          students.some((s) => {
+            if (s.teacher !== t.name || s.status !== "재원") return false;
+            if (selectedPart !== "전체" && getPartBySubject(s.subject || "") !== selectedPart) return false;
+            return SHEET_DAYS.some((d) => getLessonTime(s, d));
+          })
+        );
+
+        return (
+          <div ref={printRef} className="flex-1 overflow-auto p-4 bg-white">
+            <div className="flex flex-col gap-8">
+              {sheetTeachers.map((teacher) => {
+                const teacherDays = SHEET_DAYS.filter((day) =>
+                  students.some((s) => {
+                    if (s.teacher !== teacher.name || s.status !== "재원") return false;
+                    if (selectedPart !== "전체" && getPartBySubject(s.subject || "") !== selectedPart) return false;
+                    return !!getLessonTime(s, day);
+                  })
+                );
+                if (teacherDays.length === 0) return null;
+
+                const daySlots = {};
+                teacherDays.forEach((day) => {
+                  const lessons = students
+                    .filter((s) => {
+                      if (s.teacher !== teacher.name || s.status !== "재원") return false;
+                      if (selectedPart !== "전체" && getPartBySubject(s.subject || "") !== selectedPart) return false;
+                      return !!getLessonTime(s, day);
+                    })
+                    .map((s) => {
+                      const t = getLessonTime(s, day);
+                      return { name: s.name, min: toMin(t) };
+                    })
+                    .filter((x) => !isNaN(x.min))
+                    .sort((a, b) => a.min - b.min);
+
+                  if (lessons.length === 0) return;
+                  const earliest = lessons[0].min;
+                  const latest = lessons[lessons.length - 1].min;
+                  const slots = [];
+                  for (let t = earliest; t <= latest; t += 45) {
+                    const match = lessons.find((l) => l.min === t);
+                    slots.push({ startMin: t, endMin: t + 45, student: match || null });
+                  }
+                  daySlots[day] = slots;
+                });
+
+                const maxRows = Math.max(...Object.values(daySlots).map((s) => s.length));
+
+                return (
+                  <div key={teacher.name} className="border border-slate-300 rounded-lg overflow-hidden">
+                    <div className="bg-slate-100 px-4 py-2 border-b border-slate-300">
+                      <span className="font-bold text-slate-800 text-sm">{teacher.name} 선생님</span>
+                    </div>
+                    <table className="w-full text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50">
+                          <th className="border border-slate-200 px-3 py-2 text-center font-bold text-slate-600 w-12">요일</th>
+                          {teacherDays.map((day) => (
+                            <th key={day} className="border border-slate-200 px-3 py-2 text-center font-bold text-slate-700 min-w-[140px]">{day}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Array.from({ length: maxRows }).map((_, rowIdx) => (
+                          <tr key={rowIdx} className={rowIdx % 2 === 0 ? "bg-white" : "bg-slate-50/40"}>
+                            {rowIdx === Math.floor(maxRows / 2) ? (
+                              <td className="border border-slate-200 px-2 py-1.5 text-center text-slate-400 font-bold align-middle" rowSpan={1}>시간</td>
+                            ) : rowIdx === 0 ? (
+                              <td className="border border-slate-200 px-2 py-1.5 text-center" rowSpan={1}></td>
+                            ) : (
+                              <td className="border border-slate-200"></td>
+                            )}
+                            {teacherDays.map((day) => {
+                              const slot = daySlots[day]?.[rowIdx];
+                              if (!slot) return <td key={day} className="border border-slate-200 px-3 py-1.5"></td>;
+                              const timeLabel = `${toStr(slot.startMin)}-${toStr(slot.endMin)}`;
+                              return (
+                                <td key={day} className="border border-slate-200 px-3 py-1.5 whitespace-nowrap">
+                                  {slot.student ? (
+                                    <span className="text-slate-800">{timeLabel} <span className="font-medium">{slot.student.name}</span></span>
+                                  ) : (
+                                    <span className="text-slate-400">{timeLabel} <span className="text-slate-300">______</span></span>
+                                  )}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 
@@ -13687,120 +13798,6 @@ const SubjectTimetableView = ({ students, teachers, showToast }) => {
           </p>
         </div>
       )}
-
-      {/* ── 출강표 뷰 ──────────────────────────────────────────── */}
-      {viewMode === "sheet" && !isTeacherMode && (() => {
-        const SHEET_DAYS = ["월", "화", "수", "목", "금", "토", "일"];
-        const toMin = (t) => {
-          if (!t || !t.includes(":")) return NaN;
-          const [h, m] = t.split(":").map(Number);
-          return h * 60 + m;
-        };
-        const toStr = (min) => `${Math.floor(min / 60)}:${String(min % 60).padStart(2, "0")}`;
-
-        // 파트 필터 적용 강사 목록
-        const sheetTeachers = teachers.filter((t) =>
-          students.some((s) => {
-            if (s.teacher !== t.name || s.status !== "재원") return false;
-            if (selectedPart !== "전체" && getPartBySubject(s.subject || "") !== selectedPart) return false;
-            return SHEET_DAYS.some((d) => getLessonTime(s, d));
-          })
-        );
-
-        return (
-          <div ref={printRef} className="flex-1 overflow-auto p-4 bg-white">
-            <div className="flex flex-col gap-8">
-              {sheetTeachers.map((teacher) => {
-                // 이 강사의 출강 요일 (학생 있는 요일만)
-                const teacherDays = SHEET_DAYS.filter((day) =>
-                  students.some((s) => {
-                    if (s.teacher !== teacher.name || s.status !== "재원") return false;
-                    if (selectedPart !== "전체" && getPartBySubject(s.subject || "") !== selectedPart) return false;
-                    return !!getLessonTime(s, day);
-                  })
-                );
-                if (teacherDays.length === 0) return null;
-
-                // 요일별 슬롯 계산
-                const daySlots = {};
-                teacherDays.forEach((day) => {
-                  const lessons = students
-                    .filter((s) => {
-                      if (s.teacher !== teacher.name || s.status !== "재원") return false;
-                      if (selectedPart !== "전체" && getPartBySubject(s.subject || "") !== selectedPart) return false;
-                      return !!getLessonTime(s, day);
-                    })
-                    .map((s) => {
-                      const t = getLessonTime(s, day);
-                      return { name: s.name, min: toMin(t) };
-                    })
-                    .filter((x) => !isNaN(x.min))
-                    .sort((a, b) => a.min - b.min);
-
-                  if (lessons.length === 0) return;
-                  const earliest = lessons[0].min;
-                  const latest = lessons[lessons.length - 1].min;
-                  const slots = [];
-                  for (let t = earliest; t <= latest; t += 45) {
-                    const match = lessons.find((l) => l.min === t);
-                    slots.push({ startMin: t, endMin: t + 45, student: match || null });
-                  }
-                  daySlots[day] = slots;
-                });
-
-                // 최대 슬롯 수 (테이블 행 수)
-                const maxRows = Math.max(...Object.values(daySlots).map((s) => s.length));
-
-                return (
-                  <div key={teacher.name} className="border border-slate-300 rounded-lg overflow-hidden">
-                    {/* 강사명 헤더 */}
-                    <div className="bg-slate-100 px-4 py-2 border-b border-slate-300">
-                      <span className="font-bold text-slate-800 text-sm">{teacher.name} 선생님</span>
-                    </div>
-                    <table className="w-full text-xs border-collapse">
-                      <thead>
-                        <tr className="bg-slate-50">
-                          <th className="border border-slate-200 px-3 py-2 text-center font-bold text-slate-600 w-12">요일</th>
-                          {teacherDays.map((day) => (
-                            <th key={day} className="border border-slate-200 px-3 py-2 text-center font-bold text-slate-700 min-w-[140px]">{day}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {Array.from({ length: maxRows }).map((_, rowIdx) => (
-                          <tr key={rowIdx} className={rowIdx % 2 === 0 ? "bg-white" : "bg-slate-50/40"}>
-                            {rowIdx === Math.floor(maxRows / 2) ? (
-                              <td className="border border-slate-200 px-2 py-1.5 text-center text-slate-400 font-bold align-middle" rowSpan={1}>시간</td>
-                            ) : rowIdx === 0 ? (
-                              <td className="border border-slate-200 px-2 py-1.5 text-center" rowSpan={1}></td>
-                            ) : (
-                              <td className="border border-slate-200"></td>
-                            )}
-                            {teacherDays.map((day) => {
-                              const slot = daySlots[day]?.[rowIdx];
-                              if (!slot) return <td key={day} className="border border-slate-200 px-3 py-1.5"></td>;
-                              const timeLabel = `${toStr(slot.startMin)}-${toStr(slot.endMin)}`;
-                              return (
-                                <td key={day} className="border border-slate-200 px-3 py-1.5 whitespace-nowrap">
-                                  {slot.student ? (
-                                    <span className="text-slate-800">{timeLabel} <span className="font-medium">{slot.student.name}</span></span>
-                                  ) : (
-                                    <span className="text-slate-400">{timeLabel} <span className="text-slate-300">______</span></span>
-                                  )}
-                                </td>
-                              );
-                            })}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })()}
     </div>
   );
 };
