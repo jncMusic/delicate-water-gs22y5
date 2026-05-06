@@ -9689,6 +9689,8 @@ const StudentManagementModal = ({
                 const scheduleStr = Object.entries(s.schedules || {})
                   .map(([day, time]) => `${day}요일 ${time || ""}`)
                   .join(",  ");
+                const scheduleDays = Object.keys(s.schedules || {}).join("·");
+                const teacherSchedule = [s.teacher ? s.teacher + " 선생님" : "", scheduleDays ? scheduleDays + "요일 출강" : ""].filter(Boolean).join(" / ");
                 const fee = s.tuitionFee ? Number(s.tuitionFee).toLocaleString() + "원" : "";
                 const schoolGrade = [s.school, s.grade && s.grade !== "성인" ? s.grade : ""].filter(Boolean).join(" ");
                 const html = `<!DOCTYPE html>
@@ -9752,13 +9754,13 @@ td,th { border:1px solid #666; padding:11px 12px; font-size:12pt; vertical-align
 <div class="sec">2. 수강 안내</div>
 <table class="compact">
 <tr><td class="lbl">수업 결제 안내</td><td>결제는 4회차 종료 후, 다음 1회차 수업 시작 전까지 완료 부탁드립니다.<br><span style="font-size:9.5pt">· 수강료 2회 미납 시 3회차 수업 준비가 어려울 수 있습니다.</span></td></tr>
-<tr><td class="lbl">등록 기간</td><td>4회차 단위로 운영되며, 등록 기간은 별도로 안내드립니다.</td></tr>
+<tr><td class="lbl">담당 강사 /<br>출강 요일</td><td>${teacherSchedule||"&nbsp;"}</td></tr>
 <tr><td class="lbl">노쇼 · 당일취소</td><td>당일취소 및 노쇼는 1회분 수업이 차감됩니다.<br>공휴일 및 기타 학원 사정으로 수업이 진행되지 않는 경우 회차 차감 없음.<br><span style="font-size:9.5pt">전날까지 연락 시 자유롭게 수업 변경 가능합니다.</span></td></tr>
 <tr><td class="lbl">가족 할인</td><td>두 번째 과목 등록 시 해당 과목 수강료에서 30,000원 할인<br><span style="font-size:9.5pt">(1인 2과목 또는 가족 구성원 모두 동일 적용)</span></td></tr>
 </table>
 <div class="sec">3. 결제 안내</div>
 <table class="compact">
-<tr><td class="lbl">수 강 료</td><td>등록 시 안내드린 금액 기준${fee ? " &nbsp;·&nbsp; <b>"+fee+"</b>" : ""} &nbsp;·&nbsp; 과목 추가 시 30,000원 할인 적용</td></tr>
+<tr><td class="lbl">수 강 료</td><td>등록 시 안내드린 금액 기준${fee ? " &nbsp;·&nbsp; <b>"+fee+"</b>" : ""}</td></tr>
 <tr><td class="lbl" style="vertical-align:top">결제 방법</td><td>
 · 방문 결제 &nbsp;&nbsp;: 카드 / 현금<br>
 · 계좌이체 &nbsp;&nbsp;: 하나은행 125-91025-766307 &nbsp; 강열혁 (제이앤씨음악학원)<br>
