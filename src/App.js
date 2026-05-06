@@ -440,11 +440,10 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
   let targetDayIdx = -1;
 
   if (unpaidItems.length > 0) {
-    // 새로운 1회차: 당일취소는 건너뛰고 첫 번째 실제 출석 미납일 기준
-    const firstRealUnpaid = unpaidItems.find(s => !s.label.includes("(당일취소)")) || unpaidItems[0];
-    const [, mm, dd] = firstRealUnpaid.date.split("-");
+    // 첫 미납 회차가 곧 새로운 1회차
+    const [, mm, dd] = unpaidItems[0].date.split("-");
     nextDateStr = `${mm}/${dd}`;
-    requestDateStr = `${parseInt(mm)}/${parseInt(dd)}(${daysKor[new Date(firstRealUnpaid.date).getDay()]})`;
+    requestDateStr = `${parseInt(mm)}/${parseInt(dd)}(${daysKor[new Date(unpaidItems[0].date).getDay()]})`;
   } else {
     if (student.schedules) {
       const scheduledDays = Object.keys(student.schedules);
