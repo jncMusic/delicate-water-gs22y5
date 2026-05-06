@@ -9710,6 +9710,7 @@ td,th { border:1px solid #666; padding:11px 12px; font-size:12pt; vertical-align
 .sig { text-align:center; margin-top:10px; }
 .sec { font-weight:bold; font-size:11pt; margin:14px 0 6px; }
 .sub { font-size:9.5pt; font-weight:normal; }
+.compact td, .compact th { padding:5px 10px; font-size:10pt; }
 </style></head><body>
 <div class="page">
 <h1>J&amp;C  Music  Academy  등록원서</h1>
@@ -9740,7 +9741,7 @@ td,th { border:1px solid #666; padding:11px 12px; font-size:12pt; vertical-align
 <div class="page">
 <h2>J&amp;C  Music  Academy  입학 안내문</h2>
 <div class="sec">1. 환불 규정 안내 &nbsp;<span class="sub">(학원법 시행령 제18조 3항에 의거)</span></div>
-<table>
+<table class="compact">
 <tr><th class="lbl">구 분</th><th class="lbl">환불 금액</th></tr>
 <tr><td class="lbl">첫 수업 전 환불</td><td style="text-align:center">100% 환불</td></tr>
 <tr><td class="lbl">1/3 경과 전 환불</td><td style="text-align:center">납부 수강료 2/3 해당 금액</td></tr>
@@ -9749,14 +9750,14 @@ td,th { border:1px solid #666; padding:11px 12px; font-size:12pt; vertical-align
 </table>
 <p style="font-size:9.5pt;margin-top:3px">※ 환불정산: 주 1회(4회 기준) 횟수 기준으로 적용</p>
 <div class="sec">2. 수강 안내</div>
-<table>
+<table class="compact">
 <tr><td class="lbl">수업 결제 안내</td><td>결제는 4회차 종료 후, 다음 1회차 수업 시작 전까지 완료 부탁드립니다.<br><span style="font-size:9.5pt">· 수강료 2회 미납 시 3회차 수업 준비가 어려울 수 있습니다.</span></td></tr>
 <tr><td class="lbl">등록 기간</td><td>4회차 단위로 운영되며, 등록 기간은 별도로 안내드립니다.</td></tr>
 <tr><td class="lbl">노쇼 · 당일취소</td><td>당일취소 및 노쇼는 1회분 수업이 차감됩니다.<br>공휴일 및 기타 학원 사정으로 수업이 진행되지 않는 경우 회차 차감 없음.<br><span style="font-size:9.5pt">전날까지 연락 시 자유롭게 수업 변경 가능합니다.</span></td></tr>
 <tr><td class="lbl">가족 할인</td><td>두 번째 과목 등록 시 해당 과목 수강료에서 30,000원 할인<br><span style="font-size:9.5pt">(1인 2과목 또는 가족 구성원 모두 동일 적용)</span></td></tr>
 </table>
 <div class="sec">3. 결제 안내</div>
-<table>
+<table class="compact">
 <tr><td class="lbl">수 강 료</td><td>등록 시 안내드린 금액 기준${fee ? " &nbsp;·&nbsp; <b>"+fee+"</b>" : ""} &nbsp;·&nbsp; 과목 추가 시 30,000원 할인 적용</td></tr>
 <tr><td class="lbl" style="vertical-align:top">결제 방법</td><td>
 · 방문 결제 &nbsp;&nbsp;: 카드 / 현금<br>
@@ -9766,7 +9767,7 @@ td,th { border:1px solid #666; padding:11px 12px; font-size:12pt; vertical-align
 </td></tr>
 </table>
 <div class="sec">4. 학원 안내</div>
-<table>
+<table class="compact">
 <tr><td class="lbl">위 치</td><td>서울 양천구 목동서로 35, 목동프라자 3층</td></tr>
 <tr><td class="lbl">전 화</td><td>010-4028-9803</td></tr>
 <tr><td class="lbl">홈페이지</td><td>www.jncmusic.kr</td></tr>
