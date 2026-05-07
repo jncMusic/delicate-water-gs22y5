@@ -2,7 +2,7 @@
 // PaymentView.js - 결제/수납센터 (4탭: 수납현황 / 발송센터 / 결제확인 / 수납관리)
 // App.js에서 분리. 기존 함수/state 시그니처는 그대로 유지하고 UI만 4탭 구조로 재구성.
 // =================================================================
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   MessageSquareText,
   CreditCard,
@@ -657,6 +657,15 @@ export const PaymentView = ({
       setBillStates((prev) => ({ ...prev, [billId]: { state: "ERR", loading: false } }));
     }
   };
+
+  // kyulje 탭 진입 시 미조회 청구서 일괄 자동 조회
+  useEffect(() => {
+    if (activeTab !== "kyulje") return;
+    kyuljeLogsData.forEach(({ log }) => {
+      if (log.billId && !billStates[log.billId]) fetchBillState(log.billId);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, kyuljeLogsData]);
 
   // ── 수강 진척도 헬퍼 ──────────────────────────────────────────
   const getStudentProgress = (s) => {
@@ -2288,40 +2297,45 @@ export const PaymentView = ({
             - 결제선생 채널 발송 이력 전체 조회 + 파기
         ============================================================ */}
         {activeTab === "kyulje" && (() => {
-          const BILL_STATE_LABEL = {
-            F: { text: "결제완료", cls: "bg-emerald-100 text-emerald-700" },
-            W: { text: "미결제", cls: "bg-amber-100 text-amber-700" },
-            C: { text: "승인취소", cls: "bg-orange-100 text-orange-700" },
-            D: { text: "파기됨", cls: "bg-rose-100 text-rose-700" },
+          // 통합 상태: Paymint 상태(F/W/C/D) + 수납 여부를 하나의 뱃지로 표시
+          const getRowStatus = (log, paidAfter, bs) => {
+            if (bs?.loading) return { text: "조회 중...", cls: "bg-slate-100 text-slate-400" };
+            if (bs?.state === "D") return { text: "파기됨", cls: "bg-rose-100 text-rose-700" };
+            if (bs?.state === "F") return { text: "결제(카드)", cls: "bg-emerald-100 text-emerald-700" };
+            if (bs?.state === "C") return { text: "승인취소", cls: "bg-orange-100 text-orange-700" };
+            if (paidAfter) return { text: `수납 ${paidAfter.date.slice(5).replace("-","/")} ${Number(paidAfter.amount||0).toLocaleString()}원`, cls: "bg-blue-100 text-blue-700" };
+            if (bs?.state === "W") return { text: "미결제", cls: "bg-amber-100 text-amber-700" };
+            if (!log.billId) return { text: "발송완료", cls: "bg-indigo-50 text-indigo-500" };
+            return { text: "조회 중...", cls: "bg-slate-100 text-slate-400" };
           };
           return (
           <div className="flex-1 flex flex-col min-h-0 p-5 gap-3">
             <div className="flex items-center gap-2 text-sm text-slate-500">
               <CreditCard size={14} className="text-blue-500" />
-              <span>모든 경로에서 발송된 결제선생 이력 · 총 <span className="font-bold text-slate-700">{kyuljeLogsData.length}건</span></span>
+              <span>결제선생 발송 이력 · 총 <span className="font-bold text-slate-700">{kyuljeLogsData.length}건</span></span>
+              <span className="text-xs text-slate-400">(탭 진입 시 자동 상태 조회)</span>
             </div>
             <div className="border rounded-xl overflow-auto flex-1 min-h-0">
               {kyuljeLogsData.length === 0 ? (
                 <div className="py-16 text-center text-slate-400 text-sm">결제선생 발송 이력이 없습니다.</div>
               ) : (
-                <table className="w-full text-sm min-w-[700px]">
+                <table className="w-full text-sm min-w-[560px]">
                   <thead className="sticky top-0 bg-slate-50 border-b text-xs text-slate-400 uppercase">
                     <tr>
                       <th className="py-3 px-4 text-left">이름 / 과목</th>
                       <th className="py-3 px-4 text-left">강사</th>
                       <th className="py-3 px-4 text-left">발송일</th>
-                      <th className="py-3 px-4 text-left">결제 여부</th>
-                      <th className="py-3 px-4 text-center">청구서</th>
-                      <th className="py-3 px-4 text-center">Paymint 상태</th>
+                      <th className="py-3 px-4 text-center">상태</th>
                       <th className="py-3 px-4 text-center">파기</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {kyuljeLogsData.map(({ log, student, paidAfter }, i) => {
                       const bs = log.billId ? billStates[log.billId] : null;
-                      const stLabel = bs?.state ? (BILL_STATE_LABEL[bs.state] || { text: bs.state, cls: "bg-slate-100 text-slate-600" }) : null;
+                      const rowStatus = getRowStatus(log, paidAfter, bs);
+                      const isDestroyed = bs?.state === "D";
                       return (
-                      <tr key={`${log.id || log.studentId}-${i}`} className={`${bs?.state === "D" ? "bg-rose-50" : "hover:bg-slate-50"} ${student && student.status !== "재원" ? "opacity-50" : ""}`}>
+                      <tr key={`${log.id || log.studentId}-${i}`} className={`${isDestroyed ? "bg-rose-50 opacity-60" : "hover:bg-slate-50"} ${student && student.status !== "재원" ? "opacity-50" : ""}`}>
                         <td className="py-3 px-4 font-medium">
                           {log.studentName || "-"}
                           {student?.subject && <span className="text-xs text-slate-400 ml-1">({student.subject})</span>}
@@ -2331,33 +2345,13 @@ export const PaymentView = ({
                         </td>
                         <td className="py-3 px-4 text-slate-500 text-xs">{student?.teacher || "-"}</td>
                         <td className="py-3 px-4 text-slate-500 text-xs">{log.sentAt}</td>
-                        <td className="py-3 px-4">
-                          {paidAfter ? (
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">
-                              ✅ {paidAfter.date} {Number(paidAfter.amount || 0).toLocaleString()}원
-                            </span>
-                          ) : (
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-600 font-medium">⏳ 미납</span>
-                          )}
+                        <td className="py-3 px-4 text-center">
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${rowStatus.cls}`}>{rowStatus.text}</span>
                         </td>
                         <td className="py-3 px-4 text-center">
-                          {log.shortURL ? (
-                            <a href={log.shortURL} target="_blank" rel="noreferrer" className="text-xs text-blue-500 underline hover:text-blue-700">링크</a>
-                          ) : <span className="text-slate-300 text-xs">-</span>}
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          {!log.billId ? (
-                            <span className="text-slate-300 text-xs">-</span>
-                          ) : bs?.loading ? (
-                            <span className="text-slate-400 text-xs">확인 중...</span>
-                          ) : stLabel ? (
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${stLabel.cls}`}>{stLabel.text}</span>
-                          ) : (
-                            <button onClick={() => fetchBillState(log.billId)} className="text-xs text-blue-500 hover:underline">상태 확인</button>
-                          )}
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          {deleteConfirm?.id === log.id || (deleteConfirm && !log.id && deleteConfirm._idx === i) ? (
+                          {isDestroyed ? (
+                            <span className="text-xs text-rose-300">파기됨</span>
+                          ) : deleteConfirm?.id === log.id || (deleteConfirm && !log.id && deleteConfirm._idx === i) ? (
                             <div className="flex items-center justify-center gap-1">
                               <button
                                 onClick={async () => {
@@ -2381,7 +2375,6 @@ export const PaymentView = ({
                             <button
                               onClick={() => setDeleteConfirm(log.id ? { id: log.id } : { _idx: i })}
                               className="text-xs px-2 py-1 text-red-400 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-200"
-                              title="Paymint 청구서 파기 + 이력 삭제"
                             >파기</button>
                           )}
                         </td>
