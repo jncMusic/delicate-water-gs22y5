@@ -45,7 +45,10 @@ const sendKyuljesaengnim = async (student, override = {}) => {
   const nameSuffix = isAdult ? "님" : " 학생";
   const formattedName = `[J&C]${student.subject || ""}-${student.name}${nameSuffix}`;
   const formattedSubject = `1:1 개인레슨 ${sessions}회`;
-  const note = student.lastPaymentDate ? `최종결제일: ${student.lastPaymentDate}` : "";
+  // paymentHistory 기준으로 최종결제일 계산 (lastPaymentDate 필드는 stale할 수 있음)
+  const sortedPays = (student.paymentHistory || []).sort((a, b) => a.date.localeCompare(b.date));
+  const computedLastPayDate = sortedPays.length > 0 ? sortedPays[sortedPays.length - 1].date : (student.lastPaymentDate || "");
+  const note = computedLastPayDate ? `최종결제일: ${computedLastPayDate}` : "";
   const res = await fetch(PAYMINT_SEND_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -56,12 +59,28 @@ const sendKyuljesaengnim = async (student, override = {}) => {
       price: String(price),
       subject: formattedSubject,
       totalSessions: sessions,
-      lastPaymentDate: student.lastPaymentDate || "",
+      lastPaymentDate: computedLastPayDate,
       note,
     }),
   });
   const data = await res.json();
   if (!data.success) throw new Error(data.error || "결제선생 발송 실패");
+  return data;
+};
+
+// 청구서 상태 조회: F=결제완료, W=미결제, C=취소, D=파기
+const readBillState = async (billId) => {
+  const url = PAYMINT_SEND_URL.replace("/send", "/read");
+  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ billId }) });
+  return res.json();
+};
+
+// 청구서 파기: /destroy (billId + price 필요)
+const destroyBill = async (billId, price) => {
+  const url = PAYMINT_SEND_URL.replace("/send", "/destroy");
+  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ billId, price }) });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error || "파기 실패");
   return data;
 };
 
@@ -626,6 +645,18 @@ export const PaymentView = ({
 
   // ── 결제선생 파기 확인 ────────────────────────────────────────
   const [deleteConfirm, setDeleteConfirm] = useState(null); // log 객체
+
+  // ── 결제선생 청구서 Paymint 상태 (F/W/C/D) ───────────────────
+  const [billStates, setBillStates] = useState({});
+  const fetchBillState = async (billId) => {
+    setBillStates((prev) => ({ ...prev, [billId]: { ...prev[billId], loading: true } }));
+    try {
+      const data = await readBillState(billId);
+      setBillStates((prev) => ({ ...prev, [billId]: { state: data.state, price: data.price, loading: false } }));
+    } catch {
+      setBillStates((prev) => ({ ...prev, [billId]: { state: "ERR", loading: false } }));
+    }
+  };
 
   // ── 수강 진척도 헬퍼 ──────────────────────────────────────────
   const getStudentProgress = (s) => {
@@ -2256,7 +2287,14 @@ export const PaymentView = ({
             탭 5: 결제선생 (kyulje)
             - 결제선생 채널 발송 이력 전체 조회 + 파기
         ============================================================ */}
-        {activeTab === "kyulje" && (
+        {activeTab === "kyulje" && (() => {
+          const BILL_STATE_LABEL = {
+            F: { text: "결제완료", cls: "bg-emerald-100 text-emerald-700" },
+            W: { text: "미결제", cls: "bg-amber-100 text-amber-700" },
+            C: { text: "승인취소", cls: "bg-orange-100 text-orange-700" },
+            D: { text: "파기됨", cls: "bg-rose-100 text-rose-700" },
+          };
+          return (
           <div className="flex-1 flex flex-col min-h-0 p-5 gap-3">
             <div className="flex items-center gap-2 text-sm text-slate-500">
               <CreditCard size={14} className="text-blue-500" />
@@ -2266,20 +2304,24 @@ export const PaymentView = ({
               {kyuljeLogsData.length === 0 ? (
                 <div className="py-16 text-center text-slate-400 text-sm">결제선생 발송 이력이 없습니다.</div>
               ) : (
-                <table className="w-full text-sm min-w-[600px]">
+                <table className="w-full text-sm min-w-[700px]">
                   <thead className="sticky top-0 bg-slate-50 border-b text-xs text-slate-400 uppercase">
                     <tr>
                       <th className="py-3 px-4 text-left">이름 / 과목</th>
                       <th className="py-3 px-4 text-left">강사</th>
                       <th className="py-3 px-4 text-left">발송일</th>
-                      <th className="py-3 px-4 text-left">발송자</th>
                       <th className="py-3 px-4 text-left">결제 여부</th>
+                      <th className="py-3 px-4 text-center">청구서</th>
+                      <th className="py-3 px-4 text-center">Paymint 상태</th>
                       <th className="py-3 px-4 text-center">파기</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {kyuljeLogsData.map(({ log, student, paidAfter }, i) => (
-                      <tr key={`${log.id || log.studentId}-${i}`} className={`hover:bg-slate-50 ${student && student.status !== "재원" ? "opacity-50" : ""}`}>
+                    {kyuljeLogsData.map(({ log, student, paidAfter }, i) => {
+                      const bs = log.billId ? billStates[log.billId] : null;
+                      const stLabel = bs?.state ? (BILL_STATE_LABEL[bs.state] || { text: bs.state, cls: "bg-slate-100 text-slate-600" }) : null;
+                      return (
+                      <tr key={`${log.id || log.studentId}-${i}`} className={`${bs?.state === "D" ? "bg-rose-50" : "hover:bg-slate-50"} ${student && student.status !== "재원" ? "opacity-50" : ""}`}>
                         <td className="py-3 px-4 font-medium">
                           {log.studentName || "-"}
                           {student?.subject && <span className="text-xs text-slate-400 ml-1">({student.subject})</span>}
@@ -2289,7 +2331,6 @@ export const PaymentView = ({
                         </td>
                         <td className="py-3 px-4 text-slate-500 text-xs">{student?.teacher || "-"}</td>
                         <td className="py-3 px-4 text-slate-500 text-xs">{log.sentAt}</td>
-                        <td className="py-3 px-4 text-slate-400 text-xs">{log.sentBy || "-"}</td>
                         <td className="py-3 px-4">
                           {paidAfter ? (
                             <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">
@@ -2300,12 +2341,34 @@ export const PaymentView = ({
                           )}
                         </td>
                         <td className="py-3 px-4 text-center">
+                          {log.shortURL ? (
+                            <a href={log.shortURL} target="_blank" rel="noreferrer" className="text-xs text-blue-500 underline hover:text-blue-700">링크</a>
+                          ) : <span className="text-slate-300 text-xs">-</span>}
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          {!log.billId ? (
+                            <span className="text-slate-300 text-xs">-</span>
+                          ) : bs?.loading ? (
+                            <span className="text-slate-400 text-xs">확인 중...</span>
+                          ) : stLabel ? (
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${stLabel.cls}`}>{stLabel.text}</span>
+                          ) : (
+                            <button onClick={() => fetchBillState(log.billId)} className="text-xs text-blue-500 hover:underline">상태 확인</button>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-center">
                           {deleteConfirm?.id === log.id || (deleteConfirm && !log.id && deleteConfirm._idx === i) ? (
                             <div className="flex items-center justify-center gap-1">
                               <button
                                 onClick={async () => {
+                                  try {
+                                    if (log.billId) await destroyBill(log.billId, String(student?.tuitionFee || 0));
+                                  } catch (e) {
+                                    showToast?.("Paymint 파기 실패: " + e.message, "error");
+                                  }
                                   if (onDeleteMessageLog) await onDeleteMessageLog(log);
                                   setDeleteConfirm(null);
+                                  if (log.billId) fetchBillState(log.billId);
                                 }}
                                 className="text-xs px-2 py-1 bg-red-600 text-white rounded-lg hover:bg-red-700"
                               >확인</button>
@@ -2318,18 +2381,20 @@ export const PaymentView = ({
                             <button
                               onClick={() => setDeleteConfirm(log.id ? { id: log.id } : { _idx: i })}
                               className="text-xs px-2 py-1 text-red-400 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-200"
-                              title="이 발송 이력 파기"
+                              title="Paymint 청구서 파기 + 이력 삭제"
                             >파기</button>
                           )}
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               )}
             </div>
           </div>
-        )}
+          );
+        })()}
 
         {/* ============================================================
             탭 6: 히스토리 (history)
