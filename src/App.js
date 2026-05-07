@@ -3988,9 +3988,18 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
         if (existingIdx > -1) history[existingIdx] = record;
         else history.push(record);
       } else {
-        const prevCount = existingIdx > -1 ? (history[existingIdx].count || 1) : 1;
+        // 보강 수업 출석: reschedule 기록의 makeupDate에 출석 저장 (원본 날짜 아닌 실제 보강일에 기록)
+        let targetDate = date;
+        if (status === "present") {
+          const reschRec = history.find(
+            (h) => h.date === date && h.status === "reschedule" && h.makeupDate
+          );
+          if (reschRec) targetDate = reschRec.makeupDate;
+        }
+        const targetIdx = history.findIndex((h) => h.date === targetDate);
+        const prevCount = targetIdx > -1 ? (history[targetIdx].count || 1) : 1;
         const record = {
-          date: date,
+          date: targetDate,
           status: status,
           reason: reason,
           teacher: student.teacher || "",
@@ -3998,7 +4007,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
         };
         if (status === "present") record.count = prevCount;
         if (memo) record.memo = memo;
-        if (existingIdx > -1) history[existingIdx] = record;
+        if (targetIdx > -1) history[targetIdx] = record;
         else history.push(record);
       }
       // reschedule은 세션 차감 안 함 (보강 완료 시 present로 별도 처리)
@@ -4195,6 +4204,14 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                   const st = getStudentsForCell(t.name, dayOfWeek, dateStr);
                   const timeFiltered = st.filter((s) => {
                     const dayName = ["일", "월", "화", "수", "목", "금", "토"][dayOfWeek];
+                    // 보강 학생: makeupTime 기준으로 시간 슬롯 결정
+                    const makeupRec = s.attendanceHistory?.find(
+                      (h) => h.status === "reschedule" && h.makeupDate === dateStr
+                    );
+                    if (makeupRec) {
+                      if (!makeupRec.makeupTime) return false;
+                      return parseInt(makeupRec.makeupTime.split(":")[0], 10) === hour;
+                    }
                     const time = getStudentScheduleTime(s, dayName);
                     return time && parseInt(time.split(":")[0], 10) === hour;
                   });
@@ -4324,6 +4341,14 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                         "금",
                         "토",
                       ][dayOfWeek];
+                      // 보강 학생: makeupTime 기준으로 시간 슬롯 결정
+                      const makeupRec = s.attendanceHistory?.find(
+                        (h) => h.status === "reschedule" && h.makeupDate === dateStr
+                      );
+                      if (makeupRec) {
+                        if (!makeupRec.makeupTime) return false;
+                        return makeupRec.makeupTime.startsWith(`${hour}:`);
+                      }
                       const time = getStudentScheduleTime(s, dayName);
                       return time && time.startsWith(`${hour}:`);
                     });
@@ -7832,10 +7857,19 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
         if (existingIdx > -1) history[existingIdx] = record;
         else history.push(record);
       } else {
+        // 보강 수업 출석: reschedule 기록의 makeupDate에 출석 저장 (원본 날짜 아닌 실제 보강일에 기록)
+        let targetDateStr = dateStr;
+        if (status === "present") {
+          const reschRec = history.find(
+            (h) => h.date === dateStr && h.status === "reschedule" && h.makeupDate
+          );
+          if (reschRec) targetDateStr = reschRec.makeupDate;
+        }
         // 추가/수정 모드 (기존 count 값 보존)
-        const prevCount = existingIdx > -1 ? (history[existingIdx].count || 1) : 1;
+        const targetIdx = history.findIndex((h) => h.date === targetDateStr);
+        const prevCount = targetIdx > -1 ? (history[targetIdx].count || 1) : 1;
         const record = {
-          date: dateStr,
+          date: targetDateStr,
           status, // 'present', 'absent', 'canceled'
           timestamp: new Date().toISOString(),
         };
@@ -7845,15 +7879,15 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
 
         // 상세 사유 저장
         if (status === "absent") {
-          record.reason = detail; // 결석 사유 (텍스트)
+          record.reason = detail;
         } else if (status === "canceled") {
-          record.subType = detail; // 당일취소 유형 (질병, 경조사, 기타)
+          record.subType = detail;
         }
 
         // 기존 메모 보존
-        if (existingIdx > -1 && history[existingIdx].memo) record.memo = history[existingIdx].memo;
+        if (targetIdx > -1 && history[targetIdx].memo) record.memo = history[targetIdx].memo;
 
-        if (existingIdx > -1) history[existingIdx] = record;
+        if (targetIdx > -1) history[targetIdx] = record;
         else history.push(record);
       }
 
