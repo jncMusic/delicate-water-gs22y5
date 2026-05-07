@@ -150,8 +150,7 @@ const sendKyuljesaengnim = async (student) => {
   const computedLastPayDate = allPayments.length > 0
     ? allPayments[allPayments.length - 1].date
     : (student.lastPaymentDate || "");
-  const lastPayStr = computedLastPayDate ? `최종 결제일: ${computedLastPayDate}` : "";
-  const note = `${student.name} 학생의 ${student.subject || ""} 1:1 개인레슨 ${sessions}회분 ${Number(student.tuitionFee || 0).toLocaleString()}원 결제 안내입니다.${lastPayStr ? `\n${lastPayStr}` : ""}`;
+  const note = computedLastPayDate ? `최종 결제일: ${computedLastPayDate}` : "";
   const res = await fetch(PAYMINT_SEND_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -169,6 +168,18 @@ const sendKyuljesaengnim = async (student) => {
   const data = await res.json();
   if (!data.success) throw new Error(data.error || "결제선생 발송 실패");
   return data; // { success, billId, shortURL }
+};
+
+const cancelKyuljesaengnim = async (billId) => {
+  const PAYMINT_CANCEL_URL = PAYMINT_SEND_URL.replace("/send", "/cancel");
+  const res = await fetch(PAYMINT_CANCEL_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ billId }),
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error || "파기 실패");
+  return data;
 };
 
 // =================================================================
@@ -10384,11 +10395,25 @@ const PaymentView = ({
     return logs.length > 0 ? logs[0].sentAt : null;
   };
 
-  // 안내일 이후 결제 여부: 마지막 결제일이 안내일보다 나중이면 결제 완료
+  // 안내일 이후 결제 여부: paymentHistory 기반 최종결제일이 안내일보다 나중이면 결제 완료
   const isPaidAfterNotif = (student, notifDate) => {
     if (!notifDate) return false;
-    return (student.lastPaymentDate || "") > notifDate;
+    const pays = (student.paymentHistory || []).sort((a, b) => a.date.localeCompare(b.date));
+    const computedLast = pays.length > 0 ? pays[pays.length - 1].date : (student.lastPaymentDate || "");
+    return computedLast > notifDate;
   };
+
+  // 학생의 최종결제일 계산 (paymentHistory 우선)
+  const getComputedLastPayDate = (student) => {
+    const pays = (student.paymentHistory || []).sort((a, b) => a.date.localeCompare(b.date));
+    return pays.length > 0 ? pays[pays.length - 1].date : (student.lastPaymentDate || "");
+  };
+
+  // 학생의 최신 결제선생 발송 로그
+  const getLatestKyuljesaengnimLog = (studentId) =>
+    messageLogs
+      .filter((l) => l.studentId === studentId && l.billId)
+      .sort((a, b) => b.sentAt.localeCompare(a.sentAt))[0] || null;
 
   // 안내 발송일 레이블: 30일 이내면 "N일 전", 그 이상이면 "오래됨"
   const notifAgeLabel = (dateStr) => {
@@ -10933,7 +10958,7 @@ const PaymentView = ({
                       <td className="py-3 px-4 text-right font-bold text-indigo-600">
                         {Number(s.tuitionFee || 0).toLocaleString()}원
                       </td>
-                      <td className="py-3 px-4 text-xs text-slate-500">{s.lastPaymentDate || "-"}</td>
+                      <td className="py-3 px-4 text-xs text-slate-500">{getComputedLastPayDate(s) || "-"}</td>
                       <td className="py-3 px-4">
                         <div className="flex flex-wrap gap-1 justify-center">
                           {["현장", "계좌이체", "기타", "결제선생"].map((m) => (
@@ -11133,6 +11158,38 @@ const PaymentView = ({
                         ) : (
                           <span className="text-rose-400">🔴 미발송</span>
                         )}
+                        {(() => {
+                          const kyLog = getLatestKyuljesaengnimLog(s.id);
+                          if (!kyLog) return null;
+                          return (
+                            <div className="flex items-center gap-1.5 mt-1" onClick={(e) => e.stopPropagation()}>
+                              {kyLog.shortURL && (
+                                <a
+                                  href={kyLog.shortURL}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-blue-500 underline text-[10px] hover:text-blue-700"
+                                >
+                                  💳 청구서
+                                </a>
+                              )}
+                              <button
+                                onClick={async () => {
+                                  if (!window.confirm(`${s.name} 결제선생 청구서를 파기할까요?`)) return;
+                                  try {
+                                    await cancelKyuljesaengnim(kyLog.billId);
+                                    showToast(`${s.name} 청구서 파기 완료`, "success");
+                                  } catch (e) {
+                                    showToast("파기 실패: " + e.message, "error");
+                                  }
+                                }}
+                                className="text-rose-400 text-[10px] hover:text-rose-600 hover:underline"
+                              >
+                                파기
+                              </button>
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="py-3 px-4 text-center" onClick={(e) => e.stopPropagation()}>
                         {notifSt === "paid" ? (
