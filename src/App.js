@@ -170,16 +170,28 @@ const sendKyuljesaengnim = async (student) => {
   return data; // { success, billId, shortURL }
 };
 
-const cancelKyuljesaengnim = async (billId) => {
-  const PAYMINT_CANCEL_URL = PAYMINT_SEND_URL.replace("/send", "/cancel");
-  const res = await fetch(PAYMINT_CANCEL_URL, {
+// 파기: /destroy (billId + price 필요) — 미결제(W) 청구서 취소용
+const cancelKyuljesaengnim = async (billId, price) => {
+  const PAYMINT_DESTROY_URL = PAYMINT_SEND_URL.replace("/send", "/destroy");
+  const res = await fetch(PAYMINT_DESTROY_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ billId }),
+    body: JSON.stringify({ billId, price }),
   });
   const data = await res.json();
   if (!data.success) throw new Error(data.error || "파기 실패");
   return data;
+};
+
+// 청구서 상태 조회: F=결제완료, W=미결제, C=취소, D=파기
+const readBillState = async (billId) => {
+  const PAYMINT_READ_URL = PAYMINT_SEND_URL.replace("/send", "/read");
+  const res = await fetch(PAYMINT_READ_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ billId }),
+  });
+  return res.json();
 };
 
 // =================================================================
@@ -10204,6 +10216,19 @@ const PaymentView = ({
   const [processPaySessions, setProcessPaySessions] = useState(4);
   const [processPayAmount, setProcessPayAmount] = useState("");
 
+  // 결제선생 청구서 현황 state
+  const [billStates, setBillStates] = useState({}); // { [billId]: { state, price, approvedAt, loading } }
+
+  const fetchBillState = async (billId) => {
+    setBillStates((prev) => ({ ...prev, [billId]: { ...prev[billId], loading: true } }));
+    try {
+      const data = await readBillState(billId);
+      setBillStates((prev) => ({ ...prev, [billId]: { state: data.state, price: data.price, approvedAt: data.approvedAt, loading: false } }));
+    } catch (e) {
+      setBillStates((prev) => ({ ...prev, [billId]: { state: "ERR", loading: false } }));
+    }
+  };
+
   // 수강 현황 계산 헬퍼
   const getStudentProgress = (s) => {
     const totalAttended = (s.attendanceHistory || [])
@@ -11069,6 +11094,81 @@ const PaymentView = ({
               </tbody>
             </table>
           </div>
+
+          {/* 결제선생 청구서 현황 */}
+          {(() => {
+            const billLogs = messageLogs
+              .filter((l) => l.billId)
+              .sort((a, b) => b.sentAt.localeCompare(a.sentAt));
+            if (billLogs.length === 0) return null;
+            const STATE_LABEL = { F: { text: "결제완료", cls: "bg-emerald-100 text-emerald-700" }, W: { text: "미결제", cls: "bg-amber-100 text-amber-700" }, C: { text: "승인취소", cls: "bg-orange-100 text-orange-700" }, D: { text: "파기됨", cls: "bg-rose-100 text-rose-700" } };
+            return (
+              <div className="border rounded-xl overflow-hidden">
+                <div className="bg-blue-50 px-4 py-2.5 flex items-center gap-2 border-b">
+                  <span className="text-lg">💳</span>
+                  <span className="font-bold text-blue-700 text-sm">결제선생 청구서 현황</span>
+                  <span className="bg-blue-200 text-blue-800 text-xs px-1.5 py-0.5 rounded-full">{billLogs.length}건</span>
+                </div>
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 border-b text-xs text-slate-400 uppercase">
+                    <tr>
+                      <th className="py-2.5 px-4 text-left">학생</th>
+                      <th className="py-2.5 px-4 text-left">발송일</th>
+                      <th className="py-2.5 px-4 text-left">청구서</th>
+                      <th className="py-2.5 px-4 text-center">상태</th>
+                      <th className="py-2.5 px-4 text-center">파기</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white">
+                    {billLogs.map((log) => {
+                      const stInfo = billStates[log.billId];
+                      const stateLabel = stInfo?.state ? (STATE_LABEL[stInfo.state] || { text: stInfo.state, cls: "bg-slate-100 text-slate-600" }) : null;
+                      const student = students.find((s) => s.id === log.studentId);
+                      return (
+                        <tr key={log.billId} className={`${stInfo?.state === "D" ? "bg-rose-50" : "hover:bg-slate-50"}`}>
+                          <td className="py-2.5 px-4 font-medium">{log.studentName || "-"}</td>
+                          <td className="py-2.5 px-4 text-xs text-slate-500">{log.sentAt}</td>
+                          <td className="py-2.5 px-4">
+                            {log.shortURL ? (
+                              <a href={log.shortURL} target="_blank" rel="noreferrer" className="text-blue-500 underline text-xs">링크</a>
+                            ) : <span className="text-slate-300 text-xs">-</span>}
+                          </td>
+                          <td className="py-2.5 px-4 text-center">
+                            {stInfo?.loading ? (
+                              <span className="text-slate-400 text-xs">확인 중...</span>
+                            ) : stateLabel ? (
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${stateLabel.cls}`}>{stateLabel.text}</span>
+                            ) : (
+                              <button onClick={() => fetchBillState(log.billId)} className="text-xs text-blue-600 hover:underline">상태 확인</button>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-4 text-center">
+                            {stInfo?.state === "W" && (
+                              <button
+                                onClick={async () => {
+                                  if (!window.confirm(`${log.studentName} 청구서를 파기할까요?`)) return;
+                                  try {
+                                    await cancelKyuljesaengnim(log.billId, String(student?.tuitionFee || 0));
+                                    showToast(`${log.studentName} 청구서 파기 완료`, "success");
+                                    fetchBillState(log.billId);
+                                  } catch (e) {
+                                    showToast("파기 실패: " + e.message, "error");
+                                  }
+                                }}
+                                className="text-xs text-rose-500 hover:text-rose-700 hover:underline"
+                              >
+                                파기
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()}
         </div>
       ) : (
 
@@ -11177,7 +11277,7 @@ const PaymentView = ({
                                 onClick={async () => {
                                   if (!window.confirm(`${s.name} 결제선생 청구서를 파기할까요?`)) return;
                                   try {
-                                    await cancelKyuljesaengnim(kyLog.billId);
+                                    await cancelKyuljesaengnim(kyLog.billId, String(s.tuitionFee || 0));
                                     showToast(`${s.name} 청구서 파기 완료`, "success");
                                   } catch (e) {
                                     showToast("파기 실패: " + e.message, "error");
