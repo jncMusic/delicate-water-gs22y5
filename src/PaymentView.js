@@ -664,8 +664,7 @@ export const PaymentView = ({
     kyuljeLogsData.forEach(({ log }) => {
       if (log.billId && !billStates[log.billId]) fetchBillState(log.billId);
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, kyuljeLogsData]);
+  }, [activeTab]); // kyuljeLogsData 변경 시 재조회 불필요 (billStates 확인 후 skip)
 
   // ── 수강 진척도 헬퍼 ──────────────────────────────────────────
   const getStudentProgress = (s) => {
