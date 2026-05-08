@@ -455,6 +455,10 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
 
   const unpaidDatesStr = unpaidSlots.length > 0 ? unpaidSlots.join(", ") : "없음";
   const unpaidCount = unpaidSlots.length;
+  // 2회차 이상 미납 시 추가 날짜 문구
+  const additionalUnpaidStr = unpaidItems.length > 1
+    ? " 이후 " + unpaidItems.slice(1).map((s, i) => `${i + 2}회차(${s.label})`).join(", ") + "까지 진행되었습니다."
+    : "";
 
   // 새로운 1회차: 미납회차가 있으면 첫 미납 날짜, 없으면 다음 예정 수업일 계산
   let nextDateStr = "";
@@ -526,7 +530,7 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
   if (style === "simple") {
     return `안녕하세요, J&C 음악학원입니다. ${getSeasonalGreeting()}
 
-${lastPaymentMD} 결제하신 ${nameLabel}의 ${subject} ${sessionUnit}회차가 ${lastCoveredMD}에 완료되어 ${nextDateMD} 새로운 ${subject} 1회차가 시작되어 안내드립니다.
+${lastPaymentMD} 결제하신 ${nameLabel}의 ${subject} ${sessionUnit}회차가 ${lastCoveredMD}에 완료되어 ${nextDateMD} 새로운 ${subject} 1회차가 시작되어 안내드립니다.${additionalUnpaidStr}
 
 아직 결제 전으로 확인되어 안내드리오니 이미 결제하신 경우 알려주시면 감사하겠습니다. 제로페이/서울페이 등은 결제 후 알려주셔야 확인이 되는 점 양해부탁말씀 드립니다.
 
