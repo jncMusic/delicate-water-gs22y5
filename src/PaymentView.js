@@ -1622,7 +1622,7 @@ export const PaymentView = ({
               {weeklyDueList.length === 0 ? (
                 <div className="py-8 text-center text-slate-400 text-sm">1주일 이내 결제 안내 대상이 없습니다.</div>
               ) : (
-                <div className="overflow-auto max-h-64">
+                <div className="overflow-auto">
                   <table className="w-full text-sm">
                     <thead className="sticky top-0 bg-slate-50 border-b text-xs text-slate-400 uppercase">
                       <tr>
