@@ -44,7 +44,7 @@ const sendKyuljesaengnim = async (student, override = {}) => {
   const isAdult = student.grade === "성인";
   const nameSuffix = isAdult ? "님" : " 학생";
   const formattedName = `[J&C]${student.subject || ""}-${student.name}${nameSuffix}`;
-  const formattedSubject = `1:1 개인레슨 ${sessions}회`;
+  const formattedSubject = `${student.subject ? student.subject + " " : ""}1:1 개인레슨 ${sessions}회`;
   // paymentHistory 기준으로 최종결제일 계산 (lastPaymentDate 필드는 stale할 수 있음)
   const sortedPays = (student.paymentHistory || []).sort((a, b) => a.date.localeCompare(b.date));
   const computedLastPayDate = sortedPays.length > 0 ? sortedPays[sortedPays.length - 1].date : (student.lastPaymentDate || "");
