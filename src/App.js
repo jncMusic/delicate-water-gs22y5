@@ -459,6 +459,8 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
   const additionalUnpaidStr = unpaidItems.length > 1
     ? " 이후 " + unpaidItems.slice(1).map((s, i) => `${i + 2}회차(${s.label})`).join(", ") + "까지 진행되었습니다."
     : "";
+  // 첫 미납 회차가 오늘 이후면 "(예정)", 이미 진행된 날짜면 표시 안 함
+  const firstUnpaidIsUpcoming = unpaidItems.length > 0 && unpaidItems[0].date >= toLocalDateStr();
 
   // 새로운 1회차: 미납회차가 있으면 첫 미납 날짜, 없으면 다음 예정 수업일 계산
   let nextDateStr = "";
@@ -558,7 +560,7 @@ ${getSeasonalGreeting()}
 - 최종 결제일 : ${lastPayment.slice(5).replace("-", "/")}
 - 수업일자 : ${recentSessions}
 - 결제하신 수업 완료일 : ${lastCoveredDate}
-- 새로운 1회차 수업 : ${nextDateStr} (예정)
+- 새로운 1회차 수업 : ${nextDateStr}${firstUnpaidIsUpcoming ? " (예정)" : ""}
 - 미납회차 : ${unpaidDatesStr} ${unpaidCount > 0 ? `(${unpaidCount}회)` : ""}
 
 - 결제금액 : ${subject} 1:1 개인레슨 ${sessionUnit}회 ${tuition}원 ${unpaidCount > 0 ? `(미납 ${unpaidCount}회 포함)` : ""}
