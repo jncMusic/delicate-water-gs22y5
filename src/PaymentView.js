@@ -1527,7 +1527,7 @@ export const PaymentView = ({
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
                     {todayCycleComplete.map((s) => {
-                      const total = getEffectiveSessions(s);
+                      const { currentUsage, sessionUnit, isOverdue } = getStudentProgress(s);
                       const notifSt = getNotifStatus(s.id);
                       return (
                         <tr key={s.id} className="hover:bg-amber-50 transition-colors">
@@ -1537,9 +1537,15 @@ export const PaymentView = ({
                           </td>
                           <td className="py-3 px-4 text-slate-600">{s.teacher || "-"}</td>
                           <td className="py-3 px-4 text-center">
-                            <span className="inline-block bg-amber-100 text-amber-800 text-xs font-bold px-2 py-0.5 rounded-full">
-                              {total}회차 완료
-                            </span>
+                            {isOverdue ? (
+                              <span className="inline-block bg-rose-100 text-rose-700 text-xs font-bold px-2 py-0.5 rounded-full">
+                                {currentUsage}/{sessionUnit}회 미납초과
+                              </span>
+                            ) : (
+                              <span className="inline-block bg-amber-100 text-amber-800 text-xs font-bold px-2 py-0.5 rounded-full">
+                                {currentUsage}회차 완료
+                              </span>
+                            )}
                           </td>
                           <td className="py-3 px-4 text-right font-bold text-indigo-600">
                             {Number(s.tuitionFee || 0).toLocaleString()}원
@@ -1632,7 +1638,7 @@ export const PaymentView = ({
                     </thead>
                     <tbody className="divide-y divide-slate-100 bg-white">
                       {weeklyDueList.map((s) => {
-                        const total = getEffectiveSessions(s);
+                        const { currentUsage, sessionUnit, isOverdue } = getStudentProgress(s);
                         const notifSt = getNotifStatus(s.id);
                         return (
                           <tr key={s.id} className="hover:bg-violet-50 transition-colors">
@@ -1642,9 +1648,15 @@ export const PaymentView = ({
                             </td>
                             <td className="py-3 px-4 text-slate-600">{s.teacher || "-"}</td>
                             <td className="py-3 px-4 text-center">
-                              <span className="inline-block bg-violet-100 text-violet-800 text-xs font-bold px-2 py-0.5 rounded-full">
-                                {total}회차 완료
-                              </span>
+                              {isOverdue ? (
+                                <span className="inline-block bg-rose-100 text-rose-700 text-xs font-bold px-2 py-0.5 rounded-full">
+                                  {currentUsage}/{sessionUnit}회 미납초과
+                                </span>
+                              ) : (
+                                <span className="inline-block bg-violet-100 text-violet-800 text-xs font-bold px-2 py-0.5 rounded-full">
+                                  {currentUsage}회차 완료
+                                </span>
+                              )}
                             </td>
                             <td className="py-3 px-4 text-right font-bold text-indigo-600">
                               {Number(s.tuitionFee || 0).toLocaleString()}원
