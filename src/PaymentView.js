@@ -1997,16 +1997,9 @@ export const PaymentView = ({
                               <MessageSquareText size={16} />
                             </button>
                             <button
-                              onClick={async (e) => {
+                              onClick={(e) => {
                                 e.stopPropagation();
-                                try {
-                                  const result = await sendKyuljesaengnim(s);
-                                  if (onSaveMessageLog)
-                                    await onSaveMessageLog({ studentId: s.id, studentName: s.name, phone: s.phone || "", sentAt: toLocalDateStr(), channels: ["결제선생"], messageType: "결제안내", sentBy: user?.name || "원장", billId: result.billId, shortURL: result.shortURL });
-                                  showToast(`${s.name} 결제선생 발송 완료`, "success");
-                                } catch (err) {
-                                  showToast("결제선생 발송 실패: " + err.message, "error");
-                                }
+                                setKyuljePreviewStudent(s);
                               }}
                               className="px-2 py-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 font-medium"
                               title="결제선생 발송"

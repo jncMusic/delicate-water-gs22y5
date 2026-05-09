@@ -42,7 +42,7 @@ export async function OPTIONS() {
 
 export async function POST(request) {
   try {
-    const { studentId, studentName, phone, price, subject, totalSessions, lastPaymentDate } = await request.json();
+    const { studentId, studentName, phone, price, subject, totalSessions, lastPaymentDate, note } = await request.json();
 
     if (!studentName) {
       return Response.json(
@@ -82,13 +82,8 @@ export async function POST(request) {
     expire.setMonth(expire.getMonth() + 1);
     const expireStr = expire.toISOString().slice(0, 10);
 
-    const productNm = subject && totalSessions
-      ? `${subject} 1:1 개인레슨 ${totalSessions}회분`
-      : "수강료 결제 안내";
-    const lastPayStr = lastPaymentDate
-      ? ` (최종결제일: ${lastPaymentDate.replace(/-/g, "/")})`
-      : "";
-    const message = `${studentName} 학생의 ${productNm} ${priceNum.toLocaleString()}원 결제 안내입니다.${lastPayStr}`;
+    const productNm = subject || "수강료 결제 안내";
+    const message = note || "";
 
     const payload = {
       apikey: PAYMINT_APIKEY,
