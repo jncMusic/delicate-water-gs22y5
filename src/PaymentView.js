@@ -1172,7 +1172,7 @@ export const PaymentView = ({
   // ── 탭 메타 정보 ─────────────────────────────────────────────
   const TABS = [
     { id: "today", label: "수납현황", icon: <Bell size={14} />, badge: thisWeekCycleComplete.length || null },
-    { id: "send", label: "발송센터", icon: <Send size={14} />, badge: weeklyDueList.filter(s => getNotifStatus(s.id) === "none").length || null },
+    { id: "send", label: "발송센터", icon: <Send size={14} />, badge: sendList.filter(s => getNotifStatus(s.id) === "none").length || null },
     { id: "confirm", label: "결제확인", icon: <CreditCard size={14} />, badge: processableStudents.length || null },
     { id: "manage", label: "수납관리", icon: <Users size={14} />, badge: null },
     { id: "kyulje", label: "결제선생", icon: <CreditCard size={14} />, badge: kyuljeLogsData.length || null },
@@ -1590,117 +1590,6 @@ export const PaymentView = ({
               )}
             </div>
 
-          </div>
-          </div>
-        )}
-
-        {/* ============================================================
-            탭 2: 발송센터 (send)
-            - 1주일 이내 결제 안내 대상 / 결제선생 발송 이력 / 최근 결제자
-        ============================================================ */}
-        {activeTab === "send" && (
-          <div className="flex-1 min-h-0 overflow-auto">
-          <div className="p-5 flex flex-col gap-5">
-            {/* 1주일 이내 결제 안내 대상 */}
-            <div className="border rounded-xl overflow-hidden flex flex-col">
-              <div className="bg-violet-50 px-4 py-2.5 flex items-center justify-between border-b shrink-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <Bell size={15} className="text-violet-600" />
-                  <span className="font-bold text-violet-700 text-sm">1주일 이내 결제 안내 대상</span>
-                  <span className="bg-violet-200 text-violet-800 text-xs px-1.5 py-0.5 rounded-full">{weeklyDueList.length}명</span>
-                  {weeklyDueList.length > 0 && (
-                    <span className="text-violet-900 font-bold text-sm">
-                      총 {weeklyDueList.reduce((sum, s) => sum + (Number(s.tuitionFee) || 0), 0).toLocaleString()}원
-                    </span>
-                  )}
-                </div>
-
-              </div>
-              {weeklyDueList.length === 0 ? (
-                <div className="py-8 text-center text-slate-400 text-sm">1주일 이내 결제 안내 대상이 없습니다.</div>
-              ) : (
-                <div className="overflow-auto max-h-64">
-                  <table className="w-full text-sm">
-                    <thead className="sticky top-0 bg-slate-50 border-b text-xs text-slate-400 uppercase">
-                      <tr>
-                        <th className="py-2.5 px-4 text-left">이름 / 과목</th>
-                        <th className="py-2.5 px-4 text-left">강사</th>
-                        <th className="py-2.5 px-4 text-center">완료 회차</th>
-                        <th className="py-2.5 px-4 text-right">원비</th>
-                        <th className="py-2.5 px-4 text-left">최종결제일</th>
-                        <th className="py-2.5 px-4 text-center">안내 발송</th>
-                        <th className="py-2.5 px-4 text-center">결제 완료</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 bg-white">
-                      {weeklyDueList.map((s) => {
-                        const { currentUsage, sessionUnit, isOverdue } = getStudentProgress(s);
-                        const notifSt = getNotifStatus(s.id);
-                        return (
-                          <tr key={s.id} className="hover:bg-violet-50 transition-colors">
-                            <td className="py-3 px-4">
-                              <div className="font-semibold">{s.name}</div>
-                              <div className="text-xs text-slate-400">{s.subject}</div>
-                            </td>
-                            <td className="py-3 px-4 text-slate-600">{s.teacher || "-"}</td>
-                            <td className="py-3 px-4 text-center">
-                              {isOverdue ? (
-                                <span className="inline-block bg-rose-100 text-rose-700 text-xs font-bold px-2 py-0.5 rounded-full">
-                                  {currentUsage}/{sessionUnit}회 미납초과
-                                </span>
-                              ) : (
-                                <span className="inline-block bg-violet-100 text-violet-800 text-xs font-bold px-2 py-0.5 rounded-full">
-                                  {currentUsage}회차 완료
-                                </span>
-                              )}
-                            </td>
-                            <td className="py-3 px-4 text-right font-bold text-indigo-600">
-                              {Number(s.tuitionFee || 0).toLocaleString()}원
-                            </td>
-                            <td className="py-3 px-4 text-xs text-slate-500">
-                              {s.lastPaymentDate
-                                ? `${parseInt(s.lastPaymentDate.slice(5, 7))}월 ${parseInt(s.lastPaymentDate.slice(8, 10))}일`
-                                : <span className="text-slate-300">없음</span>}
-                            </td>
-                            <td className="py-3 px-4 text-center">
-                              <div className="flex items-center justify-center gap-1">
-                                {notifSt !== "none" && (
-                                  <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium mr-1 ${
-                                    notifSt === "done" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
-                                  }`}>
-                                    {notifSt === "done" ? "🟢 발송완료" : "🟡 SMS만"}
-                                  </span>
-                                )}
-                                <button
-                                  onClick={(e) => handleOpenMsgPreview(e, s)}
-                                  className="px-2 py-1 text-xs bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg hover:bg-indigo-100 font-medium"
-                                >
-                                  <MessageSquareText size={12} className="inline mr-0.5" />안내
-                                </button>
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); setKyuljePreviewStudent(s); }}
-                                  className="px-2 py-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 font-medium"
-                                >
-                                  💳
-                                </button>
-                              </div>
-                            </td>
-                            <td className="py-3 px-4 text-center">
-                              <button
-                                onClick={() => { setQuickPayStudent(s); setQuickPayDate(toLocalDateStr()); }}
-                                className="px-3 py-1.5 text-xs bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-bold shadow-sm"
-                              >
-                                결제 완료 ✓
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
 
             {/* 1주일 이내 결제선생 발송 이력 */}
             <div className="border rounded-xl overflow-hidden flex flex-col">
@@ -1857,6 +1746,268 @@ export const PaymentView = ({
               )}
             </div>
           </div>
+          </div>
+        )}
+
+        {/* ============================================================
+            탭 2: 발송센터 (send)
+            - 결제가 필요한 전체 학생 목록 (미납/만료)
+        ============================================================ */}
+        {activeTab === "send" && (
+          <div className="flex-1 flex flex-col min-h-0 p-5 gap-3">
+            {/* 1주일 이내 결제 안내 대상 */}
+            <div className="border rounded-xl overflow-hidden flex flex-col">
+              <div className="bg-violet-50 px-4 py-2.5 flex items-center justify-between border-b shrink-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Bell size={15} className="text-violet-600" />
+                  <span className="font-bold text-violet-700 text-sm">1주일 이내 결제 안내 대상</span>
+                  <span className="bg-violet-200 text-violet-800 text-xs px-1.5 py-0.5 rounded-full">{weeklyDueList.length}명</span>
+                  {weeklyDueList.length > 0 && (
+                    <span className="text-violet-900 font-bold text-sm">
+                      총 {weeklyDueList.reduce((sum, s) => sum + (Number(s.tuitionFee) || 0), 0).toLocaleString()}원
+                    </span>
+                  )}
+                </div>
+
+              </div>
+              {weeklyDueList.length === 0 ? (
+                <div className="py-8 text-center text-slate-400 text-sm">1주일 이내 결제 안내 대상이 없습니다.</div>
+              ) : (
+                <div className="overflow-auto max-h-64">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-slate-50 border-b text-xs text-slate-400 uppercase">
+                      <tr>
+                        <th className="py-2.5 px-4 text-left">이름 / 과목</th>
+                        <th className="py-2.5 px-4 text-left">강사</th>
+                        <th className="py-2.5 px-4 text-center">완료 회차</th>
+                        <th className="py-2.5 px-4 text-right">원비</th>
+                        <th className="py-2.5 px-4 text-left">최종결제일</th>
+                        <th className="py-2.5 px-4 text-center">안내 발송</th>
+                        <th className="py-2.5 px-4 text-center">결제 완료</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {weeklyDueList.map((s) => {
+                        const { currentUsage, sessionUnit, isOverdue } = getStudentProgress(s);
+                        const notifSt = getNotifStatus(s.id);
+                        return (
+                          <tr key={s.id} className="hover:bg-violet-50 transition-colors">
+                            <td className="py-3 px-4">
+                              <div className="font-semibold">{s.name}</div>
+                              <div className="text-xs text-slate-400">{s.subject}</div>
+                            </td>
+                            <td className="py-3 px-4 text-slate-600">{s.teacher || "-"}</td>
+                            <td className="py-3 px-4 text-center">
+                              {isOverdue ? (
+                                <span className="inline-block bg-rose-100 text-rose-700 text-xs font-bold px-2 py-0.5 rounded-full">
+                                  {currentUsage}/{sessionUnit}회 미납초과
+                                </span>
+                              ) : (
+                                <span className="inline-block bg-violet-100 text-violet-800 text-xs font-bold px-2 py-0.5 rounded-full">
+                                  {currentUsage}회차 완료
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 text-right font-bold text-indigo-600">
+                              {Number(s.tuitionFee || 0).toLocaleString()}원
+                            </td>
+                            <td className="py-3 px-4 text-xs text-slate-500">
+                              {s.lastPaymentDate
+                                ? `${parseInt(s.lastPaymentDate.slice(5, 7))}월 ${parseInt(s.lastPaymentDate.slice(8, 10))}일`
+                                : <span className="text-slate-300">없음</span>}
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <div className="flex items-center justify-center gap-1">
+                                {notifSt !== "none" && (
+                                  <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium mr-1 ${
+                                    notifSt === "done" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
+                                  }`}>
+                                    {notifSt === "done" ? "🟢 발송완료" : "🟡 SMS만"}
+                                  </span>
+                                )}
+                                <button
+                                  onClick={(e) => handleOpenMsgPreview(e, s)}
+                                  className="px-2 py-1 text-xs bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg hover:bg-indigo-100 font-medium"
+                                >
+                                  <MessageSquareText size={12} className="inline mr-0.5" />안내
+                                </button>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); setKyuljePreviewStudent(s); }}
+                                  className="px-2 py-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 font-medium"
+                                >
+                                  💳
+                                </button>
+                              </div>
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <button
+                                onClick={() => { setQuickPayStudent(s); setQuickPayDate(toLocalDateStr()); }}
+                                className="px-3 py-1.5 text-xs bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-bold shadow-sm"
+                              >
+                                결제 완료 ✓
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+
+            {/* 필터 바 */}
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <button
+                onClick={() => setFilterWeek(!filterWeek)}
+                className={`px-3 py-1.5 rounded text-sm border flex items-center gap-1 transition-colors ${filterWeek ? "bg-violet-50 border-violet-300 text-violet-700 font-bold" : "bg-white hover:bg-slate-50"}`}
+              >
+                <Bell size={13} /> {filterWeek ? "주간 해제" : "주간 미발송"}
+              </button>
+              <button
+                onClick={() => setSentFilter(
+                  sentFilter === "" ? "none" :
+                  sentFilter === "none" ? "sms-only" :
+                  sentFilter === "sms-only" ? "done" : ""
+                )}
+                className={`px-3 py-1.5 rounded text-sm border flex items-center gap-1 transition-colors font-medium ${
+                  sentFilter === "none" ? "bg-rose-50 border-rose-300 text-rose-700" :
+                  sentFilter === "sms-only" ? "bg-amber-50 border-amber-300 text-amber-700" :
+                  sentFilter === "done" ? "bg-emerald-50 border-emerald-300 text-emerald-700" :
+                  "bg-white hover:bg-slate-50"
+                }`}
+              >
+                <MessageSquareText size={13} />
+                {sentFilter === "none" ? "🔴 미발송만" : sentFilter === "sms-only" ? "🟡 결제선생 미발송" : sentFilter === "done" ? "🟢 발송완료" : "발송 필터"}
+              </button>
+              <span className="text-sm text-slate-500 ml-1">
+                미납/만료 <span className="font-bold text-rose-600">{sendList.length}명</span>
+              </span>
+            </div>
+
+            {/* 일괄 선택 액션 바 */}
+            {selectedIds.length > 0 && (
+              <div className="flex items-center justify-between bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-2.5 shrink-0">
+                <div className="flex items-center gap-3 text-sm">
+                  <span className="text-indigo-700 font-bold">{selectedIds.length}명 선택됨</span>
+                  <span className="text-slate-500">|</span>
+                  <span className="text-slate-600">
+                    총{" "}
+                    <span className="font-bold text-rose-600">
+                      {sendList.filter(s => selectedIds.includes(s.id)).reduce((sum, s) => sum + (Number(s.tuitionFee) || 0), 0).toLocaleString()}원
+                    </span>
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setSelectedIds([])} className="px-3 py-1.5 text-xs text-slate-500 hover:bg-indigo-100 rounded-lg font-bold">선택 해제</button>
+                  <button
+                    onClick={() => setShowBulkModal(true)}
+                    className="px-4 py-1.5 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 shadow-sm flex items-center gap-1"
+                  >
+                    <MessageSquareText size={14} /> 메시지 생성 ({selectedIds.length})
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 학생 목록 */}
+            <div className="border rounded-xl overflow-auto flex-1 min-h-0">
+              <table className="w-full text-sm min-w-[600px]">
+                <thead className="sticky top-0 bg-slate-50 border-b">
+                  <tr className="text-slate-400 text-xs uppercase">
+                    <th className="py-3 px-3 w-8">
+                      <input
+                        type="checkbox"
+                        checked={sendList.length > 0 && selectedIds.length === sendList.length}
+                        onChange={() => setSelectedIds(selectedIds.length === sendList.length ? [] : sendList.map(s => s.id))}
+                        className="w-4 h-4 rounded accent-indigo-600"
+                      />
+                    </th>
+                    <th className="py-3 px-4 text-left">이름 / 과목</th>
+                    <th className="py-3 px-4 text-left">강사</th>
+                    <th className="py-3 px-4 text-right">원비</th>
+                    <th className="py-3 px-4 text-left">상태</th>
+                    <th className="py-3 px-4 text-left">최종결제일</th>
+                    <th className="py-3 px-4 text-left">마지막 안내</th>
+                    <th className="py-3 px-4 text-center">액션</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sendList.length === 0 ? (
+                    <tr><td colSpan={8} className="py-12 text-center text-slate-400">결제 안내가 필요한 학생이 없습니다.</td></tr>
+                  ) : sendList.map((s) => {
+                    const { displayStatus, statusColor } = getStudentProgress(s);
+                    const lastNotif = getLastNotifDate(s.id);
+                    const notifSt = getNotifStatus(s.id);
+                    return (
+                      <tr
+                        key={s.id}
+                        className={`border-b transition-colors cursor-pointer ${selectedIds.includes(s.id) ? "bg-indigo-50" : "hover:bg-slate-50"}`}
+                        onClick={() => toggleSelect(s.id)}
+                      >
+                        <td className="py-3 px-3" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.includes(s.id)}
+                            onChange={() => toggleSelect(s.id)}
+                            className="w-4 h-4 rounded accent-indigo-600"
+                          />
+                        </td>
+                        <td className="py-3 px-4 font-medium">
+                          {s.name}
+                          {s.subject && <span className="text-xs text-slate-500 ml-1">({s.subject})</span>}
+                          {s.phone && <div className="text-xs text-slate-400">{s.phone}</div>}
+                        </td>
+                        <td className="py-3 px-4 text-slate-600">{s.teacher || "-"}</td>
+                        <td className="py-3 px-4 text-right font-bold text-indigo-600">
+                          {s.tuitionFee ? Number(s.tuitionFee).toLocaleString() : 0}
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColor}`}>{displayStatus}</span>
+                        </td>
+                        <td className="py-3 px-4 text-xs text-slate-500">
+                          {s.lastPaymentDate
+                            ? `${s.lastPaymentDate.slice(2,4)}/${s.lastPaymentDate.slice(5,7)}/${s.lastPaymentDate.slice(8,10)}`
+                            : <span className="text-slate-300">-</span>}
+                        </td>
+                        <td className="py-3 px-4 text-xs">
+                          {isPaidAfterNotif(s, lastNotif) ? (
+                            <span className="font-medium text-blue-600">✅ {lastNotif} 결제완료</span>
+                          ) : notifSt === "done" ? (
+                            <span className="font-medium text-emerald-600">
+                              🟢 {lastNotif} {notifAgeLabel(lastNotif)}
+                            </span>
+                          ) : notifSt === "sms-only" ? (
+                            <span className="font-medium text-amber-600">
+                              🟡 {lastNotif} {notifAgeLabel(lastNotif)}
+                            </span>
+                          ) : (
+                            <span className="text-rose-400">🔴 미발송</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-center" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              onClick={(e) => handleOpenMsgPreview(e, s)}
+                              className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                              title="안내 문자 미리보기"
+                            >
+                              <MessageSquareText size={16} />
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setKyuljePreviewStudent(s); }}
+                              className="px-2 py-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 font-medium"
+                              title="결제선생 발송"
+                            >💳</button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
