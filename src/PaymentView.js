@@ -761,23 +761,20 @@ export const PaymentView = ({
     return (student.paymentHistory || []).some((p) => p.date > notifDate);
   };
 
-  // ── 이번주 회차 완료 학생 (수납현황 탭) ──────────────────────
-  // 이번주(월~오늘) 수업이 있고 회차 완료/미납초과인 학생
+  // ── 최근 10일 회차 완료 학생 (수납현황 탭) ───────────────────
   const thisWeekCycleComplete = useMemo(() => {
     const todayStr = toLocalDateStr();
-    const today = new Date();
-    const daysFromMon = today.getDay() === 0 ? 6 : today.getDay() - 1;
-    const monday = new Date(today);
-    monday.setDate(today.getDate() - daysFromMon);
-    const weekStartStr = toLocalDateStr(monday);
+    const d10 = new Date();
+    d10.setDate(d10.getDate() - 10);
+    const tenDaysAgoStr = toLocalDateStr(d10);
     return students.filter((s) => {
       if (s.status !== "재원") return false;
       const history = s.attendanceHistory || [];
-      const weekRecord = history.find(
-        (h) => h.date >= weekStartStr && h.date <= todayStr &&
+      const recentRecord = history.find(
+        (h) => h.date >= tenDaysAgoStr && h.date <= todayStr &&
                (h.status === "present" || h.status === "canceled")
       );
-      if (!weekRecord) return false;
+      if (!recentRecord) return false;
       const { isCompleted, isOverdue } = getStudentProgress(s);
       return isCompleted || isOverdue;
     });
@@ -1487,7 +1484,7 @@ export const PaymentView = ({
               <div className="bg-amber-50 px-4 py-2.5 flex items-center justify-between border-b shrink-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <Bell size={15} className="text-amber-600" />
-                  <span className="font-bold text-amber-700 text-sm">이번주 회차 완료 — 결제 안내 대상</span>
+                  <span className="font-bold text-amber-700 text-sm">최근 10일 회차 완료 — 결제 안내 대상</span>
                   <span className="bg-amber-200 text-amber-800 text-xs px-1.5 py-0.5 rounded-full">{thisWeekCycleComplete.length}명</span>
                   {thisWeekCycleComplete.length > 0 && (
                     <span className="text-amber-900 font-bold text-sm">
@@ -1507,7 +1504,7 @@ export const PaymentView = ({
 
               {thisWeekCycleComplete.length === 0 ? (
                 <div className="py-10 text-center text-slate-400 text-sm">
-                  이번주 회차가 완료된 학생이 없습니다.
+                  최근 10일 이내 회차가 완료된 학생이 없습니다.
                 </div>
               ) : (
                 <div className="overflow-auto">
