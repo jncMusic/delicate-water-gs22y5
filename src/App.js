@@ -143,15 +143,14 @@ const PAYMINT_SEND_URL = process.env.REACT_APP_PAYMINT_API_URL || "https://jncmu
 // student: { id, name, phone, tuitionFee, subject, totalSessions, lastPaymentDate }
 const sendKyuljesaengnim = async (student) => {
   const sessions = getEffectiveSessions(student);
-  // 이름: [J&C]과목-이름 형식
   const formattedName = `[J&C]${student.subject || ""}-${student.name}`;
-  // 과정명: 1:1 개인레슨 N회 형식
   const formattedSubject = `1:1 개인레슨 ${sessions}회`;
-  // 안내 메시지: 최종 결제일 포함
-  const lastPayStr = student.lastPaymentDate
-    ? `최종 결제일: ${student.lastPaymentDate}`
-    : "";
-  const note = `${student.name} 학생의 ${student.subject || ""} 1:1 개인레슨 ${sessions}회분 ${Number(student.tuitionFee || 0).toLocaleString()}원 결제 안내입니다.${lastPayStr ? `\n${lastPayStr}` : ""}`;
+  // generatePaymentMessage와 동일하게 paymentHistory 기준으로 최종 결제일 계산
+  const allPayments = (student.paymentHistory || []).sort((a, b) => a.date.localeCompare(b.date));
+  const computedLastPayDate = allPayments.length > 0
+    ? allPayments[allPayments.length - 1].date
+    : (student.lastPaymentDate || "");
+  const note = computedLastPayDate ? `최종 결제일: ${computedLastPayDate}` : "";
   const res = await fetch(PAYMINT_SEND_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -162,13 +161,37 @@ const sendKyuljesaengnim = async (student) => {
       price: String(student.tuitionFee || 0),
       subject: formattedSubject,
       totalSessions: sessions,
-      lastPaymentDate: student.lastPaymentDate || "",
+      lastPaymentDate: computedLastPayDate,
       note,
     }),
   });
   const data = await res.json();
   if (!data.success) throw new Error(data.error || "결제선생 발송 실패");
   return data; // { success, billId, shortURL }
+};
+
+// 파기: /destroy (billId + price 필요) — 미결제(W) 청구서 취소용
+const cancelKyuljesaengnim = async (billId, price) => {
+  const PAYMINT_DESTROY_URL = PAYMINT_SEND_URL.replace("/send", "/destroy");
+  const res = await fetch(PAYMINT_DESTROY_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ billId, price }),
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error || "파기 실패");
+  return data;
+};
+
+// 청구서 상태 조회: F=결제완료, W=미결제, C=취소, D=파기
+const readBillState = async (billId) => {
+  const PAYMINT_READ_URL = PAYMINT_SEND_URL.replace("/send", "/read");
+  const res = await fetch(PAYMINT_READ_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ billId }),
+  });
+  return res.json();
 };
 
 // =================================================================
@@ -432,6 +455,12 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
 
   const unpaidDatesStr = unpaidSlots.length > 0 ? unpaidSlots.join(", ") : "없음";
   const unpaidCount = unpaidSlots.length;
+  // 2회차 이상 미납 시 추가 날짜 문구
+  const additionalUnpaidStr = unpaidItems.length > 1
+    ? " 이후 " + unpaidItems.slice(1).map((s, i) => `${i + 2}회차(${s.label})`).join(", ") + "까지 진행되었습니다."
+    : "";
+  // 첫 미납 회차가 오늘 이후면 "(예정)". 미납 없으면 다음 예정 수업일이므로 항상 (예정)
+  const firstUnpaidIsUpcoming = unpaidItems.length === 0 || unpaidItems[0].date >= toLocalDateStr();
 
   // 새로운 1회차: 미납회차가 있으면 첫 미납 날짜, 없으면 다음 예정 수업일 계산
   let nextDateStr = "";
@@ -503,7 +532,7 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
   if (style === "simple") {
     return `안녕하세요, J&C 음악학원입니다. ${getSeasonalGreeting()}
 
-${lastPaymentMD} 결제하신 ${nameLabel}의 ${subject} ${sessionUnit}회차가 ${lastCoveredMD}에 완료되어 ${nextDateMD} 새로운 ${subject} 1회차가 시작되어 안내드립니다.
+${lastPaymentMD} 결제하신 ${nameLabel}의 ${subject} ${sessionUnit}회차가 ${lastCoveredMD}에 완료되어 ${nextDateMD} 새로운 ${subject} 1회차가 시작되어 안내드립니다.${additionalUnpaidStr}
 
 아직 결제 전으로 확인되어 안내드리오니 이미 결제하신 경우 알려주시면 감사하겠습니다. 제로페이/서울페이 등은 결제 후 알려주셔야 확인이 되는 점 양해부탁말씀 드립니다.
 
@@ -531,7 +560,7 @@ ${getSeasonalGreeting()}
 - 최종 결제일 : ${lastPayment.slice(5).replace("-", "/")}
 - 수업일자 : ${recentSessions}
 - 결제하신 수업 완료일 : ${lastCoveredDate}
-- 새로운 1회차 수업 : ${nextDateStr} (예정)
+- 새로운 1회차 수업 : ${nextDateStr}${firstUnpaidIsUpcoming ? " (예정)" : ""}
 - 미납회차 : ${unpaidDatesStr} ${unpaidCount > 0 ? `(${unpaidCount}회)` : ""}
 
 - 결제금액 : ${subject} 1:1 개인레슨 ${sessionUnit}회 ${tuition}원 ${unpaidCount > 0 ? `(미납 ${unpaidCount}회 포함)` : ""}
@@ -2039,28 +2068,28 @@ const DashboardView = ({
   }, [students, consultations, user]);
 
   // 오늘 회차 완료 학생 (관리자 — 결제 안내 자동화)
+  // 결제 이력 기반 잔여 회차로 판단 (단순 모듈로 방식 대신)
   const todayCycleComplete = useMemo(() => {
     if (user.role !== "admin") return [];
     const todayStr = toLocalDateStr();
     return students.filter((s) => {
       if (s.status !== "재원") return false;
       const history = s.attendanceHistory || [];
-      const todayRecord = history.find(
+      const hasTodayRecord = history.some(
         (h) => h.date === todayStr && (h.status === "present" || h.status === "canceled")
       );
-      if (!todayRecord) return false;
-      const total = getEffectiveSessions(s);
-      const sessions = history
+      if (!hasTodayRecord) return false;
+
+      const totalAttended = history
         .filter((h) => h.status === "present" || h.status === "canceled")
-        .sort((a, b) => a.date.localeCompare(b.date));
-      let cumulative = 0;
-      for (const h of sessions) {
-        const cnt = h.status === "canceled" ? 1 : (h.count || 1);
-        cumulative += cnt;
-        if (h.date === todayStr) return cumulative % total === 0;
-        if (h.date > todayStr) break;
-      }
-      return false;
+        .reduce((sum, h) => sum + (h.status === "canceled" ? 1 : (h.count || 1)), 0);
+      const sortedPays = [...(s.paymentHistory || [])].sort((a, b) => a.date.localeCompare(b.date));
+      const scheduleBasedUnit = Object.keys(s.schedules || {}).length >= 2 ? 8 : 4;
+      const legacyFallback = sortedPays.find((p) => p.totalSessions > 0)?.totalSessions || scheduleBasedUnit;
+      const totalPaidCapacity = sortedPays.reduce(
+        (sum, p) => sum + (p.totalSessions || legacyFallback), 0
+      );
+      return totalPaidCapacity - totalAttended <= 0;
     });
   }, [students, user]);
 
@@ -3280,13 +3309,13 @@ const ConsultationView = ({
       return `안녕하세요, J&C 음악학원입니다.\n\n문의주신 ${subject} 수업 가능 시간 안내드립니다.\n\n- 요일/시간: (예: 월요일 오후 4시, 수요일 오후 5시)\n\n편하신 시간에 방문하시거나 연락 주시면 자세히 안내드리겠습니다.\n\nJ&C 음악학원 (☎ 010-4028-9803)`;
     }
     if (type === "new_lesson") {
-      return `안녕하세요, J&C 음악학원입니다.\n\n${nameLabel}의 첫 수업 안내드립니다.\n\n📅 첫 수업: (날짜/요일/시간 입력)\n📖 과목: ${subject}\n\n💰 원비 안내\n월 원비: (금액)원 / (횟수)회 수업\n하나은행 125-91025-766307 강열혁(제이앤씨음악학원)\n방문(카드/현금), 계좌이체·제로페이, 온라인 카드결제 모두 가능합니다.\n\n⚠️ 취소/노쇼 안내\n당일 취소 및 노쇼는 수업 1회 차감됩니다.\n변경 사항은 수업 전날까지 연락 부탁드립니다.\n\n항상 감사드립니다 :)\nJ&C 음악학원장 드림.`;
+      return `안녕하세요, J&C 음악학원입니다.\n\n${nameLabel}의 첫 수업 안내드립니다.\n\n* 첫 수업: (날짜/요일/시간 입력)\n* 과목: ${subject}\n\n* 원비 안내\n월 원비: (금액)원 / (횟수)회 수업\n하나은행 125-91025-766307 강열혁(제이앤씨음악학원)\n방문(카드/현금), 계좌이체·제로페이, 온라인 카드결제 모두 가능합니다.\n\n* 취소/노쇼 안내\n당일 취소 및 노쇼는 수업 1회 차감됩니다.\n변경 사항은 수업 전날까지 연락 부탁드립니다.\n\n항상 감사드립니다 :)\nJ&C 음악학원장 드림.`;
     }
     if (type === "consult_confirm") {
-      return `안녕하세요, J&C 음악학원입니다.\n\n${nameLabel}, 상담 예약이 확인되었습니다.\n\n📅 상담 일시: (날짜/요일/시간 입력)\n📍 장소: J&C 음악학원 (목동)\n\n문의사항이 있으시면 언제든지 연락 주세요.\n연락처: 010-4028-9803\n\n감사합니다 :)\nJ&C 음악학원장 드림.`;
+      return `안녕하세요, J&C 음악학원입니다.\n\n${nameLabel}, 상담 예약이 확인되었습니다.\n\n* 상담 일시: (날짜/요일/시간 입력)\n* 장소: J&C 음악학원 (목동)\n\n문의사항이 있으시면 언제든지 연락 주세요.\n연락처: 010-4028-9803\n\n감사합니다 :)\nJ&C 음악학원장 드림.`;
     }
     if (type === "academy_info") {
-      return `안녕하세요, J&C 음악학원입니다.\n\n문의해 주셔서 감사합니다 :)\n아래 학원 안내 정보 참고 부탁드립니다.\n\n🏫 J&C 음악학원\n📍 위치: 서울 양천구 목동서로 35, 목동프라자 3층\n🌐 홈페이지: https://www.jncmusic.kr\n☎ 전화: 010-4028-9803\n\n⏰ 운영 시간\n평일(월~금): 10:30 ~ 22:00\n주말(토·일): 09:00 ~ 22:00\n\n📋 상담 안내\n상담은 예약제로 운영됩니다.\n방문 또는 전화 상담 모두 가능하오니 편하신 방법으로 예약 후 방문 부탁드립니다.\n\n감사합니다 :)\nJ&C 음악학원장 드림.`;
+      return `안녕하세요, J&C 음악학원입니다.\n\n문의해 주셔서 감사합니다 :)\n아래 학원 안내 정보 참고 부탁드립니다.\n\n[J&C 음악학원]\n* 위치: 서울 양천구 목동서로 35, 목동프라자 3층\n* 홈페이지: https://www.jncmusic.kr\n* 전화: 010-4028-9803\n\n[운영 시간]\n평일(월~금): 10:30 ~ 22:00\n주말(토·일): 09:00 ~ 22:00\n\n[상담 안내]\n상담은 예약제로 운영됩니다.\n방문 또는 전화 상담 모두 가능하오니 편하신 방법으로 예약 후 방문 부탁드립니다.\n\n감사합니다 :)\nJ&C 음악학원장 드림.`;
     }
     if (type === "blank") {
       return `안녕하세요, J&C 음악학원입니다.\n\n`;
@@ -3965,9 +3994,18 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
         if (existingIdx > -1) history[existingIdx] = record;
         else history.push(record);
       } else {
-        const prevCount = existingIdx > -1 ? (history[existingIdx].count || 1) : 1;
+        // 보강 수업 출석: reschedule 기록의 makeupDate에 출석 저장 (원본 날짜 아닌 실제 보강일에 기록)
+        let targetDate = date;
+        if (status === "present") {
+          const reschRec = history.find(
+            (h) => h.date === date && h.status === "reschedule" && h.makeupDate
+          );
+          if (reschRec) targetDate = reschRec.makeupDate;
+        }
+        const targetIdx = history.findIndex((h) => h.date === targetDate);
+        const prevCount = targetIdx > -1 ? (history[targetIdx].count || 1) : 1;
         const record = {
-          date: date,
+          date: targetDate,
           status: status,
           reason: reason,
           teacher: student.teacher || "",
@@ -3975,7 +4013,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
         };
         if (status === "present") record.count = prevCount;
         if (memo) record.memo = memo;
-        if (existingIdx > -1) history[existingIdx] = record;
+        if (targetIdx > -1) history[targetIdx] = record;
         else history.push(record);
       }
       // reschedule은 세션 차감 안 함 (보강 완료 시 present로 별도 처리)
@@ -4172,6 +4210,14 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                   const st = getStudentsForCell(t.name, dayOfWeek, dateStr);
                   const timeFiltered = st.filter((s) => {
                     const dayName = ["일", "월", "화", "수", "목", "금", "토"][dayOfWeek];
+                    // 보강 학생: makeupTime 기준으로 시간 슬롯 결정
+                    const makeupRec = s.attendanceHistory?.find(
+                      (h) => h.status === "reschedule" && h.makeupDate === dateStr
+                    );
+                    if (makeupRec) {
+                      if (!makeupRec.makeupTime) return false;
+                      return parseInt(makeupRec.makeupTime.split(":")[0], 10) === hour;
+                    }
                     const time = getStudentScheduleTime(s, dayName);
                     return time && parseInt(time.split(":")[0], 10) === hour;
                   });
@@ -4301,6 +4347,14 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                         "금",
                         "토",
                       ][dayOfWeek];
+                      // 보강 학생: makeupTime 기준으로 시간 슬롯 결정
+                      const makeupRec = s.attendanceHistory?.find(
+                        (h) => h.status === "reschedule" && h.makeupDate === dateStr
+                      );
+                      if (makeupRec) {
+                        if (!makeupRec.makeupTime) return false;
+                        return makeupRec.makeupTime.startsWith(`${hour}:`);
+                      }
                       const time = getStudentScheduleTime(s, dayName);
                       return time && time.startsWith(`${hour}:`);
                     });
@@ -7197,20 +7251,135 @@ const StudentModal = ({
         </div>
 
         {/* 3. 하단 버튼 영역 */}
-        <div className="p-6 border-t bg-slate-50 flex justify-end gap-3 sticky bottom-0 z-10">
-          <button
-            onClick={onClose}
-            className="px-5 py-2.5 rounded-xl border border-slate-300 font-bold text-slate-600 hover:bg-slate-100 transition-colors"
-          >
-            취소
-          </button>
-          <button
-            onClick={handleSaveWrapper}
-            className="px-5 py-2.5 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all flex items-center gap-2"
-          >
-            <Save size={18} />
-            {student ? "정보 수정 저장" : "신규 등록"}
-          </button>
+        <div className="p-6 border-t bg-slate-50 flex justify-between gap-3 sticky bottom-0 z-10">
+          {/* 등록서류 인쇄 (기존 학생만) */}
+          {student ? (
+            <button
+              onClick={() => {
+                const s = formData;
+                const scheduleStr = Object.entries(s.schedules || {})
+                  .map(([day, time]) => `${day}요일 ${time || ""}`)
+                  .join(",  ");
+                const fee = s.tuitionFee ? Number(s.tuitionFee).toLocaleString() + "원" : "";
+                const schoolGrade = [s.school, s.grade && s.grade !== "성인" ? s.grade : ""].filter(Boolean).join(" ");
+                const html = `<!DOCTYPE html>
+<html lang="ko"><head><meta charset="UTF-8"><title>J&C 등록서류</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:"Malgun Gothic","맑은 고딕",sans-serif; font-size:11pt; color:#111; }
+@page { size:A4; margin:18mm 16mm; }
+.page { page-break-after:always; }
+.page:last-child { page-break-after:avoid; }
+h1,h2 { text-align:center; letter-spacing:6px; margin-bottom:14px; }
+h1 { font-size:17pt; } h2 { font-size:15pt; }
+.date-line { text-align:right; margin-bottom:12px; font-size:10pt; }
+table { width:100%; border-collapse:collapse; }
+td,th { border:1px solid #666; padding:7px 10px; font-size:10.5pt; vertical-align:middle; }
+.lbl { background:#f0f0f0; font-weight:bold; text-align:center; white-space:nowrap; width:110px; }
+.fixed { background:#fafafa; font-size:10pt; line-height:1.7; }
+.sig { text-align:center; margin-top:10px; }
+.sec { font-weight:bold; font-size:11pt; margin:14px 0 6px; }
+.sub { font-size:9.5pt; font-weight:normal; }
+</style></head><body>
+
+<div class="page">
+<h1>J&amp;C  Music  Academy  등록원서</h1>
+<div class="date-line">20__ 년 __ 월 __ 일</div>
+<table>
+<tr><td class="lbl">성 명</td><td>${s.name||""}</td><td class="lbl" style="width:70px">성 별</td><td style="width:90px">&nbsp;</td></tr>
+<tr><td class="lbl">생년월일</td><td>&nbsp;</td><td class="lbl">연 락 처</td><td>${s.phone||""}</td></tr>
+<tr><td class="lbl">주 소</td><td colspan="3">&nbsp;</td></tr>
+<tr><td class="lbl">학교 / 소속</td><td colspan="3">${schoolGrade||"&nbsp;"}</td></tr>
+<tr><td class="lbl">수 강 과 목</td><td colspan="3">${s.subject||"&nbsp;"}</td></tr>
+<tr><td class="lbl">배우는 목적</td><td colspan="3">취미</td></tr>
+<tr><td class="lbl">첫 수업일자</td><td>${s.registrationDate||""}</td><td class="lbl">담당 선생님</td><td>${s.teacher ? s.teacher+" 선생님" : ""}</td></tr>
+<tr><td class="lbl">수업 요일<br>및 시간</td><td colspan="3">${scheduleStr||"&nbsp;"}</td></tr>
+<tr><td class="lbl">소개 / 경로</td><td colspan="3">&nbsp;</td></tr>
+<tr><td class="lbl">결제방법 /<br>결제일 / 금액</td><td colspan="3">${fee ? "수강료: "+fee+"&nbsp;" : "&nbsp;"}</td></tr>
+<tr><td class="lbl">노쇼 및<br>당일취소 안내</td><td colspan="3" class="fixed">
+본 원은 당일취소 및 노쇼에 대해 1회분 수업이 차감됩니다.<br>
+단, 호흡기질환/경조사 등에 대해서는 차감되지 않습니다.<br>
+전날까지 연락 주시면 자유롭게 수업 변경이 가능합니다.
+<div class="sig">확인 : ________________ (인)</div></td></tr>
+<tr><td class="lbl">기타 특기사항</td><td colspan="3" style="height:44px">&nbsp;</td></tr>
+<tr><td class="lbl">개인정보<br>이용 동의</td><td colspan="3" class="fixed">
+본 학원의 원비 결제와 원활한 수업 진행을 위해 학생의 연락처와 성명 등 개인정보를 활용하는데 동의합니다.
+<div class="sig" style="margin-top:10px">동의 (　) &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 작성자 : ________________ (인)</div></td></tr>
+</table>
+</div>
+
+<div class="page">
+<h2>J&amp;C  Music  Academy  입학 안내문</h2>
+
+<div class="sec">1. 환불 규정 안내 &nbsp;<span class="sub">(학원법 시행령 제18조 3항에 의거)</span></div>
+<table>
+<tr><th class="lbl">구 분</th><th class="lbl">환불 금액</th></tr>
+<tr><td class="lbl">첫 수업 전 환불</td><td style="text-align:center">100% 환불</td></tr>
+<tr><td class="lbl">1/3 경과 전 환불</td><td style="text-align:center">납부 수강료 2/3 해당 금액</td></tr>
+<tr><td class="lbl">1/2 경과 전 환불</td><td style="text-align:center">납부 수강료 1/2 해당 금액</td></tr>
+<tr><td class="lbl">1/2 경과 후 환불</td><td style="text-align:center">환불 불가</td></tr>
+</table>
+<p style="font-size:9.5pt;margin-top:3px">※ 환불정산: 주 1회(4회 기준) 횟수 기준으로 적용</p>
+
+<div class="sec">2. 수강 안내</div>
+<table>
+<tr><td class="lbl">수업 결제 안내</td><td>결제는 4회차 종료 후, 다음 1회차 수업 시작 전까지 완료 부탁드립니다.<br><span style="font-size:9.5pt">· 수강료 2회 미납 시 3회차 수업 준비가 어려울 수 있습니다.</span></td></tr>
+<tr><td class="lbl">등록 기간</td><td>4회차 단위로 운영되며, 등록 기간은 별도로 안내드립니다.</td></tr>
+<tr><td class="lbl">노쇼 · 당일취소</td><td>당일취소 및 노쇼는 1회분 수업이 차감됩니다.<br>공휴일 및 기타 학원 사정으로 수업이 진행되지 않는 경우 회차 차감 없음.<br><span style="font-size:9.5pt">전날까지 연락 시 자유롭게 수업 변경 가능합니다.</span></td></tr>
+<tr><td class="lbl">가족 할인</td><td>두 번째 과목 등록 시 해당 과목 수강료에서 30,000원 할인<br><span style="font-size:9.5pt">(1인 2과목 또는 가족 구성원 모두 동일 적용)</span></td></tr>
+</table>
+
+<div class="sec">3. 결제 안내</div>
+<table>
+<tr><td class="lbl">수 강 료</td><td>등록 시 안내드린 금액 기준${fee ? " · <b>"+fee+"</b>" : ""} · 과목 추가 시 30,000원 할인 적용</td></tr>
+<tr><td class="lbl" style="vertical-align:top">결제 방법</td><td>
+· 방문 결제 &nbsp; : 카드 / 현금<br>
+· 계좌이체 &nbsp; : 하나은행 125-91025-766307 &nbsp; 강열혁 (제이앤씨음악학원)<br>
+· 제로페이 &nbsp; : 방문 시 이용 가능<br>
+· 온라인 결제 : 카드 결제 희망 시 담당 선생님께 문의 — 결제선생(카카오톡 페이지) 링크 발송
+</td></tr>
+</table>
+
+<div class="sec">4. 학원 안내</div>
+<table>
+<tr><td class="lbl">위 치</td><td>서울 양천구 목동서로 35, 목동프라자 3층</td></tr>
+<tr><td class="lbl">전 화</td><td>010-4028-9803</td></tr>
+<tr><td class="lbl">홈페이지</td><td>www.jncmusic.kr</td></tr>
+<tr><td class="lbl">운영 시간</td><td>평일(월~금) 10:30 ~ 22:00 &nbsp;·&nbsp; 주말(토·일) 09:00 ~ 22:00</td></tr>
+</table>
+
+<p style="text-align:center;margin-top:20px;font-size:10pt">※ 중요사항은 꼼꼼히 읽어 주세요. 감사합니다.</p>
+<p style="text-align:right;margin-top:8px;font-weight:bold;font-size:11pt">J&amp;C Music Academy</p>
+</div>
+</body></html>`;
+                const win = window.open("", "_blank", "width=820,height=1100");
+                if (!win) { alert("팝업이 차단되었습니다. 팝업 허용 후 다시 시도해주세요."); return; }
+                win.document.write(html);
+                win.document.close();
+                win.onload = () => win.print();
+              }}
+              className="px-5 py-2.5 rounded-xl border border-slate-300 font-bold text-slate-600 hover:bg-slate-100 transition-colors flex items-center gap-2"
+            >
+              <Printer size={18} /> 등록서류 인쇄
+            </button>
+          ) : (
+            <div />
+          )}
+          <div className="flex gap-3">
+            <button
+              onClick={onClose}
+              className="px-5 py-2.5 rounded-xl border border-slate-300 font-bold text-slate-600 hover:bg-slate-100 transition-colors"
+            >
+              취소
+            </button>
+            <button
+              onClick={handleSaveWrapper}
+              className="px-5 py-2.5 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all flex items-center gap-2"
+            >
+              <Save size={18} />
+              {student ? "정보 수정 저장" : "신규 등록"}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -7694,10 +7863,19 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
         if (existingIdx > -1) history[existingIdx] = record;
         else history.push(record);
       } else {
+        // 보강 수업 출석: reschedule 기록의 makeupDate에 출석 저장 (원본 날짜 아닌 실제 보강일에 기록)
+        let targetDateStr = dateStr;
+        if (status === "present") {
+          const reschRec = history.find(
+            (h) => h.date === dateStr && h.status === "reschedule" && h.makeupDate
+          );
+          if (reschRec) targetDateStr = reschRec.makeupDate;
+        }
         // 추가/수정 모드 (기존 count 값 보존)
-        const prevCount = existingIdx > -1 ? (history[existingIdx].count || 1) : 1;
+        const targetIdx = history.findIndex((h) => h.date === targetDateStr);
+        const prevCount = targetIdx > -1 ? (history[targetIdx].count || 1) : 1;
         const record = {
-          date: dateStr,
+          date: targetDateStr,
           status, // 'present', 'absent', 'canceled'
           timestamp: new Date().toISOString(),
         };
@@ -7707,15 +7885,15 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
 
         // 상세 사유 저장
         if (status === "absent") {
-          record.reason = detail; // 결석 사유 (텍스트)
+          record.reason = detail;
         } else if (status === "canceled") {
-          record.subType = detail; // 당일취소 유형 (질병, 경조사, 기타)
+          record.subType = detail;
         }
 
         // 기존 메모 보존
-        if (existingIdx > -1 && history[existingIdx].memo) record.memo = history[existingIdx].memo;
+        if (targetIdx > -1 && history[targetIdx].memo) record.memo = history[targetIdx].memo;
 
-        if (existingIdx > -1) history[existingIdx] = record;
+        if (targetIdx > -1) history[targetIdx] = record;
         else history.push(record);
       }
 
@@ -9387,36 +9565,6 @@ const StudentManagementModal = ({
                   ))}
                 </div>
 
-                {/* 주 수업 빈도 선택 (요일 수에 따라 자동 반영, 수동 조정 가능) */}
-                <div className="mt-4">
-                  <label className="text-xs font-bold text-slate-500 mb-2 block">
-                    주 수업 빈도
-                  </label>
-                  <div className="flex gap-2">
-                    {[1, 2].map((freq) => (
-                      <button
-                        key={freq}
-                        type="button"
-                        onClick={() =>
-                          setFormData((prev) => ({
-                            ...prev,
-                            weeklyFrequency: freq,
-                          }))
-                        }
-                        className={`flex-1 py-2 rounded-xl text-sm font-bold border transition-all ${
-                          (formData.weeklyFrequency || 1) === freq
-                            ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
-                            : "bg-white text-slate-500 border-slate-300 hover:border-indigo-400"
-                        }`}
-                      >
-                        주{freq}회
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-[11px] text-slate-400 mt-1.5">
-                    * 요일을 2개 이상 입력하면 자동으로 주2회로 변경됩니다.
-                  </p>
-                </div>
               </div>
 
               <div className="space-y-1">
@@ -9595,6 +9743,119 @@ const StudentManagementModal = ({
               className="mr-auto text-rose-500 text-xs underline font-bold hover:text-rose-700 px-2"
             >
               원생 삭제
+            </button>
+          )}
+          {student?.id && (
+            <button
+              onClick={() => {
+                const s = formData;
+                const scheduleStr = Object.entries(s.schedules || {})
+                  .map(([day, time]) => `${day}요일 ${time || ""}`)
+                  .join(",  ");
+                const scheduleDays = Object.keys(s.schedules || {}).join("·");
+                const assignedTeacher = teachers?.find(t => t.name === s.teacher);
+                const DAY_ID_TO_KR = {1:"월",2:"화",3:"수",4:"목",5:"금",6:"토",0:"일"};
+                const teacherDays = assignedTeacher?.days?.length
+                  ? assignedTeacher.days.map(d => DAY_ID_TO_KR[d] ?? d).join("·")
+                  : scheduleDays;
+                const teacherSchedule = [s.teacher ? s.teacher + " 선생님" : "", teacherDays ? teacherDays + "요일 출강" : ""].filter(Boolean).join(" / ");
+                const fee = s.tuitionFee ? Number(s.tuitionFee).toLocaleString() + "원" : "";
+                const schoolGrade = [s.school, s.grade && s.grade !== "성인" ? s.grade : ""].filter(Boolean).join(" ");
+                const html = `<!DOCTYPE html>
+<html lang="ko"><head><meta charset="UTF-8"><title>J&C 등록서류</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:"Malgun Gothic","맑은 고딕",sans-serif; font-size:11pt; color:#111; }
+@page { size:A4; margin:18mm 16mm; }
+.page { page-break-after:always; }
+.page:last-child { page-break-after:avoid; }
+h1,h2 { text-align:center; letter-spacing:6px; margin-bottom:14px; }
+h1 { font-size:17pt; } h2 { font-size:15pt; }
+.date-line { text-align:right; margin-bottom:12px; font-size:10pt; }
+table { width:100%; border-collapse:collapse; }
+td,th { border:1px solid #666; padding:11px 12px; font-size:12pt; vertical-align:middle; }
+.lbl { background:#f0f0f0; font-weight:bold; text-align:center; white-space:nowrap; }
+.val { text-align:center; }
+.fixed { background:#fafafa; font-size:10pt; line-height:1.7; }
+.sig { text-align:center; margin-top:10px; }
+.sec { font-weight:bold; font-size:11pt; margin:14px 0 6px; }
+.sub { font-size:9.5pt; font-weight:normal; }
+.compact td, .compact th { padding:5px 10px; font-size:10pt; }
+</style></head><body>
+<div class="page">
+<h1>J&amp;C  Music  Academy  등록원서</h1>
+<div class="date-line">20__ 년 __ 월 __ 일</div>
+<table>
+<colgroup><col style="width:16%"><col style="width:34%"><col style="width:16%"><col style="width:34%"></colgroup>
+<tr><td class="lbl">성 명</td><td class="val">${s.name||""}</td><td class="lbl">성 별</td><td class="val">&nbsp;</td></tr>
+<tr><td class="lbl">생년월일</td><td class="val">&nbsp;</td><td class="lbl">연 락 처</td><td class="val">${s.phone||""}</td></tr>
+<tr><td class="lbl">주 소</td><td colspan="3" class="val">&nbsp;</td></tr>
+<tr><td class="lbl">학교 / 소속</td><td colspan="3" class="val">${schoolGrade||"&nbsp;"}</td></tr>
+<tr><td class="lbl">수 강 과 목</td><td colspan="3" class="val">${s.subject||"&nbsp;"}</td></tr>
+<tr><td class="lbl">배우는 목적</td><td colspan="3" class="val">취미</td></tr>
+<tr><td class="lbl">등록일</td><td class="val">${s.registrationDate||""}</td><td class="lbl">담당 선생님</td><td class="val">${s.teacher ? s.teacher+" 선생님" : ""}</td></tr>
+<tr><td class="lbl">수업 요일<br>및 시간</td><td colspan="3" class="val">${scheduleStr||"&nbsp;"}</td></tr>
+<tr><td class="lbl">소개 / 경로</td><td colspan="3" class="val">&nbsp;</td></tr>
+<tr><td class="lbl">결제방법 /<br>결제일 / 금액</td><td colspan="3" class="val">${fee ? "수강료: "+fee : "&nbsp;"}</td></tr>
+<tr><td class="lbl">노쇼 및<br>당일취소 안내</td><td colspan="3" class="fixed">
+본 원은 당일취소 및 노쇼에 대해 1회분 수업이 차감됩니다.<br>
+단, 호흡기질환/경조사 등에 대해서는 차감되지 않습니다.<br>
+전날까지 연락 주시면 자유롭게 수업 변경이 가능합니다.
+<div class="sig">확인 : ________________ (인)</div></td></tr>
+<tr><td class="lbl">기타 특기사항</td><td colspan="3" style="height:44px">&nbsp;</td></tr>
+<tr><td class="lbl">개인정보<br>이용 동의</td><td colspan="3" class="fixed">
+본 학원의 원비 결제와 원활한 수업 진행을 위해 학생의 연락처와 성명 등 개인정보를 활용하는데 동의합니다.
+<div class="sig" style="margin-top:10px">동의 (　) &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 작성자 : ________________ (인)</div></td></tr>
+</table>
+</div>
+<div class="page">
+<h2>J&amp;C  Music  Academy  입학 안내문</h2>
+<div class="sec">1. 환불 규정 안내 &nbsp;<span class="sub">(학원법 시행령 제18조 3항에 의거)</span></div>
+<table class="compact">
+<tr><th class="lbl">구 분</th><th class="lbl">환불 금액</th></tr>
+<tr><td class="lbl">첫 수업 전 환불</td><td style="text-align:center">100% 환불</td></tr>
+<tr><td class="lbl">1/3 경과 전 환불</td><td style="text-align:center">납부 수강료 2/3 해당 금액</td></tr>
+<tr><td class="lbl">1/2 경과 전 환불</td><td style="text-align:center">납부 수강료 1/2 해당 금액</td></tr>
+<tr><td class="lbl">1/2 경과 후 환불</td><td style="text-align:center">환불 불가</td></tr>
+</table>
+<p style="font-size:9.5pt;margin-top:3px">※ 환불정산: 주 1회(4회 기준) 횟수 기준으로 적용</p>
+<div class="sec">2. 수강 안내</div>
+<table class="compact">
+<tr><td class="lbl">수업 결제 안내</td><td>결제는 4회차 종료 후, 다음 1회차 수업 시작 전까지 완료 부탁드립니다.<br><span style="font-size:9.5pt">· 수강료 2회 미납 시 3회차 수업 준비가 어려울 수 있습니다.</span></td></tr>
+<tr><td class="lbl">담당 강사 /<br>출강 요일</td><td>${teacherSchedule||"&nbsp;"}</td></tr>
+<tr><td class="lbl">노쇼 · 당일취소</td><td>당일취소 및 노쇼는 1회분 수업이 차감됩니다.<br>공휴일 및 기타 학원 사정으로 수업이 진행되지 않는 경우 회차 차감 없음.<br><span style="font-size:9.5pt">전날까지 연락 시 자유롭게 수업 변경 가능합니다.</span></td></tr>
+<tr><td class="lbl">가족 할인</td><td>두 번째 과목 등록 시 해당 과목 수강료에서 30,000원 할인<br><span style="font-size:9.5pt">(1인 2과목 또는 가족 구성원 모두 동일 적용)</span></td></tr>
+</table>
+<div class="sec">3. 결제 안내</div>
+<table class="compact">
+<tr><td class="lbl">수 강 료</td><td>등록 시 안내드린 금액 기준${fee ? " &nbsp;·&nbsp; <b>"+fee+"</b>" : ""}</td></tr>
+<tr><td class="lbl" style="vertical-align:top">결제 방법</td><td>
+· 방문 결제 &nbsp;&nbsp;: 카드 / 현금<br>
+· 계좌이체 &nbsp;&nbsp;: 하나은행 125-91025-766307 &nbsp; 강열혁 (제이앤씨음악학원)<br>
+· 제로페이 &nbsp;&nbsp;: 방문 시 이용 가능<br>
+· 온라인 결제 : 카드 결제 희망 시 담당 선생님께 문의 — 결제선생(카카오톡 페이지) 링크 발송
+</td></tr>
+</table>
+<div class="sec">4. 학원 안내</div>
+<table class="compact">
+<tr><td class="lbl">위 치</td><td>서울 양천구 목동서로 35, 목동프라자 3층</td></tr>
+<tr><td class="lbl">전 화</td><td>010-4028-9803</td></tr>
+<tr><td class="lbl">홈페이지</td><td>www.jncmusic.kr</td></tr>
+<tr><td class="lbl">운영 시간</td><td>평일(월~금) 10:30 ~ 22:00 &nbsp;·&nbsp; 주말(토·일) 09:00 ~ 22:00</td></tr>
+</table>
+<p style="text-align:center;margin-top:20px;font-size:10pt">※ 중요사항은 꼼꼼히 읽어 주세요. 감사합니다.</p>
+<p style="text-align:right;margin-top:8px;font-weight:bold;font-size:11pt">J&amp;C Music Academy</p>
+</div>
+</body></html>`;
+                const win = window.open("", "_blank", "width=820,height=1100");
+                if (!win) { alert("팝업이 차단되었습니다. 팝업 허용 후 다시 시도해주세요."); return; }
+                win.document.write(html);
+                win.document.close();
+                win.onload = () => win.print();
+              }}
+              className="px-5 py-2.5 rounded-xl border border-slate-300 font-bold text-slate-600 hover:bg-slate-100 transition-colors flex items-center gap-2"
+            >
+              <Printer size={18} /> 등록서류 인쇄
             </button>
           )}
           <button
@@ -9983,6 +10244,8 @@ const PaymentView = ({
   const [quickPayStudent, setQuickPayStudent] = useState(null);
   const [quickPayDate, setQuickPayDate] = useState("");
   const [quickPayMethod, setQuickPayMethod] = useState("");
+  const [quickPaySessions, setQuickPaySessions] = useState(4);
+  const [quickPayAmount, setQuickPayAmount] = useState("");
 
   // 결제 처리 탭 state
   const [processMode, setProcessMode] = useState(false);
@@ -9990,6 +10253,21 @@ const PaymentView = ({
   const [completedPeriod, setCompletedPeriod] = useState("week");
   const [processQuickPay, setProcessQuickPay] = useState(null);
   const [processPayDate, setProcessPayDate] = useState(toLocalDateStr());
+  const [processPaySessions, setProcessPaySessions] = useState(4);
+  const [processPayAmount, setProcessPayAmount] = useState("");
+
+  // 결제선생 청구서 현황 state
+  const [billStates, setBillStates] = useState({}); // { [billId]: { state, price, approvedAt, loading } }
+
+  const fetchBillState = async (billId) => {
+    setBillStates((prev) => ({ ...prev, [billId]: { ...prev[billId], loading: true } }));
+    try {
+      const data = await readBillState(billId);
+      setBillStates((prev) => ({ ...prev, [billId]: { state: data.state, price: data.price, approvedAt: data.approvedAt, loading: false } }));
+    } catch (e) {
+      setBillStates((prev) => ({ ...prev, [billId]: { state: "ERR", loading: false } }));
+    }
+  };
 
   // 수강 현황 계산 헬퍼
   const getStudentProgress = (s) => {
@@ -10182,10 +10460,32 @@ const PaymentView = ({
     return logs.length > 0 ? logs[0].sentAt : null;
   };
 
-  // 이번달 발송 여부 (이번달 vs 지난달 이전 구분용)
-  const isThisMonth = (dateStr) => {
-    if (!dateStr) return false;
-    return dateStr.slice(0, 7) === new Date().toISOString().slice(0, 7);
+  // 안내일 이후 결제 여부: paymentHistory 기반 최종결제일이 안내일보다 나중이면 결제 완료
+  const isPaidAfterNotif = (student, notifDate) => {
+    if (!notifDate) return false;
+    const pays = (student.paymentHistory || []).sort((a, b) => a.date.localeCompare(b.date));
+    const computedLast = pays.length > 0 ? pays[pays.length - 1].date : (student.lastPaymentDate || "");
+    return computedLast > notifDate;
+  };
+
+  // 학생의 최종결제일 계산 (paymentHistory 우선)
+  const getComputedLastPayDate = (student) => {
+    const pays = (student.paymentHistory || []).sort((a, b) => a.date.localeCompare(b.date));
+    return pays.length > 0 ? pays[pays.length - 1].date : (student.lastPaymentDate || "");
+  };
+
+  // 학생의 최신 결제선생 발송 로그
+  const getLatestKyuljesaengnimLog = (studentId) =>
+    messageLogs
+      .filter((l) => l.studentId === studentId && l.billId)
+      .sort((a, b) => b.sentAt.localeCompare(a.sentAt))[0] || null;
+
+  // 안내 발송일 레이블: 30일 이내면 "N일 전", 그 이상이면 "오래됨"
+  const notifAgeLabel = (dateStr) => {
+    if (!dateStr) return "";
+    const days = Math.round((new Date() - new Date(dateStr)) / (1000 * 60 * 60 * 24));
+    if (days <= 30) return days === 0 ? "(오늘)" : `(${days}일 전)`;
+    return "(오래됨)";
   };
 
   // 체크박스 토글
@@ -10200,17 +10500,21 @@ const PaymentView = ({
     if (!quickPayStudent || !quickPayDate) return;
     try {
       const method = quickPayMethod || quickPayStudent.lastPaymentMethod || "";
+      const amount = parseInt(quickPayAmount) || parseInt(quickPayStudent.tuitionFee || 0);
       await onSavePayment(
         quickPayStudent.id,
         quickPayDate,
-        parseInt(quickPayStudent.tuitionFee || 0),
+        amount,
         quickPayDate,
-        method
+        method,
+        quickPaySessions
       );
       showToast(`${quickPayStudent.name} 수납 완료${method ? ` (${method})` : ""}`, "success");
       setQuickPayStudent(null);
       setQuickPayDate("");
       setQuickPayMethod("");
+      setQuickPaySessions(4);
+      setQuickPayAmount("");
     } catch (e) {
       showToast("저장 오류: " + e.message, "error");
     }
@@ -10313,123 +10617,196 @@ const PaymentView = ({
       )}
 
       {/* 결제 완료 간편 입력 모달 */}
-      {quickPayStudent && (
-        <div className="fixed inset-0 bg-black/60 z-[110] flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6">
-            <h3 className="text-lg font-bold mb-1 flex items-center text-emerald-700">
-              <CreditCard className="mr-2" size={20} /> 결제 완료 입력
-            </h3>
-            <p className="text-sm text-slate-500 mb-4">{quickPayStudent.name} ({quickPayStudent.subject})</p>
-            <div className="mb-4">
-              <label className="block text-xs font-bold text-slate-500 mb-1">결제일자</label>
-              <input
-                type="date"
-                value={quickPayDate}
-                onChange={(e) => setQuickPayDate(e.target.value)}
-                className="w-full p-3 border rounded-xl bg-slate-50 focus:outline-emerald-500 text-sm"
-              />
-            </div>
-            <div className="mb-3">
-              <label className="block text-xs font-bold text-slate-500 mb-1">결제금액</label>
-              <div className="p-3 border rounded-xl bg-slate-50 text-sm font-bold text-indigo-600">
-                {Number(quickPayStudent.tuitionFee || 0).toLocaleString()}원
+      {quickPayStudent && (() => {
+        const baseSessions = getEffectiveSessions(quickPayStudent);
+        const baseFee = Number(quickPayStudent.tuitionFee || 0);
+        const perSession = baseSessions > 0 ? Math.round(baseFee / baseSessions) : 0;
+        const displayAmount = quickPayAmount || String(Math.round(perSession * quickPaySessions));
+        return (
+          <div className="fixed inset-0 bg-black/60 z-[110] flex items-center justify-center p-4 backdrop-blur-sm">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6">
+              <h3 className="text-lg font-bold mb-1 flex items-center text-emerald-700">
+                <CreditCard className="mr-2" size={20} /> 결제 완료 입력
+              </h3>
+              <p className="text-sm text-slate-500 mb-4">{quickPayStudent.name} ({quickPayStudent.subject})</p>
+              <div className="mb-4">
+                <label className="block text-xs font-bold text-slate-500 mb-1">결제일자</label>
+                <input
+                  type="date"
+                  value={quickPayDate}
+                  onChange={(e) => setQuickPayDate(e.target.value)}
+                  className="w-full p-3 border rounded-xl bg-slate-50 focus:outline-emerald-500 text-sm"
+                />
               </div>
-            </div>
-            <div className="mb-4">
-              <label className="block text-xs font-bold text-slate-500 mb-1">
-                결제방법
-                {quickPayStudent.lastPaymentMethod && (
-                  <span className="ml-2 text-[10px] text-slate-400 font-normal">
-                    (이전: {quickPayStudent.lastPaymentMethod})
-                  </span>
-                )}
-              </label>
-              <div className="flex flex-wrap gap-1">
-                {["현장", "계좌이체", "기타", "결제선생"].map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => setQuickPayMethod(m)}
-                    className={`px-3 py-1.5 text-xs rounded-lg border font-medium transition-all ${
-                      quickPayMethod === m
-                        ? m === "결제선생"
-                          ? "bg-blue-600 text-white border-blue-600"
-                          : "bg-indigo-600 text-white border-indigo-600"
-                        : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
-                    }`}
-                  >
-                    {m}
-                  </button>
-                ))}
+              <div className="mb-3">
+                <label className="block text-xs font-bold text-slate-500 mb-1">결제 회차</label>
+                <div className="flex gap-2">
+                  {[2, 4, 8].map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => {
+                        setQuickPaySessions(s);
+                        setQuickPayAmount(String(Math.round(perSession * s)));
+                      }}
+                      className={`flex-1 py-2 rounded-lg text-sm font-bold border-2 transition-colors ${
+                        quickPaySessions === s
+                          ? "bg-indigo-600 text-white border-indigo-600"
+                          : "bg-white text-slate-500 border-slate-200 hover:border-indigo-300 hover:text-indigo-600"
+                      }`}
+                    >
+                      {s}회
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-            <div className="flex gap-2 justify-end mt-4">
-              <button onClick={() => { setQuickPayStudent(null); setQuickPayDate(""); setQuickPayMethod(""); }} className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg font-bold">취소</button>
-              <button
-                onClick={handleQuickPaySave}
-                disabled={!quickPayDate}
-                className="px-6 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 shadow-md disabled:opacity-40"
-              >
-                저장
-              </button>
+              <div className="mb-3">
+                <label className="block text-xs font-bold text-slate-500 mb-1">결제금액</label>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={displayAmount ? Number(displayAmount).toLocaleString() : ""}
+                    onChange={(e) => setQuickPayAmount(e.target.value.replace(/[^0-9]/g, ""))}
+                    className="flex-1 p-3 border border-indigo-300 rounded-xl bg-slate-50 text-sm font-bold text-indigo-600 focus:outline-indigo-500 text-right"
+                  />
+                  <span className="text-slate-500 text-sm shrink-0">원</span>
+                </div>
+              </div>
+              <div className="mb-4">
+                <label className="block text-xs font-bold text-slate-500 mb-1">
+                  결제방법
+                  {quickPayStudent.lastPaymentMethod && (
+                    <span className="ml-2 text-[10px] text-slate-400 font-normal">
+                      (이전: {quickPayStudent.lastPaymentMethod})
+                    </span>
+                  )}
+                </label>
+                <div className="flex flex-wrap gap-1">
+                  {["현장", "계좌이체", "기타", "결제선생"].map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => setQuickPayMethod(m)}
+                      className={`px-3 py-1.5 text-xs rounded-lg border font-medium transition-all ${
+                        quickPayMethod === m
+                          ? m === "결제선생"
+                            ? "bg-blue-600 text-white border-blue-600"
+                            : "bg-indigo-600 text-white border-indigo-600"
+                          : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
+                      }`}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex gap-2 justify-end mt-4">
+                <button onClick={() => { setQuickPayStudent(null); setQuickPayDate(""); setQuickPayMethod(""); setQuickPaySessions(4); setQuickPayAmount(""); }} className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg font-bold">취소</button>
+                <button
+                  onClick={handleQuickPaySave}
+                  disabled={!quickPayDate}
+                  className="px-6 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 shadow-md disabled:opacity-40"
+                >
+                  저장
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* 결제 처리: 수납 완료 입력 모달 */}
-      {processQuickPay && (
-        <div className="fixed inset-0 bg-black/60 z-[110] flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6">
-            <h3 className="text-lg font-bold mb-1 flex items-center text-emerald-700">
-              <CreditCard className="mr-2" size={20} /> 수납 완료 처리
-            </h3>
-            <p className="text-sm text-slate-500 mb-1">{processQuickPay.student.name} ({processQuickPay.student.subject})</p>
-            <span className={`text-xs px-2 py-0.5 rounded-full font-medium mb-4 inline-block ${
-              processQuickPay.method === "계좌이체" ? "bg-emerald-100 text-emerald-700" : "bg-indigo-100 text-indigo-700"
-            }`}>{processQuickPay.method}</span>
-            <div className="mb-4 mt-3">
-              <label className="block text-xs font-bold text-slate-500 mb-1">결제일자</label>
-              <input
-                type="date"
-                value={processPayDate}
-                onChange={(e) => setProcessPayDate(e.target.value)}
-                className="w-full p-3 border rounded-xl bg-slate-50 focus:outline-emerald-500 text-sm"
-              />
-            </div>
-            <div className="mb-3">
-              <label className="block text-xs font-bold text-slate-500 mb-1">결제금액</label>
-              <div className="p-3 border rounded-xl bg-slate-50 text-sm font-bold text-indigo-600">
-                {Number(processQuickPay.student.tuitionFee || 0).toLocaleString()}원
+      {processQuickPay && (() => {
+        const st = processQuickPay.student;
+        const baseSessions = getEffectiveSessions(st);
+        const baseFee = Number(st.tuitionFee || 0);
+        const perSession = baseSessions > 0 ? Math.round(baseFee / baseSessions) : 0;
+        const displayAmount = processPayAmount || String(Math.round(perSession * processPaySessions));
+        return (
+          <div className="fixed inset-0 bg-black/60 z-[110] flex items-center justify-center p-4 backdrop-blur-sm">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6">
+              <h3 className="text-lg font-bold mb-1 flex items-center text-emerald-700">
+                <CreditCard className="mr-2" size={20} /> 수납 완료 처리
+              </h3>
+              <p className="text-sm text-slate-500 mb-1">{st.name} ({st.subject})</p>
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium mb-4 inline-block ${
+                processQuickPay.method === "계좌이체" ? "bg-emerald-100 text-emerald-700" : "bg-indigo-100 text-indigo-700"
+              }`}>{processQuickPay.method}</span>
+              <div className="mb-4 mt-3">
+                <label className="block text-xs font-bold text-slate-500 mb-1">결제일자</label>
+                <input
+                  type="date"
+                  value={processPayDate}
+                  onChange={(e) => setProcessPayDate(e.target.value)}
+                  className="w-full p-3 border rounded-xl bg-slate-50 focus:outline-emerald-500 text-sm"
+                />
+              </div>
+              <div className="mb-3">
+                <label className="block text-xs font-bold text-slate-500 mb-1">결제 회차</label>
+                <div className="flex gap-2">
+                  {[2, 4, 8].map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => {
+                        setProcessPaySessions(s);
+                        setProcessPayAmount(String(Math.round(perSession * s)));
+                      }}
+                      className={`flex-1 py-2 rounded-lg text-sm font-bold border-2 transition-colors ${
+                        processPaySessions === s
+                          ? "bg-indigo-600 text-white border-indigo-600"
+                          : "bg-white text-slate-500 border-slate-200 hover:border-indigo-300 hover:text-indigo-600"
+                      }`}
+                    >
+                      {s}회
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="mb-3">
+                <label className="block text-xs font-bold text-slate-500 mb-1">결제금액</label>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={displayAmount ? Number(displayAmount).toLocaleString() : ""}
+                    onChange={(e) => setProcessPayAmount(e.target.value.replace(/[^0-9]/g, ""))}
+                    className="flex-1 p-3 border border-indigo-300 rounded-xl bg-slate-50 text-sm font-bold text-indigo-600 focus:outline-indigo-500 text-right"
+                  />
+                  <span className="text-slate-500 text-sm shrink-0">원</span>
+                </div>
+              </div>
+              <div className="flex gap-2 justify-end mt-4">
+                <button onClick={() => { setProcessQuickPay(null); setProcessPaySessions(4); setProcessPayAmount(""); }} className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg font-bold">취소</button>
+                <button
+                  onClick={async () => {
+                    if (!processPayDate) return;
+                    try {
+                      const amount = parseInt(processPayAmount) || parseInt(st.tuitionFee || 0);
+                      await onSavePayment(
+                        st.id,
+                        processPayDate,
+                        amount,
+                        processPayDate,
+                        processQuickPay.method,
+                        processPaySessions
+                      );
+                      showToast(`${st.name} 수납 완료`, "success");
+                      setProcessQuickPay(null);
+                      setProcessPaySessions(4);
+                      setProcessPayAmount("");
+                    } catch (e) {
+                      showToast("저장 오류: " + e.message, "error");
+                    }
+                  }}
+                  disabled={!processPayDate}
+                  className="px-6 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 shadow-md disabled:opacity-40"
+                >
+                  완료 처리
+                </button>
               </div>
             </div>
-            <div className="flex gap-2 justify-end mt-4">
-              <button onClick={() => setProcessQuickPay(null)} className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg font-bold">취소</button>
-              <button
-                onClick={async () => {
-                  if (!processPayDate) return;
-                  try {
-                    await onSavePayment(
-                      processQuickPay.student.id,
-                      processPayDate,
-                      parseInt(processQuickPay.student.tuitionFee || 0),
-                      processPayDate,
-                      processQuickPay.method
-                    );
-                    showToast(`${processQuickPay.student.name} 수납 완료`, "success");
-                    setProcessQuickPay(null);
-                  } catch (e) {
-                    showToast("저장 오류: " + e.message, "error");
-                  }
-                }}
-                disabled={!processPayDate}
-                className="px-6 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 shadow-md disabled:opacity-40"
-              >
-                완료 처리
-              </button>
-            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* 일괄 메시지 발송 모달 */}
       {showBulkModal && (
@@ -10646,7 +11023,7 @@ const PaymentView = ({
                       <td className="py-3 px-4 text-right font-bold text-indigo-600">
                         {Number(s.tuitionFee || 0).toLocaleString()}원
                       </td>
-                      <td className="py-3 px-4 text-xs text-slate-500">{s.lastPaymentDate || "-"}</td>
+                      <td className="py-3 px-4 text-xs text-slate-500">{getComputedLastPayDate(s) || "-"}</td>
                       <td className="py-3 px-4">
                         <div className="flex flex-wrap gap-1 justify-center">
                           {["현장", "계좌이체", "기타", "결제선생"].map((m) => (
@@ -10757,6 +11134,81 @@ const PaymentView = ({
               </tbody>
             </table>
           </div>
+
+          {/* 결제선생 청구서 현황 */}
+          {(() => {
+            const billLogs = messageLogs
+              .filter((l) => l.billId)
+              .sort((a, b) => b.sentAt.localeCompare(a.sentAt));
+            if (billLogs.length === 0) return null;
+            const STATE_LABEL = { F: { text: "결제완료", cls: "bg-emerald-100 text-emerald-700" }, W: { text: "미결제", cls: "bg-amber-100 text-amber-700" }, C: { text: "승인취소", cls: "bg-orange-100 text-orange-700" }, D: { text: "파기됨", cls: "bg-rose-100 text-rose-700" } };
+            return (
+              <div className="border rounded-xl overflow-hidden">
+                <div className="bg-blue-50 px-4 py-2.5 flex items-center gap-2 border-b">
+                  <span className="text-lg">💳</span>
+                  <span className="font-bold text-blue-700 text-sm">결제선생 청구서 현황</span>
+                  <span className="bg-blue-200 text-blue-800 text-xs px-1.5 py-0.5 rounded-full">{billLogs.length}건</span>
+                </div>
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 border-b text-xs text-slate-400 uppercase">
+                    <tr>
+                      <th className="py-2.5 px-4 text-left">학생</th>
+                      <th className="py-2.5 px-4 text-left">발송일</th>
+                      <th className="py-2.5 px-4 text-left">청구서</th>
+                      <th className="py-2.5 px-4 text-center">상태</th>
+                      <th className="py-2.5 px-4 text-center">파기</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white">
+                    {billLogs.map((log) => {
+                      const stInfo = billStates[log.billId];
+                      const stateLabel = stInfo?.state ? (STATE_LABEL[stInfo.state] || { text: stInfo.state, cls: "bg-slate-100 text-slate-600" }) : null;
+                      const student = students.find((s) => s.id === log.studentId);
+                      return (
+                        <tr key={log.billId} className={`${stInfo?.state === "D" ? "bg-rose-50" : "hover:bg-slate-50"}`}>
+                          <td className="py-2.5 px-4 font-medium">{log.studentName || "-"}</td>
+                          <td className="py-2.5 px-4 text-xs text-slate-500">{log.sentAt}</td>
+                          <td className="py-2.5 px-4">
+                            {log.shortURL ? (
+                              <a href={log.shortURL} target="_blank" rel="noreferrer" className="text-blue-500 underline text-xs">링크</a>
+                            ) : <span className="text-slate-300 text-xs">-</span>}
+                          </td>
+                          <td className="py-2.5 px-4 text-center">
+                            {stInfo?.loading ? (
+                              <span className="text-slate-400 text-xs">확인 중...</span>
+                            ) : stateLabel ? (
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${stateLabel.cls}`}>{stateLabel.text}</span>
+                            ) : (
+                              <button onClick={() => fetchBillState(log.billId)} className="text-xs text-blue-600 hover:underline">상태 확인</button>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-4 text-center">
+                            {stInfo?.state === "W" && (
+                              <button
+                                onClick={async () => {
+                                  if (!window.confirm(`${log.studentName} 청구서를 파기할까요?`)) return;
+                                  try {
+                                    await cancelKyuljesaengnim(log.billId, String(student?.tuitionFee || 0));
+                                    showToast(`${log.studentName} 청구서 파기 완료`, "success");
+                                    fetchBillState(log.billId);
+                                  } catch (e) {
+                                    showToast("파기 실패: " + e.message, "error");
+                                  }
+                                }}
+                                className="text-xs text-rose-500 hover:text-rose-700 hover:underline"
+                              >
+                                파기
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()}
         </div>
       ) : (
 
@@ -10831,21 +11283,53 @@ const PaymentView = ({
                   {notifMode ? (
                     <>
                       <td className="py-3 px-4 text-xs">
-                        {notifSt === "paid" ? (
+                        {notifSt === "paid" || isPaidAfterNotif(s, lastNotif) ? (
                           <span className="font-medium text-blue-600">
                             ✅ {lastNotif} 결제완료
                           </span>
                         ) : notifSt === "done" ? (
-                          <span className={`font-medium ${isThisMonth(lastNotif) ? "text-emerald-600" : "text-emerald-400"}`}>
-                            🟢 {lastNotif}{!isThisMonth(lastNotif) && " (지난달)"}
+                          <span className="font-medium text-emerald-600">
+                            🟢 {lastNotif} {notifAgeLabel(lastNotif)}
                           </span>
                         ) : notifSt === "sms-only" ? (
-                          <span className={`font-medium ${isThisMonth(lastNotif) ? "text-amber-600" : "text-amber-400"}`}>
-                            🟡 {lastNotif}{!isThisMonth(lastNotif) && " (지난달)"}
+                          <span className="font-medium text-amber-600">
+                            🟡 {lastNotif} {notifAgeLabel(lastNotif)}
                           </span>
                         ) : (
                           <span className="text-rose-400">🔴 미발송</span>
                         )}
+                        {(() => {
+                          const kyLog = getLatestKyuljesaengnimLog(s.id);
+                          if (!kyLog) return null;
+                          return (
+                            <div className="flex items-center gap-1.5 mt-1" onClick={(e) => e.stopPropagation()}>
+                              {kyLog.shortURL && (
+                                <a
+                                  href={kyLog.shortURL}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-blue-500 underline text-[10px] hover:text-blue-700"
+                                >
+                                  💳 청구서
+                                </a>
+                              )}
+                              <button
+                                onClick={async () => {
+                                  if (!window.confirm(`${s.name} 결제선생 청구서를 파기할까요?`)) return;
+                                  try {
+                                    await cancelKyuljesaengnim(kyLog.billId, String(s.tuitionFee || 0));
+                                    showToast(`${s.name} 청구서 파기 완료`, "success");
+                                  } catch (e) {
+                                    showToast("파기 실패: " + e.message, "error");
+                                  }
+                                }}
+                                className="text-rose-400 text-[10px] hover:text-rose-600 hover:underline"
+                              >
+                                파기
+                              </button>
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="py-3 px-4 text-center" onClick={(e) => e.stopPropagation()}>
                         {notifSt === "paid" ? (
@@ -11384,7 +11868,8 @@ export default function App() {
     date,
     amount,
     realSessionStartDate = date,
-    method = ""
+    method = "",
+    totalSessionsOverride = null
   ) => {
     const safeAppId = APP_ID || "jnc-music-v2";
     try {
@@ -11423,7 +11908,7 @@ export default function App() {
         amount,
         type: "tuition",
         sessionStartDate: realSessionStartDate,
-        totalSessions: getEffectiveSessions(student),
+        totalSessions: totalSessionsOverride ?? getEffectiveSessions(student),
         createdAt: new Date().toISOString(),
         ...(method && { method }),
       };
@@ -13134,52 +13619,43 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
 
         {/* 2열: 파트 필터 & 보기 모드 & 요일 선택 */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 bg-slate-50/50 p-2 rounded-xl border border-slate-100">
-          {/* 파트 선택 버튼들 */}
-          <div className="flex gap-1 overflow-x-auto max-w-full no-scrollbar pb-1 md:pb-0">
-            {PARTS.map((part) => (
-              <button
-                key={part.id}
-                onClick={() => setSelectedPart(part.id)}
-                className={`px-3 py-1.5 rounded-lg text-xs md:text-sm font-bold whitespace-nowrap transition-all border ${
-                  selectedPart === part.id
-                    ? "bg-indigo-600 text-white border-indigo-600 shadow-md"
-                    : "bg-white text-slate-500 border-slate-200 hover:bg-slate-100"
-                }`}
-              >
-                {part.label}
-              </button>
-            ))}
-          </div>
+          {/* 파트 선택 버튼들 (출강표 모드에서는 숨김) */}
+          {viewMode !== "sheet" && (
+            <div className="flex gap-1 overflow-x-auto max-w-full no-scrollbar pb-1 md:pb-0">
+              {PARTS.map((part) => (
+                <button
+                  key={part.id}
+                  onClick={() => setSelectedPart(part.id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs md:text-sm font-bold whitespace-nowrap transition-all border ${
+                    selectedPart === part.id
+                      ? "bg-indigo-600 text-white border-indigo-600 shadow-md"
+                      : "bg-white text-slate-500 border-slate-200 hover:bg-slate-100"
+                  }`}
+                >
+                  {part.label}
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="flex gap-2 w-full md:w-auto justify-end">
-            {/* 강사 전용: 보기 모드 */}
-            {isTeacherMode && (
-              <div className="flex bg-white border border-slate-200 p-1 rounded-lg">
-                <button
-                  onClick={() => setViewMode("daily")}
-                  className={`px-3 py-1.5 rounded-md text-xs font-bold ${
-                    viewMode === "daily"
-                      ? "bg-slate-100 text-indigo-600"
-                      : "text-slate-400"
-                  }`}
-                >
-                  오늘
-                </button>
-                <button
-                  onClick={() => setViewMode("weekly")}
-                  className={`px-3 py-1.5 rounded-md text-xs font-bold ${
-                    viewMode === "weekly"
-                      ? "bg-slate-100 text-indigo-600"
-                      : "text-slate-400"
-                  }`}
-                >
-                  주간
-                </button>
-              </div>
-            )}
+            {/* 보기 모드 (관리자: 출강표/요일, 강사: 오늘/주간) */}
+            <div className="flex bg-white border border-slate-200 p-1 rounded-lg">
+              {isTeacherMode ? (
+                <>
+                  <button onClick={() => setViewMode("daily")} className={`px-3 py-1.5 rounded-md text-xs font-bold ${viewMode === "daily" ? "bg-slate-100 text-indigo-600" : "text-slate-400"}`}>오늘</button>
+                  <button onClick={() => setViewMode("weekly")} className={`px-3 py-1.5 rounded-md text-xs font-bold ${viewMode === "weekly" ? "bg-slate-100 text-indigo-600" : "text-slate-400"}`}>주간</button>
+                </>
+              ) : (
+                <>
+                  <button onClick={() => setViewMode("daily")} className={`px-3 py-1.5 rounded-md text-xs font-bold ${viewMode === "daily" ? "bg-slate-100 text-indigo-600" : "text-slate-400"}`}>요일별</button>
+                  <button onClick={() => setViewMode("sheet")} className={`px-3 py-1.5 rounded-md text-xs font-bold ${viewMode === "sheet" ? "bg-slate-100 text-indigo-600" : "text-slate-400"}`}>출강표</button>
+                </>
+              )}
+            </div>
 
             {/* 요일 선택 (관리자 or 강사 일간모드) */}
-            {(!isTeacherMode || (isTeacherMode && viewMode === "daily")) && (
+            {viewMode !== "sheet" && (!isTeacherMode || (isTeacherMode && viewMode === "daily")) && (
               <div className="flex bg-white border border-slate-200 p-1 rounded-lg overflow-x-auto max-w-[180px] md:max-w-none no-scrollbar">
                 {DAYS.map((day) => (
                   <button
@@ -13201,6 +13677,7 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
       </div>
 
       {/* 시간표 영역 (인쇄 대상) */}
+      {viewMode !== "sheet" && (
       <div
         className="flex-1 overflow-auto border rounded-xl bg-slate-50/50 relative print:overflow-visible print:bg-white print:border-none"
         ref={printRef}
@@ -13424,6 +13901,105 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
           </div>
         </div>
       </div>
+      )}
+
+      {/* ── 출강표 뷰 (강사별 매트릭스 테이블) ──────────────────── */}
+      {viewMode === "sheet" && !isTeacherMode && (() => {
+        const SHEET_DAYS = ["월", "화", "수", "목", "금", "토", "일"];
+        const toMin = (t) => {
+          if (!t || !t.includes(":")) return NaN;
+          const [h, m] = t.split(":").map(Number);
+          return h * 60 + m;
+        };
+
+        // 파트 필터 없이 재원 학생이 있는 강사 전체
+        const sheetTeachers = teachers.filter((t) =>
+          students.some((s) =>
+            s.teacher === t.name &&
+            s.status === "재원" &&
+            SHEET_DAYS.some((d) => getLessonTime(s, d))
+          )
+        );
+
+        // 강사·요일별 수업 목록 (시간순)
+        const getCell = (teacherName, day) =>
+          students
+            .filter((s) => s.teacher === teacherName && s.status === "재원" && getLessonTime(s, day))
+            .map((s) => ({ name: s.name, min: toMin(getLessonTime(s, day)) }))
+            .filter((x) => !isNaN(x.min))
+            .sort((a, b) => a.min - b.min);
+
+        if (sheetTeachers.length === 0) {
+          return (
+            <div ref={printRef} className="flex-1 flex items-center justify-center text-slate-400 text-sm">
+              재원 학생이 배정된 강사가 없습니다.
+            </div>
+          );
+        }
+
+        return (
+          <div ref={printRef} className="flex-1 overflow-auto p-4 bg-white">
+            <table className="w-full text-xs border-collapse min-w-[600px]">
+              <thead>
+                <tr className="bg-slate-100">
+                  <th className="border border-slate-300 px-3 py-2.5 text-center font-bold text-slate-600 w-24 text-sm">강사</th>
+                  {SHEET_DAYS.map((day) => (
+                    <th
+                      key={day}
+                      className={`border border-slate-300 px-3 py-2.5 text-center font-bold text-sm ${
+                        day === "일" ? "text-rose-600" : day === "토" ? "text-blue-600" : "text-slate-700"
+                      }`}
+                    >
+                      {day}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {sheetTeachers.map((teacher, ti) => (
+                  <tr key={teacher.name} className={ti % 2 === 0 ? "bg-white" : "bg-slate-50/60"}>
+                    <td className="border border-slate-300 px-3 py-2 text-center font-bold text-slate-700 text-xs whitespace-nowrap align-middle bg-slate-50">
+                      {teacher.name} T
+                    </td>
+                    {SHEET_DAYS.map((day) => {
+                      const lessons = getCell(teacher.name, day);
+                      const items = [];
+                      lessons.forEach((l, i) => {
+                        if (i > 0) {
+                          const prevEnd = lessons[i - 1].min + LESSON_MIN;
+                          const gap = l.min - prevEnd;
+                          if (gap >= 45) {
+                            const fmt = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+                            items.push(
+                              <div key={`gap-${i}`} className="flex items-center gap-1 my-0.5 px-1 py-0.5 rounded bg-emerald-50 border border-emerald-200 whitespace-nowrap">
+                                <span className="text-emerald-600 text-[9px] font-bold">▸ 신규배정 가능</span>
+                                <span className="text-emerald-500 text-[9px] tabular-nums">{fmt(prevEnd)}~{fmt(l.min)}</span>
+                              </div>
+                            );
+                          }
+                        }
+                        items.push(
+                          <div key={i} className="flex items-baseline gap-1 py-0.5 whitespace-nowrap">
+                            <span className="text-slate-400 tabular-nums text-[10px]">
+                              {String(Math.floor(l.min / 60)).padStart(2, "0")}:{String(l.min % 60).padStart(2, "0")}
+                            </span>
+                            <span className="font-medium text-slate-800">{l.name}</span>
+                          </div>
+                        );
+                      });
+                      return (
+                        <td key={day} className="border border-slate-300 px-2 py-1.5 align-top min-w-[90px]">
+                          {items}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      })()}
     </div>
   );
 
