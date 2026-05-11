@@ -459,8 +459,8 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
   const additionalUnpaidStr = unpaidItems.length > 1
     ? " 이후 " + unpaidItems.slice(1).map((s, i) => `${i + 2}회차(${s.label})`).join(", ") + "까지 진행되었습니다."
     : "";
-  // 첫 미납 회차가 오늘 이후면 "(예정)", 이미 진행된 날짜면 표시 안 함
-  const firstUnpaidIsUpcoming = unpaidItems.length > 0 && unpaidItems[0].date >= toLocalDateStr();
+  // 첫 미납 회차가 오늘 이후면 "(예정)". 미납 없으면 다음 예정 수업일이므로 항상 (예정)
+  const firstUnpaidIsUpcoming = unpaidItems.length === 0 || unpaidItems[0].date >= toLocalDateStr();
 
   // 새로운 1회차: 미납회차가 있으면 첫 미납 날짜, 없으면 다음 예정 수업일 계산
   let nextDateStr = "";
