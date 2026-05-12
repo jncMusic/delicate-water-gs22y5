@@ -776,9 +776,15 @@ export const PaymentView = ({
       );
       if (!recentRecord) return false;
       const { isCompleted, isOverdue } = getStudentProgress(s);
-      return isCompleted || isOverdue;
+      if (!isCompleted && !isOverdue) return false;
+      const matchesSearch = !searchTerm ||
+        s.name.includes(searchTerm) ||
+        (s.subject && s.subject.includes(searchTerm)) ||
+        (s.teacher && s.teacher.includes(searchTerm));
+      const matchesTeacher = !selectedTeacher || s.teacher === selectedTeacher;
+      return matchesSearch && matchesTeacher;
     });
-  }, [students]);
+  }, [students, searchTerm, selectedTeacher]);
 
   // ── 오늘 결제 완료 목록 ───────────────────────────────────────
   const todayPaidList = useMemo(() => {
@@ -807,7 +813,15 @@ export const PaymentView = ({
     const startStr = toLocalDateStr(d);
     const todayStr = toLocalDateStr();
     const results = [];
-    students.filter((s) => s.status === "재원").forEach((s) => {
+    students.filter((s) => {
+      if (s.status !== "재원") return false;
+      const matchesSearch = !searchTerm ||
+        s.name.includes(searchTerm) ||
+        (s.subject && s.subject.includes(searchTerm)) ||
+        (s.teacher && s.teacher.includes(searchTerm));
+      const matchesTeacher = !selectedTeacher || s.teacher === selectedTeacher;
+      return matchesSearch && matchesTeacher;
+    }).forEach((s) => {
       (s.paymentHistory || []).forEach((p) => {
         if (p.date >= startStr && p.date <= todayStr) {
           // 결제일 이전 발송 이력 확인
@@ -819,7 +833,7 @@ export const PaymentView = ({
       });
     });
     return results.sort((a, b) => b.payment.date.localeCompare(a.payment.date) || a.student.name.localeCompare(b.student.name));
-  }, [students, messageLogs, recentPaidPeriod]);
+  }, [students, messageLogs, recentPaidPeriod, searchTerm, selectedTeacher]);
 
   // ── 1주일 이내 결제 안내 대상 (발송센터 탭) ──────────────────
   const weeklyDueList = useMemo(() => {
@@ -851,6 +865,10 @@ export const PaymentView = ({
       if (log.sentAt < weekAgoStr) return;
       const student = students.find((s) => s.id === log.studentId);
       if (student && student.status !== "재원") return;
+      if (student && searchTerm && !student.name.includes(searchTerm) &&
+          !(student.subject && student.subject.includes(searchTerm)) &&
+          !(student.teacher && student.teacher.includes(searchTerm))) return;
+      if (student && selectedTeacher && student.teacher !== selectedTeacher) return;
       const key = `${log.studentId}__${log.sentAt}`;
       if (!dedupeMap[key]) {
         dedupeMap[key] = { ...log, channels: [...(log.channels || [])] };
@@ -869,7 +887,7 @@ export const PaymentView = ({
         return { log, student, paidAfter };
       })
       .sort((a, b) => b.log.sentAt.localeCompare(a.log.sentAt));
-  }, [messageLogs, students]);
+  }, [messageLogs, students, searchTerm, selectedTeacher]);
 
   // ── 결제선생 전체 발송 이력 (결제선생 탭) ──────────────────────
   const kyuljeLogsData = useMemo(() => {
@@ -878,6 +896,11 @@ export const PaymentView = ({
     (messageLogs || [])
       .filter((log) => (log.channels || []).includes("결제선생"))
       .forEach((log) => {
+        const student = students.find((s) => s.id === log.studentId);
+        if (searchTerm && student && !student.name.includes(searchTerm) &&
+            !(student.subject && student.subject.includes(searchTerm)) &&
+            !(student.teacher && student.teacher.includes(searchTerm))) return;
+        if (selectedTeacher && student && student.teacher !== selectedTeacher) return;
         const key = `${log.studentId}__${log.sentAt}`;
         if (!dedupeMap[key]) {
           dedupeMap[key] = { ...log, channels: [...(log.channels || [])] };
@@ -896,7 +919,7 @@ export const PaymentView = ({
         return { log, student, paidAfter };
       })
       .sort((a, b) => b.log.sentAt.localeCompare(a.log.sentAt));
-  }, [messageLogs, students]);
+  }, [messageLogs, students, searchTerm, selectedTeacher]);
 
   // ── 발송센터(send) 탭 필터링 목록 ────────────────────────────
   const sendList = useMemo(() => {
@@ -947,10 +970,16 @@ export const PaymentView = ({
     students
       .filter((s) => {
         const { isCompleted, isOverdue } = getStudentProgress(s);
-        return s.status === "재원" && (isCompleted || isOverdue);
+        if (s.status !== "재원" || (!isCompleted && !isOverdue)) return false;
+        const matchesSearch = !searchTerm ||
+          s.name.includes(searchTerm) ||
+          (s.subject && s.subject.includes(searchTerm)) ||
+          (s.teacher && s.teacher.includes(searchTerm));
+        const matchesTeacher = !selectedTeacher || s.teacher === selectedTeacher;
+        return matchesSearch && matchesTeacher;
       })
       .sort((a, b) => a.name.localeCompare(b.name, "ko")),
-    [students]
+    [students, searchTerm, selectedTeacher]
   );
 
   const recentlyPaidList = useMemo(() => {
@@ -966,13 +995,21 @@ export const PaymentView = ({
       cutoff = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
     }
     const results = [];
-    students.filter((s) => s.status === "재원").forEach((s) => {
+    students.filter((s) => {
+      if (s.status !== "재원") return false;
+      const matchesSearch = !searchTerm ||
+        s.name.includes(searchTerm) ||
+        (s.subject && s.subject.includes(searchTerm)) ||
+        (s.teacher && s.teacher.includes(searchTerm));
+      const matchesTeacher = !selectedTeacher || s.teacher === selectedTeacher;
+      return matchesSearch && matchesTeacher;
+    }).forEach((s) => {
       (s.paymentHistory || []).forEach((p) => {
         if (p.date >= cutoff) results.push({ student: s, payment: p });
       });
     });
     return results.sort((a, b) => b.payment.date.localeCompare(a.payment.date));
-  }, [students, completedPeriod]);
+  }, [students, completedPeriod, searchTerm, selectedTeacher]);
 
   const getMethodForStudent = (s) => paymentMethods[s.id] || s.lastPaymentMethod || "";
 

@@ -9981,12 +9981,50 @@ J&C 음악학원 발표회에 소중한 여러분을 초대합니다 🎵
 항상 감사드립니다. {{시즌인사2}}
 J&C 음악학원장 드림.`,
   },
+
+  // ── 첫 수업 안내 (개인화) ─────────────────────────────
+  {
+    id: "first_lesson",
+    label: "첫 수업 안내",
+    personalized: true,
+    text: "",
+  },
 ];
+
+// 첫 수업 안내 - 학생별 개인화 메시지 생성
+const DAY_ORDER = ["월", "화", "수", "목", "금", "토", "일"];
+const generateFirstLessonMessage = (student) => {
+  const isAdult = student.grade === "성인";
+  const nameSuffix = isAdult ? "님" : " 학생";
+  const fee = Number(student.tuitionFee || 0).toLocaleString();
+  const sessions = getEffectiveSessions(student);
+  const subject = student.subject || student.part || "수업";
+
+  return `안녕하세요, J&C 음악학원입니다.
+
+${student.name}${nameSuffix}의 첫 수업 안내드립니다.
+
+* 첫 수업: (날짜/요일/시간 입력)
+* 과목: ${subject}
+
+* 원비 안내
+월 원비: ${fee}원 / ${sessions}회 수업
+하나은행 125-91025-766307 강열혁(제이앤씨음악학원)
+방문(카드/현금), 계좌이체·제로페이, 온라인 카드결제 모두 가능합니다.
+
+* 취소/노쇼 안내
+당일 취소 및 노쇼는 수업 1회 차감됩니다.
+변경 사항은 수업 전날까지 연락 부탁드립니다.
+
+항상 감사드립니다 :)
+J&C 음악학원장 드림.`;
+};
 
 const BulkSmsView = ({ students, teachers, showToast }) => {
   const [selectedIds, setSelectedIds] = useState([]);
   const [filterTeacher, setFilterTeacher] = useState("");
   const [filterPart, setFilterPart] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
   const [templateId, setTemplateId] = useState("custom");
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
@@ -9994,13 +10032,19 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
 
   const PARTS = ["피아노", "관현악", "실용음악", "성악"];
 
+  const isPersonalized = BULK_SMS_TEMPLATES.find((t) => t.id === templateId)?.personalized === true;
+
   const filteredStudents = useMemo(() => {
     return students.filter((s) => {
       if (filterTeacher && s.teacher !== filterTeacher) return false;
       if (filterPart && s.part !== filterPart) return false;
+      if (searchTerm &&
+          !s.name.includes(searchTerm) &&
+          !(s.subject && s.subject.includes(searchTerm)) &&
+          !(s.teacher && s.teacher.includes(searchTerm))) return false;
       return true;
     });
-  }, [students, filterTeacher, filterPart]);
+  }, [students, filterTeacher, filterPart, searchTerm]);
 
   const toggleAll = () => {
     if (selectedIds.length === filteredStudents.length) {
@@ -10024,7 +10068,7 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
   };
 
   const handleSend = async () => {
-    if (!message.trim()) {
+    if (!isPersonalized && !message.trim()) {
       showToast("발송할 내용을 입력해주세요.", "warning");
       return;
     }
@@ -10041,8 +10085,9 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
     setResults([]);
     const newResults = [];
     for (const s of targets) {
+      const msg = isPersonalized ? generateFirstLessonMessage(s) : message;
       try {
-        await sendAligoSms(s.phone, message);
+        await sendAligoSms(s.phone, msg);
         newResults.push({ name: s.name, phone: s.phone, success: true });
       } catch (e) {
         newResults.push({ name: s.name, phone: s.phone, success: false, error: e.message });
@@ -10061,6 +10106,11 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
     (s) => selectedIds.includes(s.id) && s.phone
   ).length;
 
+  const previewStudent = isPersonalized && selectedIds.length > 0
+    ? students.find((s) => s.id === selectedIds[0])
+    : null;
+  const personalizedPreview = previewStudent ? generateFirstLessonMessage(previewStudent) : "";
+
   return (
     <div className="p-4 md:p-6 space-y-5">
       <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
@@ -10072,6 +10122,15 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
         {/* 왼쪽: 원생 선택 */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
           <div className="p-4 border-b bg-slate-50 flex flex-wrap gap-2 items-center">
+            <div className="relative">
+              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="이름 검색"
+                className="pl-7 pr-3 py-1.5 text-sm border rounded-lg bg-white w-28 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+              />
+            </div>
             <select
               value={filterTeacher}
               onChange={(e) => setFilterTeacher(e.target.value)}
@@ -10160,22 +10219,41 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
             <div>
               <div className="flex justify-between items-center mb-1">
                 <p className="text-sm font-bold text-slate-700">내용</p>
-                <span className={`text-xs ${message.length > 90 ? "text-orange-500 font-bold" : "text-slate-400"}`}>
-                  {message.length}자 {message.length > 90 ? "(장문 LMS)" : "(단문 SMS)"}
-                </span>
+                {isPersonalized ? (
+                  <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-medium">
+                    학생별 개인화 발송
+                  </span>
+                ) : (
+                  <span className={`text-xs ${message.length > 90 ? "text-orange-500 font-bold" : "text-slate-400"}`}>
+                    {message.length}자 {message.length > 90 ? "(장문 LMS)" : "(단문 SMS)"}
+                  </span>
+                )}
               </div>
-              <textarea
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                rows={7}
-                placeholder="발송할 내용을 입력하세요."
-                className="w-full border border-slate-200 rounded-xl p-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-indigo-300"
-              />
+              {isPersonalized ? (
+                <div className="border border-indigo-200 rounded-xl p-3 bg-indigo-50 text-sm text-slate-700 whitespace-pre-wrap min-h-[168px]">
+                  {previewStudent
+                    ? personalizedPreview
+                    : <span className="text-slate-400 italic">왼쪽에서 학생을 선택하면 미리보기가 표시됩니다.</span>}
+                  {previewStudent && (
+                    <p className="mt-2 text-xs text-indigo-500 font-medium">
+                      ↑ {previewStudent.name} 기준 미리보기 (각 학생별로 자동 생성)
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <textarea
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  rows={7}
+                  placeholder="발송할 내용을 입력하세요."
+                  className="w-full border border-slate-200 rounded-xl p-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                />
+              )}
             </div>
 
             <button
               onClick={handleSend}
-              disabled={sending || selectedWithPhone === 0 || !message.trim()}
+              disabled={sending || selectedWithPhone === 0 || (!isPersonalized && !message.trim())}
               className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
             >
               <Send size={16} />
