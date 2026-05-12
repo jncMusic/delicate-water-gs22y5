@@ -9994,29 +9994,30 @@ J&C 음악학원장 드림.`,
 // 첫 수업 안내 - 학생별 개인화 메시지 생성
 const DAY_ORDER = ["월", "화", "수", "목", "금", "토", "일"];
 const generateFirstLessonMessage = (student) => {
-  const scheduleStr =
-    student.schedules && Object.keys(student.schedules).length > 0
-      ? Object.entries(student.schedules)
-          .sort(([a], [b]) => DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b))
-          .map(([day, time]) => `${day} ${time}`)
-          .join(", ")
-      : student.className
-      ? `${student.className}${student.classTime ? " " + student.classTime : ""}`.trim()
-      : "-";
   const isAdult = student.grade === "성인";
   const nameSuffix = isAdult ? "님" : " 학생";
   const fee = Number(student.tuitionFee || 0).toLocaleString();
-  const part = student.part || student.subject || "-";
-  const teacher = student.teacher || "-";
+  const sessions = getEffectiveSessions(student);
+  const subject = student.subject || student.part || "수업";
 
   return `안녕하세요, J&C 음악학원입니다.
-${student.name}${nameSuffix} 수업 안내드립니다.
-▪ 파트: ${part}
-▪ 담당: ${teacher} 선생님
-▪ 수업: ${scheduleStr}
-▪ 수강료: 월 ${fee}원
-문의: 02-2655-0220
-감사합니다. J&C 음악학원장 드림.`;
+
+${student.name}${nameSuffix}의 첫 수업 안내드립니다.
+
+* 첫 수업: (날짜/요일/시간 입력)
+* 과목: ${subject}
+
+* 원비 안내
+월 원비: ${fee}원 / ${sessions}회 수업
+하나은행 125-91025-766307 강열혁(제이앤씨음악학원)
+방문(카드/현금), 계좌이체·제로페이, 온라인 카드결제 모두 가능합니다.
+
+* 취소/노쇼 안내
+당일 취소 및 노쇼는 수업 1회 차감됩니다.
+변경 사항은 수업 전날까지 연락 부탁드립니다.
+
+항상 감사드립니다 :)
+J&C 음악학원장 드림.`;
 };
 
 const BulkSmsView = ({ students, teachers, showToast }) => {
