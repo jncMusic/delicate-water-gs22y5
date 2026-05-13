@@ -629,6 +629,7 @@ export const PaymentView = ({
   // ── 결제확인(confirm) 탭 상태 ─────────────────────────────────
   const [paymentMethods, setPaymentMethods] = useState({});
   const [completedPeriod, setCompletedPeriod] = useState("today");
+  const [dueSortOrder, setDueSortOrder] = useState("desc"); // "asc" | "desc"
   const [processQuickPay, setProcessQuickPay] = useState(null);
   const [processPayDate, setProcessPayDate] = useState(toLocalDateStr());
   const [processPaySessions, setProcessPaySessions] = useState(4);
@@ -978,15 +979,14 @@ export const PaymentView = ({
         return s.status === "재원" && (isCompleted || isOverdue);
       })
       .sort((a, b) => {
-        // 수강권이 소진된 날짜 기준 오름차순 (가장 오래된 = 가장 급한 순)
         const da = getPaymentDueDate(a);
         const db = getPaymentDueDate(b);
         if (!da && !db) return a.name.localeCompare(b.name, "ko");
         if (!da) return 1;
         if (!db) return -1;
-        return da.localeCompare(db);
+        return dueSortOrder === "asc" ? da.localeCompare(db) : db.localeCompare(da);
       }),
-    [students]
+    [students, dueSortOrder]
   );
 
   const recentlyPaidList = useMemo(() => {
@@ -1955,6 +1955,18 @@ export const PaymentView = ({
                 <AlertCircle size={15} className="text-rose-600" />
                 <span className="font-bold text-rose-700 text-sm">결제 예정자</span>
                 <span className="bg-rose-200 text-rose-800 text-xs px-1.5 py-0.5 rounded-full">{processableStudents.length}명</span>
+                <div className="flex rounded border border-rose-200 overflow-hidden text-xs ml-1">
+                  <button
+                    onClick={() => setDueSortOrder("desc")}
+                    className={`px-2 py-1 font-medium transition-colors ${dueSortOrder === "desc" ? "bg-rose-600 text-white" : "bg-white text-rose-500 hover:bg-rose-50"}`}
+                    title="최근 도래순 (내림차순)"
+                  >최근순</button>
+                  <button
+                    onClick={() => setDueSortOrder("asc")}
+                    className={`px-2 py-1 font-medium transition-colors ${dueSortOrder === "asc" ? "bg-rose-600 text-white" : "bg-white text-rose-500 hover:bg-rose-50"}`}
+                    title="오래된 도래순 (오름차순)"
+                  >오래된순</button>
+                </div>
                 {processableStudents.length > 0 && (
                   <span className="ml-auto text-rose-700 font-bold text-sm">
                     총 {processableStudents.reduce((sum, s) => sum + Number(s.tuitionFee || 0), 0).toLocaleString()}원
@@ -1968,7 +1980,7 @@ export const PaymentView = ({
                     <th className="py-2.5 px-4 text-left">강사</th>
                     <th className="py-2.5 px-4 text-right">원비</th>
                     <th className="py-2.5 px-4 text-left">최종결제일</th>
-                    <th className="py-2.5 px-4 text-left">도래일 ↑</th>
+                    <th className="py-2.5 px-4 text-left">도래일 {dueSortOrder === "asc" ? "↑" : "↓"}</th>
                     <th className="py-2.5 px-4 text-center">결제방법</th>
                     <th className="py-2.5 px-4 text-center w-32">액션</th>
                   </tr>
