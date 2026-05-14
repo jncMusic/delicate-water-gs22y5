@@ -3157,6 +3157,7 @@ const ConsultationView = ({
   consultations: allConsultations,
   targetConsultation,
   onClearTargetConsultation,
+  students: allStudents = [],
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -3309,7 +3310,31 @@ const ConsultationView = ({
       return `안녕하세요, J&C 음악학원입니다.\n\n문의주신 ${subject} 수업 가능 시간 안내드립니다.\n\n- 요일/시간: (예: 월요일 오후 4시, 수요일 오후 5시)\n\n편하신 시간에 방문하시거나 연락 주시면 자세히 안내드리겠습니다.\n\nJ&C 음악학원 (☎ 010-4028-9803)`;
     }
     if (type === "new_lesson") {
-      return `안녕하세요, J&C 음악학원입니다.\n\n${nameLabel}의 첫 수업 안내드립니다.\n\n* 첫 수업: (날짜/요일/시간 입력)\n* 과목: ${subject}\n\n* 원비 안내\n월 원비: (금액)원 / (횟수)회 수업\n하나은행 125-91025-766307 강열혁(제이앤씨음악학원)\n방문(카드/현금), 계좌이체·제로페이, 온라인 카드결제 모두 가능합니다.\n\n* 취소/노쇼 안내\n당일 취소 및 노쇼는 수업 1회 차감됩니다.\n변경 사항은 수업 전날까지 연락 부탁드립니다.\n\n항상 감사드립니다 :)\nJ&C 음악학원장 드림.`;
+      // 이름 또는 전화번호로 등록 학생 조회 → 원비·회차·등록일 자동 채움
+      const matched = allStudents.find(
+        (s) => s.name === consult.name || (consult.phone && s.phone === consult.phone)
+      );
+      const DAYS_KO = ["일", "월", "화", "수", "목", "금", "토"];
+      const formatDateKo = (dateStr) => {
+        if (!dateStr) return null;
+        const d = new Date(dateStr + "T00:00:00");
+        return `${dateStr} (${DAYS_KO[d.getDay()]})`;
+      };
+      const regDateStr = matched
+        ? formatDateKo(matched.registrationDate || matched.createdAt?.slice(0, 10))
+        : null;
+      const firstLesson = regDateStr ? regDateStr : "(날짜/요일/시간 입력)";
+      const fee = matched && matched.tuitionFee
+        ? `${Number(matched.tuitionFee).toLocaleString()}원`
+        : "(금액)원";
+      const sessions = matched
+        ? (() => {
+            const saved = parseInt(matched.totalSessions);
+            if (!isNaN(saved) && saved > 0) return saved;
+            return Object.keys(matched.schedules || {}).length >= 2 ? 8 : 4;
+          })()
+        : "(횟수)";
+      return `안녕하세요, J&C 음악학원입니다.\n\n${nameLabel}의 첫 수업 안내드립니다.\n\n* 첫 수업: ${firstLesson}\n* 과목: ${subject}\n\n* 원비 안내\n월 원비: ${fee} / ${sessions}회 수업\n하나은행 125-91025-766307 강열혁(제이앤씨음악학원)\n방문(카드/현금), 계좌이체·제로페이, 온라인 카드결제 모두 가능합니다.\n\n* 취소/노쇼 안내\n당일 취소 및 노쇼는 수업 1회 차감됩니다.\n변경 사항은 수업 전날까지 연락 부탁드립니다.\n\n항상 감사드립니다 :)\nJ&C 음악학원장 드림.`;
     }
     if (type === "consult_confirm") {
       return `안녕하세요, J&C 음악학원입니다.\n\n${nameLabel}, 상담 예약이 확인되었습니다.\n\n* 상담 일시: (날짜/요일/시간 입력)\n* 장소: J&C 음악학원 (목동)\n\n문의사항이 있으시면 언제든지 연락 주세요.\n연락처: 010-4028-9803\n\n감사합니다 :)\nJ&C 음악학원장 드림.`;
@@ -9989,10 +10014,10 @@ J&C 음악학원장 드림.`,
     text:
 `안녕하세요, J&C 음악학원입니다.
 
-(이름) 학생의 첫 수업 안내드립니다.
+[이름] 학생의 첫 수업 안내드립니다.
 
 * 첫 수업: (날짜/요일/시간 입력)
-* 과목: (과목)
+* 과목: [과목]
 
 * 원비 안내
 월 원비: (금액)원 / (횟수)회 수업
@@ -10008,48 +10033,11 @@ J&C 음악학원장 드림.`,
   },
 ];
 
-const KO_DAYS = ["일", "월", "화", "수", "목", "금", "토"];
-
-const buildNewLessonMessage = (student) => {
-  const name = student.name || "(이름)";
-  const subject = student.subject || "(과목)";
-  const tuition = student.tuitionFee
-    ? parseInt(student.tuitionFee).toLocaleString()
-    : "(금액)";
-  const sessions = getEffectiveSessions(student);
-  let dateStr = "(날짜/요일/시간 입력)";
-  if (student.registrationDate) {
-    const d = new Date(student.registrationDate + "T00:00:00");
-    if (!isNaN(d)) {
-      const ymd = student.registrationDate.replace(/-/g, ".");
-      const dow = KO_DAYS[d.getDay()];
-      dateStr = `${ymd}(${dow}) (시간 입력)`;
-    }
-  }
-  return `안녕하세요, J&C 음악학원입니다.
-
-${name} 학생의 첫 수업 안내드립니다.
-
-* 첫 수업: ${dateStr}
-* 과목: ${subject}
-
-* 원비 안내
-월 원비: ${tuition}원 / ${sessions}회 수업
-하나은행 125-91025-766307 강열혁(제이앤씨음악학원)
-방문(카드/현금), 계좌이체·제로페이, 온라인 카드결제 모두 가능합니다.
-
-* 취소/노쇼 안내
-당일 취소 및 노쇼는 수업 1회 차감됩니다.
-변경 사항은 수업 전날까지 연락 부탁드립니다.
-
-항상 감사드립니다 :)
-J&C 음악학원장 드림.`;
-};
-
 const BulkSmsView = ({ students, teachers, showToast }) => {
   const [selectedIds, setSelectedIds] = useState([]);
   const [filterTeacher, setFilterTeacher] = useState("");
   const [filterPart, setFilterPart] = useState("");
+  const [searchName, setSearchName] = useState("");
   const [templateId, setTemplateId] = useState("custom");
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
@@ -10061,18 +10049,10 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
     return students.filter((s) => {
       if (filterTeacher && s.teacher !== filterTeacher) return false;
       if (filterPart && s.part !== filterPart) return false;
+      if (searchName && !s.name.includes(searchName)) return false;
       return true;
     });
-  }, [students, filterTeacher, filterPart]);
-
-  const applyNewLessonTemplate = useCallback((ids) => {
-    const tmpl = BULK_SMS_TEMPLATES.find((t) => t.id === "new_lesson");
-    if (ids.length === 1) {
-      const s = students.find((st) => st.id === ids[0]);
-      if (s) { setMessage(buildNewLessonMessage(s)); return; }
-    }
-    if (tmpl) setMessage(applyTemplateGreetings(tmpl.text));
-  }, [students]);
+  }, [students, filterTeacher, filterPart, searchName]);
 
   const toggleAll = () => {
     if (selectedIds.length === filteredStudents.length) {
@@ -10082,25 +10062,55 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
     }
   };
 
-  const toggleOne = (id) => {
-    setSelectedIds((prev) => {
-      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
-      if (templateId === "new_lesson") {
-        setTimeout(() => applyNewLessonTemplate(next), 0);
-      }
-      return next;
-    });
+  const DAYS_KO_BULK = ["일", "월", "화", "수", "목", "금", "토"];
+
+  // 1명 선택 시 new_lesson 템플릿에 학생 정보 자동 채움
+  const buildNewLessonMsg = (ids) => {
+    const base = BULK_SMS_TEMPLATES.find((t) => t.id === "new_lesson")?.text || "";
+    if (ids.length !== 1) return base;
+    const s = students.find((st) => st.id === ids[0]);
+    if (!s) return base;
+    const nameSuffix = s.grade === "성인" ? "님" : " 학생";
+    const regDateStr = s.registrationDate || (s.createdAt ? s.createdAt.slice(0, 10) : "");
+    const firstLesson = regDateStr
+      ? `${regDateStr} (${DAYS_KO_BULK[new Date(regDateStr + "T00:00:00").getDay()]})`
+      : "(날짜/요일/시간 입력)";
+    const fee = s.tuitionFee ? `${Number(s.tuitionFee).toLocaleString()}원` : "(금액)원";
+    const sessions = (() => {
+      const saved = parseInt(s.totalSessions);
+      if (!isNaN(saved) && saved > 0) return saved;
+      return Object.keys(s.schedules || {}).length >= 2 ? 8 : 4;
+    })();
+    return base
+      .replace("[이름]", s.name + nameSuffix)
+      .replace("[과목]", s.subject || "(과목)")
+      .replace("(날짜/요일/시간 입력)", firstLesson)
+      .replace("(금액)원", fee)
+      .replace("(횟수)회", `${sessions}회`);
   };
+
+  const toggleOne = (id) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  // new_lesson 템플릿 활성화 중 선택 변경 시 자동 갱신
+  useEffect(() => {
+    if (templateId === "new_lesson") {
+      setMessage(buildNewLessonMsg(selectedIds));
+    }
+  }, [selectedIds, templateId]); // eslint-disable-line
 
   const handleTemplateChange = (tid) => {
     setTemplateId(tid);
     if (tid === "new_lesson") {
-      applyNewLessonTemplate(selectedIds);
-      return;
+      setMessage(buildNewLessonMsg(selectedIds));
+    } else {
+      const t = BULK_SMS_TEMPLATES.find((t) => t.id === tid);
+      if (t && t.text) setMessage(applyTemplateGreetings(t.text));
+      else setMessage("");
     }
-    const t = BULK_SMS_TEMPLATES.find((t) => t.id === tid);
-    if (t && t.text) setMessage(applyTemplateGreetings(t.text));
-    else setMessage("");
   };
 
   const handleSend = async () => {
@@ -10152,6 +10162,15 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
         {/* 왼쪽: 원생 선택 */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
           <div className="p-4 border-b bg-slate-50 flex flex-wrap gap-2 items-center">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+              <input
+                placeholder="이름 검색"
+                value={searchName}
+                onChange={(e) => setSearchName(e.target.value)}
+                className="pl-8 pr-3 py-1.5 text-sm border rounded-lg bg-white focus:outline-indigo-500 w-28"
+              />
+            </div>
             <select
               value={filterTeacher}
               onChange={(e) => setFilterTeacher(e.target.value)}
@@ -12681,6 +12700,7 @@ export default function App() {
               onRegisterStudent={handleRegisterFromConsultation} // 👈 이 연결이 핵심입니다!
               targetConsultation={targetConsultation}
               onClearTargetConsultation={() => setTargetConsultation(null)}
+              students={students}
             />
           )}
           {activeTab === "bulkSms" && currentUser.role === "admin" && (
