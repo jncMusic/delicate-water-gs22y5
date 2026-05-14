@@ -9981,7 +9981,70 @@ J&C 음악학원 발표회에 소중한 여러분을 초대합니다 🎵
 항상 감사드립니다. {{시즌인사2}}
 J&C 음악학원장 드림.`,
   },
+
+  // ── 첫 수업 안내 ──────────────────────────────────────
+  {
+    id: "new_lesson",
+    label: "첫 수업 안내",
+    text:
+`안녕하세요, J&C 음악학원입니다.
+
+(이름) 학생의 첫 수업 안내드립니다.
+
+* 첫 수업: (날짜/요일/시간 입력)
+* 과목: (과목)
+
+* 원비 안내
+월 원비: (금액)원 / (횟수)회 수업
+하나은행 125-91025-766307 강열혁(제이앤씨음악학원)
+방문(카드/현금), 계좌이체·제로페이, 온라인 카드결제 모두 가능합니다.
+
+* 취소/노쇼 안내
+당일 취소 및 노쇼는 수업 1회 차감됩니다.
+변경 사항은 수업 전날까지 연락 부탁드립니다.
+
+항상 감사드립니다 :)
+J&C 음악학원장 드림.`,
+  },
 ];
+
+const KO_DAYS = ["일", "월", "화", "수", "목", "금", "토"];
+
+const buildNewLessonMessage = (student) => {
+  const name = student.name || "(이름)";
+  const subject = student.subject || "(과목)";
+  const tuition = student.tuitionFee
+    ? parseInt(student.tuitionFee).toLocaleString()
+    : "(금액)";
+  const sessions = getEffectiveSessions(student);
+  let dateStr = "(날짜/요일/시간 입력)";
+  if (student.registrationDate) {
+    const d = new Date(student.registrationDate + "T00:00:00");
+    if (!isNaN(d)) {
+      const ymd = student.registrationDate.replace(/-/g, ".");
+      const dow = KO_DAYS[d.getDay()];
+      dateStr = `${ymd}(${dow}) (시간 입력)`;
+    }
+  }
+  return `안녕하세요, J&C 음악학원입니다.
+
+${name} 학생의 첫 수업 안내드립니다.
+
+* 첫 수업: ${dateStr}
+* 과목: ${subject}
+
+* 원비 안내
+월 원비: ${tuition}원 / ${sessions}회 수업
+하나은행 125-91025-766307 강열혁(제이앤씨음악학원)
+방문(카드/현금), 계좌이체·제로페이, 온라인 카드결제 모두 가능합니다.
+
+* 취소/노쇼 안내
+당일 취소 및 노쇼는 수업 1회 차감됩니다.
+변경 사항은 수업 전날까지 연락 부탁드립니다.
+
+항상 감사드립니다 :)
+J&C 음악학원장 드림.`;
+};
 
 const BulkSmsView = ({ students, teachers, showToast }) => {
   const [selectedIds, setSelectedIds] = useState([]);
@@ -10002,6 +10065,15 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
     });
   }, [students, filterTeacher, filterPart]);
 
+  const applyNewLessonTemplate = useCallback((ids) => {
+    const tmpl = BULK_SMS_TEMPLATES.find((t) => t.id === "new_lesson");
+    if (ids.length === 1) {
+      const s = students.find((st) => st.id === ids[0]);
+      if (s) { setMessage(buildNewLessonMessage(s)); return; }
+    }
+    if (tmpl) setMessage(applyTemplateGreetings(tmpl.text));
+  }, [students]);
+
   const toggleAll = () => {
     if (selectedIds.length === filteredStudents.length) {
       setSelectedIds([]);
@@ -10011,13 +10083,21 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
   };
 
   const toggleOne = (id) => {
-    setSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    );
+    setSelectedIds((prev) => {
+      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+      if (templateId === "new_lesson") {
+        setTimeout(() => applyNewLessonTemplate(next), 0);
+      }
+      return next;
+    });
   };
 
   const handleTemplateChange = (tid) => {
     setTemplateId(tid);
+    if (tid === "new_lesson") {
+      applyNewLessonTemplate(selectedIds);
+      return;
+    }
     const t = BULK_SMS_TEMPLATES.find((t) => t.id === tid);
     if (t && t.text) setMessage(applyTemplateGreetings(t.text));
     else setMessage("");
