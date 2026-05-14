@@ -10062,17 +10062,55 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
     }
   };
 
+  const DAYS_KO_BULK = ["일", "월", "화", "수", "목", "금", "토"];
+
+  // 1명 선택 시 new_lesson 템플릿에 학생 정보 자동 채움
+  const buildNewLessonMsg = (ids) => {
+    const base = BULK_SMS_TEMPLATES.find((t) => t.id === "new_lesson")?.text || "";
+    if (ids.length !== 1) return base;
+    const s = students.find((st) => st.id === ids[0]);
+    if (!s) return base;
+    const nameSuffix = s.grade === "성인" ? "님" : " 학생";
+    const regDateStr = s.registrationDate || (s.createdAt ? s.createdAt.slice(0, 10) : "");
+    const firstLesson = regDateStr
+      ? `${regDateStr} (${DAYS_KO_BULK[new Date(regDateStr + "T00:00:00").getDay()]})`
+      : "(날짜/요일/시간 입력)";
+    const fee = s.tuitionFee ? `${Number(s.tuitionFee).toLocaleString()}원` : "(금액)원";
+    const sessions = (() => {
+      const saved = parseInt(s.totalSessions);
+      if (!isNaN(saved) && saved > 0) return saved;
+      return Object.keys(s.schedules || {}).length >= 2 ? 8 : 4;
+    })();
+    return base
+      .replace("[이름]", s.name + nameSuffix)
+      .replace("[과목]", s.subject || "(과목)")
+      .replace("(날짜/요일/시간 입력)", firstLesson)
+      .replace("(금액)원", fee)
+      .replace("(횟수)회", `${sessions}회`);
+  };
+
   const toggleOne = (id) => {
     setSelectedIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
   };
 
+  // new_lesson 템플릿 활성화 중 선택 변경 시 자동 갱신
+  useEffect(() => {
+    if (templateId === "new_lesson") {
+      setMessage(buildNewLessonMsg(selectedIds));
+    }
+  }, [selectedIds, templateId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleTemplateChange = (tid) => {
     setTemplateId(tid);
-    const t = BULK_SMS_TEMPLATES.find((t) => t.id === tid);
-    if (t && t.text) setMessage(applyTemplateGreetings(t.text));
-    else setMessage("");
+    if (tid === "new_lesson") {
+      setMessage(buildNewLessonMsg(selectedIds));
+    } else {
+      const t = BULK_SMS_TEMPLATES.find((t) => t.id === tid);
+      if (t && t.text) setMessage(applyTemplateGreetings(t.text));
+      else setMessage("");
+    }
   };
 
   const handleSend = async () => {
