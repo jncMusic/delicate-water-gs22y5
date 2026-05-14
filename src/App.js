@@ -9981,12 +9981,38 @@ J&C 음악학원 발표회에 소중한 여러분을 초대합니다 🎵
 항상 감사드립니다. {{시즌인사2}}
 J&C 음악학원장 드림.`,
   },
+
+  // ── 첫 수업 안내 ──────────────────────────────────────
+  {
+    id: "new_lesson",
+    label: "첫 수업 안내",
+    text:
+`안녕하세요, J&C 음악학원입니다.
+
+[이름] 학생의 첫 수업 안내드립니다.
+
+* 첫 수업: (날짜/요일/시간 입력)
+* 과목: [과목]
+
+* 원비 안내
+월 원비: (금액)원 / (횟수)회 수업
+하나은행 125-91025-766307 강열혁(제이앤씨음악학원)
+방문(카드/현금), 계좌이체·제로페이, 온라인 카드결제 모두 가능합니다.
+
+* 취소/노쇼 안내
+당일 취소 및 노쇼는 수업 1회 차감됩니다.
+변경 사항은 수업 전날까지 연락 부탁드립니다.
+
+항상 감사드립니다 :)
+J&C 음악학원장 드림.`,
+  },
 ];
 
 const BulkSmsView = ({ students, teachers, showToast }) => {
   const [selectedIds, setSelectedIds] = useState([]);
   const [filterTeacher, setFilterTeacher] = useState("");
   const [filterPart, setFilterPart] = useState("");
+  const [searchName, setSearchName] = useState("");
   const [templateId, setTemplateId] = useState("custom");
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
@@ -9998,9 +10024,10 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
     return students.filter((s) => {
       if (filterTeacher && s.teacher !== filterTeacher) return false;
       if (filterPart && s.part !== filterPart) return false;
+      if (searchName && !s.name.includes(searchName)) return false;
       return true;
     });
-  }, [students, filterTeacher, filterPart]);
+  }, [students, filterTeacher, filterPart, searchName]);
 
   const toggleAll = () => {
     if (selectedIds.length === filteredStudents.length) {
@@ -10072,6 +10099,15 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
         {/* 왼쪽: 원생 선택 */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
           <div className="p-4 border-b bg-slate-50 flex flex-wrap gap-2 items-center">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+              <input
+                placeholder="이름 검색"
+                value={searchName}
+                onChange={(e) => setSearchName(e.target.value)}
+                className="pl-8 pr-3 py-1.5 text-sm border rounded-lg bg-white focus:outline-indigo-500 w-28"
+              />
+            </div>
             <select
               value={filterTeacher}
               onChange={(e) => setFilterTeacher(e.target.value)}
