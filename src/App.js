@@ -3157,6 +3157,7 @@ const ConsultationView = ({
   consultations: allConsultations,
   targetConsultation,
   onClearTargetConsultation,
+  students: allStudents = [],
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -3309,7 +3310,31 @@ const ConsultationView = ({
       return `안녕하세요, J&C 음악학원입니다.\n\n문의주신 ${subject} 수업 가능 시간 안내드립니다.\n\n- 요일/시간: (예: 월요일 오후 4시, 수요일 오후 5시)\n\n편하신 시간에 방문하시거나 연락 주시면 자세히 안내드리겠습니다.\n\nJ&C 음악학원 (☎ 010-4028-9803)`;
     }
     if (type === "new_lesson") {
-      return `안녕하세요, J&C 음악학원입니다.\n\n${nameLabel}의 첫 수업 안내드립니다.\n\n* 첫 수업: (날짜/요일/시간 입력)\n* 과목: ${subject}\n\n* 원비 안내\n월 원비: (금액)원 / (횟수)회 수업\n하나은행 125-91025-766307 강열혁(제이앤씨음악학원)\n방문(카드/현금), 계좌이체·제로페이, 온라인 카드결제 모두 가능합니다.\n\n* 취소/노쇼 안내\n당일 취소 및 노쇼는 수업 1회 차감됩니다.\n변경 사항은 수업 전날까지 연락 부탁드립니다.\n\n항상 감사드립니다 :)\nJ&C 음악학원장 드림.`;
+      // 이름 또는 전화번호로 등록 학생 조회 → 원비·회차·등록일 자동 채움
+      const matched = allStudents.find(
+        (s) => s.name === consult.name || (consult.phone && s.phone === consult.phone)
+      );
+      const DAYS_KO = ["일", "월", "화", "수", "목", "금", "토"];
+      const formatDateKo = (dateStr) => {
+        if (!dateStr) return null;
+        const d = new Date(dateStr + "T00:00:00");
+        return `${dateStr} (${DAYS_KO[d.getDay()]})`;
+      };
+      const regDateStr = matched
+        ? formatDateKo(matched.registrationDate || matched.createdAt?.slice(0, 10))
+        : null;
+      const firstLesson = regDateStr ? regDateStr : "(날짜/요일/시간 입력)";
+      const fee = matched && matched.tuitionFee
+        ? `${Number(matched.tuitionFee).toLocaleString()}원`
+        : "(금액)원";
+      const sessions = matched
+        ? (() => {
+            const saved = parseInt(matched.totalSessions);
+            if (!isNaN(saved) && saved > 0) return saved;
+            return Object.keys(matched.schedules || {}).length >= 2 ? 8 : 4;
+          })()
+        : "(횟수)";
+      return `안녕하세요, J&C 음악학원입니다.\n\n${nameLabel}의 첫 수업 안내드립니다.\n\n* 첫 수업: ${firstLesson}\n* 과목: ${subject}\n\n* 원비 안내\n월 원비: ${fee} / ${sessions}회 수업\n하나은행 125-91025-766307 강열혁(제이앤씨음악학원)\n방문(카드/현금), 계좌이체·제로페이, 온라인 카드결제 모두 가능합니다.\n\n* 취소/노쇼 안내\n당일 취소 및 노쇼는 수업 1회 차감됩니다.\n변경 사항은 수업 전날까지 연락 부탁드립니다.\n\n항상 감사드립니다 :)\nJ&C 음악학원장 드림.`;
     }
     if (type === "consult_confirm") {
       return `안녕하세요, J&C 음악학원입니다.\n\n${nameLabel}, 상담 예약이 확인되었습니다.\n\n* 상담 일시: (날짜/요일/시간 입력)\n* 장소: J&C 음악학원 (목동)\n\n문의사항이 있으시면 언제든지 연락 주세요.\n연락처: 010-4028-9803\n\n감사합니다 :)\nJ&C 음악학원장 드림.`;
@@ -12637,6 +12662,7 @@ export default function App() {
               onRegisterStudent={handleRegisterFromConsultation} // 👈 이 연결이 핵심입니다!
               targetConsultation={targetConsultation}
               onClearTargetConsultation={() => setTargetConsultation(null)}
+              students={students}
             />
           )}
           {activeTab === "bulkSms" && currentUser.role === "admin" && (
