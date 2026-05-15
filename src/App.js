@@ -9195,15 +9195,28 @@ const StudentManagementModal = ({
       return sum;
     }, 0);
 
-    // 결제 이력 totalSessions 보존:
+    // 결제 이력 totalSessions 보존 + sessionDates 재계산:
     // totalSessions 없이 저장된 기존 결제 항목은 변경 후 수강 단위로 채워 보존
+    // sessionDates는 출석 이력 기반으로 순서대로 재할당 (변경 시 히스토리 보존)
     const newEffectiveSessions = parseInt(formData.totalSessions) > 0
       ? parseInt(formData.totalSessions)
       : (Object.keys(formData.schedules || {}).length >= 2 ? 8 : 4);
-    const correctedPayHistory = payHistory.map((p) => ({
-      ...p,
-      totalSessions: p.totalSessions || newEffectiveSessions,
-    }));
+    const sortedAttForCorr = [...attHistory]
+      .filter((h) => h.status === "present" || h.status === "canceled")
+      .sort((a, b) => a.date.localeCompare(b.date));
+    const corrAttSlots = [];
+    sortedAttForCorr.forEach((h) => {
+      const cnt = h.status === "canceled" ? 1 : (h.count || 1);
+      for (let i = 0; i < cnt; i++) corrAttSlots.push(h.date);
+    });
+    const sortedPayForCorr = [...payHistory].sort((a, b) => a.date.localeCompare(b.date));
+    let coveredSoFar = 0;
+    const correctedPayHistory = sortedPayForCorr.map((p) => {
+      const ps = p.totalSessions > 0 ? p.totalSessions : newEffectiveSessions;
+      const recalcSessionDates = corrAttSlots.slice(coveredSoFar, coveredSoFar + ps);
+      coveredSoFar += ps;
+      return { ...p, totalSessions: ps, sessionDates: recalcSessionDates };
+    });
 
     const updatedData = {
       ...formData,
@@ -9693,10 +9706,26 @@ const StudentManagementModal = ({
                     const payWithIdx = sortedPay.map((h, i) => ({ ...h, payIdx: i }));
                     const recentPays = [...payWithIdx].reverse().slice(0, 3);
                     return recentPays.map((h, idx) => {
-                      const startSession = h.payIdx * sessionUnit;
-                      const slots = sessionSlots.slice(startSession, startSession + sessionUnit);
-                      const startNum = startSession + 1;
-                      const endNum = startSession + slots.length;
+                      // sessionDates가 저장된 경우 우선 사용, 없으면 동적 계산 (fallback)
+                      let slots;
+                      let startNum;
+                      if (h.sessionDates && h.sessionDates.length > 0) {
+                        slots = h.sessionDates;
+                        let cumStart = 0;
+                        for (let i = 0; i < h.payIdx; i++) {
+                          cumStart += sortedPay[i].totalSessions > 0 ? sortedPay[i].totalSessions : sessionUnit;
+                        }
+                        startNum = cumStart + 1;
+                      } else {
+                        let cumStart = 0;
+                        for (let i = 0; i < h.payIdx; i++) {
+                          cumStart += sortedPay[i].totalSessions > 0 ? sortedPay[i].totalSessions : sessionUnit;
+                        }
+                        const payUnit = h.totalSessions > 0 ? h.totalSessions : sessionUnit;
+                        slots = sessionSlots.slice(cumStart, cumStart + payUnit);
+                        startNum = cumStart + 1;
+                      }
+                      const endNum = startNum + slots.length - 1;
                       // 날짜별로 그룹화 (연강 여부 확인)
                       const dateGroups = [];
                       slots.forEach((date) => {
@@ -11997,12 +12026,32 @@ export default function App() {
         );
         if (!ok) return;
       }
+      const paymentSessionUnit = totalSessionsOverride ?? getEffectiveSessions(student);
+      // 이번 결제가 커버하는 수업 날짜 목록을 저장 (이후 회차 변경에 영향 안 받도록)
+      const sortedAttForPay = [...(student.attendanceHistory || [])]
+        .filter((h) => h.status === "present" || h.status === "canceled")
+        .sort((a, b) => a.date.localeCompare(b.date));
+      const attSlotsForPay = [];
+      sortedAttForPay.forEach((h) => {
+        const cnt = h.status === "canceled" ? 1 : (h.count || 1);
+        for (let i = 0; i < cnt; i++) attSlotsForPay.push(h.date);
+      });
+      const existingPaysForNew = [...(student.paymentHistory || [])].sort((a, b) =>
+        a.date.localeCompare(b.date)
+      );
+      const alreadyCovered = existingPaysForNew.reduce(
+        (sum, p) => sum + (p.totalSessions > 0 ? p.totalSessions : paymentSessionUnit),
+        0
+      );
+      const sessionDates = attSlotsForPay.slice(alreadyCovered, alreadyCovered + paymentSessionUnit);
+
       const newHistoryItem = {
         date,
         amount,
         type: "tuition",
         sessionStartDate: realSessionStartDate,
-        totalSessions: totalSessionsOverride ?? getEffectiveSessions(student),
+        totalSessions: paymentSessionUnit,
+        sessionDates,
         createdAt: new Date().toISOString(),
         ...(method && { method }),
       };
