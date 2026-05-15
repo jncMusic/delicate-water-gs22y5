@@ -421,10 +421,8 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
     a.date.localeCompare(b.date)
   );
   const sortedAllPayments = [...allPayments].sort((a, b) => a.date.localeCompare(b.date));
-  const scheduleBasedUnit = Object.keys(student.schedules || {}).length >= 2 ? 8 : 4;
-  const legacyFallback = sortedAllPayments.find(p => p.totalSessions > 0)?.totalSessions || scheduleBasedUnit;
   const totalPaidCapacity = sortedAllPayments.reduce(
-    (sum, p) => sum + (p.totalSessions || legacyFallback), 0
+    (sum, p) => sum + (p.totalSessions > 0 ? p.totalSessions : sessionUnit), 0
   );
   const lastPayment =
     allPayments.length > 0
@@ -1796,10 +1794,8 @@ const PaymentManagementModal = ({ students, messageLogs, onClose, user, onNaviga
         .reduce((sum, h) => sum + (h.status === "canceled" ? 1 : (h.count || 1)), 0);
       const sessionUnit = getEffectiveSessions(s);
       const sortedPays = [...(s.paymentHistory || [])].sort((a, b) => a.date.localeCompare(b.date));
-      const scheduleBasedUnit = Object.keys(s.schedules || {}).length >= 2 ? 8 : 4;
-      const legacyFallback = sortedPays.find(p => p.totalSessions > 0)?.totalSessions || scheduleBasedUnit;
       const capacity = sortedPays.reduce(
-        (sum, p) => sum + (p.totalSessions || legacyFallback),
+        (sum, p) => sum + (p.totalSessions > 0 ? p.totalSessions : sessionUnit),
         0
       );
       const remaining = capacity - attended;
@@ -1990,10 +1986,8 @@ const DashboardView = ({
       .reduce((sum, h) => sum + (h.status === "canceled" ? 1 : (h.count || 1)), 0);
     const sessionUnit = getEffectiveSessions(s);
     const sortedPays = [...(s.paymentHistory || [])].sort((a, b) => a.date.localeCompare(b.date));
-    const scheduleBasedUnit = Object.keys(s.schedules || {}).length >= 2 ? 8 : 4;
-    const legacyFallback = sortedPays.find(p => p.totalSessions > 0)?.totalSessions || scheduleBasedUnit;
     const totalPaidCapacity = sortedPays.reduce(
-      (sum, p) => sum + (p.totalSessions || legacyFallback), 0
+      (sum, p) => sum + (p.totalSessions > 0 ? p.totalSessions : sessionUnit), 0
     );
     const remainingCapacity = totalPaidCapacity - totalAttended;
 
@@ -2083,11 +2077,10 @@ const DashboardView = ({
       const totalAttended = history
         .filter((h) => h.status === "present" || h.status === "canceled")
         .reduce((sum, h) => sum + (h.status === "canceled" ? 1 : (h.count || 1)), 0);
+      const sessionUnit = getEffectiveSessions(s);
       const sortedPays = [...(s.paymentHistory || [])].sort((a, b) => a.date.localeCompare(b.date));
-      const scheduleBasedUnit = Object.keys(s.schedules || {}).length >= 2 ? 8 : 4;
-      const legacyFallback = sortedPays.find((p) => p.totalSessions > 0)?.totalSessions || scheduleBasedUnit;
       const totalPaidCapacity = sortedPays.reduce(
-        (sum, p) => sum + (p.totalSessions || legacyFallback), 0
+        (sum, p) => sum + (p.totalSessions > 0 ? p.totalSessions : sessionUnit), 0
       );
       return totalPaidCapacity - totalAttended <= 0;
     });
@@ -9203,11 +9196,13 @@ const StudentManagementModal = ({
     }, 0);
 
     // 결제 이력 totalSessions 보존:
-    // totalSessions 없이 저장된 기존 결제 항목은 변경 전 원생의 수강 단위로 채워 보존
-    const originalEffectiveSessions = student ? getEffectiveSessions(student) : 4;
+    // totalSessions 없이 저장된 기존 결제 항목은 변경 후 수강 단위로 채워 보존
+    const newEffectiveSessions = parseInt(formData.totalSessions) > 0
+      ? parseInt(formData.totalSessions)
+      : (Object.keys(formData.schedules || {}).length >= 2 ? 8 : 4);
     const correctedPayHistory = payHistory.map((p) => ({
       ...p,
-      totalSessions: p.totalSessions || originalEffectiveSessions,
+      totalSessions: p.totalSessions || newEffectiveSessions,
     }));
 
     const updatedData = {

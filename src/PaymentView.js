@@ -636,11 +636,25 @@ export const PaymentView = ({
   const [processPayAmount, setProcessPayAmount] = useState("");
   const [isProcessSaving, setIsProcessSaving] = useState(false);
 
+  // 결제 예정자 선택 시 해당 학생의 회차로 초기화
+  React.useEffect(() => {
+    if (processQuickPay) {
+      setProcessPaySessions(getEffectiveSessions(processQuickPay));
+    }
+  }, [processQuickPay]);
+
   // ── 수납현황(today) 빠른 결제입력 상태 ───────────────────────
   const [quickPayStudent, setQuickPayStudent] = useState(null);
   const [quickPayDate, setQuickPayDate] = useState("");
   const [quickPaySessions, setQuickPaySessions] = useState(4);
   const [quickPayAmount, setQuickPayAmount] = useState("");
+
+  // 수납현황 학생 선택 시 해당 학생의 회차로 초기화
+  React.useEffect(() => {
+    if (quickPayStudent) {
+      setQuickPaySessions(getEffectiveSessions(quickPayStudent));
+    }
+  }, [quickPayStudent]);
 
   // ── 히스토리(history) 탭 상태 ────────────────────────────────
   const [historyPeriod, setHistoryPeriod] = useState("month"); // "day" | "week" | "month"
@@ -680,19 +694,16 @@ export const PaymentView = ({
     const sortedPayments = [...(s.paymentHistory || [])].sort((a, b) =>
       a.date.localeCompare(b.date)
     );
-    const scheduleBasedUnit =
-      Object.keys(s.schedules || {}).length >= 2 ? 8 : 4;
-    const legacyFallback =
-      sortedPayments.find((p) => p.totalSessions > 0)?.totalSessions ||
-      scheduleBasedUnit;
     const totalPaidCapacity = sortedPayments.reduce(
-      (sum, p) => sum + (p.totalSessions || legacyFallback),
+      (sum, p) => sum + (p.totalSessions > 0 ? p.totalSessions : sessionUnit),
       0
     );
     const remainingCapacity = totalPaidCapacity - totalAttended;
     const lastPayUnit =
       sortedPayments.length > 0
-        ? sortedPayments[sortedPayments.length - 1].totalSessions || legacyFallback
+        ? (sortedPayments[sortedPayments.length - 1].totalSessions > 0
+            ? sortedPayments[sortedPayments.length - 1].totalSessions
+            : sessionUnit)
         : sessionUnit;
     const lastCycleStart = Math.max(0, totalPaidCapacity - lastPayUnit);
     let currentUsage = Math.max(0, totalAttended - lastCycleStart);
@@ -722,10 +733,9 @@ export const PaymentView = ({
 
   // 수강권이 소진된 날짜 계산: 누적 출석이 totalPaidCapacity에 도달한 날
   const getPaymentDueDate = (s) => {
+    const sessionUnit = getEffectiveSessions(s);
     const sortedPayments = [...(s.paymentHistory || [])].sort((a, b) => a.date.localeCompare(b.date));
-    const scheduleBasedUnit = Object.keys(s.schedules || {}).length >= 2 ? 8 : 4;
-    const legacyFallback = sortedPayments.find((p) => p.totalSessions > 0)?.totalSessions || scheduleBasedUnit;
-    const totalPaidCapacity = sortedPayments.reduce((sum, p) => sum + (p.totalSessions || legacyFallback), 0);
+    const totalPaidCapacity = sortedPayments.reduce((sum, p) => sum + (p.totalSessions > 0 ? p.totalSessions : sessionUnit), 0);
     if (totalPaidCapacity === 0) return "";
     const sortedAtt = [...(s.attendanceHistory || [])]
       .filter((h) => h.status === "present" || h.status === "canceled")
