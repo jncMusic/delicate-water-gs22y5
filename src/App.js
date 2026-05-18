@@ -416,33 +416,47 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
     }
   });
 
-  // 결제별 totalSessions 합산
+  // 결제 이력 정렬
   const allPayments = (student.paymentHistory || []).sort((a, b) =>
     a.date.localeCompare(b.date)
-  );
-  const sortedAllPayments = [...allPayments].sort((a, b) => a.date.localeCompare(b.date));
-  const scheduleBasedUnit = Object.keys(student.schedules || {}).length >= 2 ? 8 : 4;
-  const legacyFallback = sortedAllPayments.find(p => p.totalSessions > 0)?.totalSessions || scheduleBasedUnit;
-  const totalPaidCapacity = sortedAllPayments.reduce(
-    (sum, p) => sum + (p.totalSessions || legacyFallback), 0
   );
   const lastPayment =
     allPayments.length > 0
       ? allPayments[allPayments.length - 1].date
       : "기록 없음";
 
-  // 누적 가중치로 paid/unpaid 구분
-  let cumulativeWeight = 0;
+  // 선불 방식: 마지막 결제의 sessionStartDate를 기준으로 커버 계산
+  // - sessionStartDate 이전 수업: 이전 결제에서 커버된 것으로 간주
+  // - sessionStartDate 이후 수업: 마지막 결제의 totalSessions만큼 커버, 초과분은 미납
   let lastCoveredDate = "없음";
   const unpaidItems = []; // { date, label }
   const recentSlots = [];
-  for (const slot of sessionSlots) {
-    const nextWeight = cumulativeWeight + slot.weight;
-    if (nextWeight <= totalPaidCapacity) {
-      cumulativeWeight = nextWeight;
-      lastCoveredDate = slot.label.replace("(당일취소)", ""); // 취소는 완료일 제외
-      recentSlots.push(slot.label);
-    } else {
+
+  if (allPayments.length > 0) {
+    const lastPay = allPayments[allPayments.length - 1];
+    const lastPayStartDate = lastPay.sessionStartDate || lastPay.date;
+    const lastPaySessions = lastPay.totalSessions > 0 ? lastPay.totalSessions : sessionUnit;
+    let lastPayCovered = 0;
+
+    for (const slot of sessionSlots) {
+      if (slot.date < lastPayStartDate) {
+        // 마지막 결제 주기 이전 수업 → 이전 결제들로 커버된 것으로 간주
+        lastCoveredDate = slot.label.replace("(당일취소)", "");
+        recentSlots.push(slot.label);
+      } else {
+        // 마지막 결제 주기 이후 수업 → lastPaySessions까지 커버, 초과는 미납
+        if (lastPayCovered < lastPaySessions) {
+          lastPayCovered += slot.weight;
+          lastCoveredDate = slot.label.replace("(당일취소)", "");
+          recentSlots.push(slot.label);
+        } else {
+          unpaidItems.push(slot);
+        }
+      }
+    }
+  } else {
+    // 결제 내역 없음 → 전체 미납
+    for (const slot of sessionSlots) {
       unpaidItems.push(slot);
     }
   }
@@ -1796,10 +1810,8 @@ const PaymentManagementModal = ({ students, messageLogs, onClose, user, onNaviga
         .reduce((sum, h) => sum + (h.status === "canceled" ? 1 : (h.count || 1)), 0);
       const sessionUnit = getEffectiveSessions(s);
       const sortedPays = [...(s.paymentHistory || [])].sort((a, b) => a.date.localeCompare(b.date));
-      const scheduleBasedUnit = Object.keys(s.schedules || {}).length >= 2 ? 8 : 4;
-      const legacyFallback = sortedPays.find(p => p.totalSessions > 0)?.totalSessions || scheduleBasedUnit;
       const capacity = sortedPays.reduce(
-        (sum, p) => sum + (p.totalSessions || legacyFallback),
+        (sum, p) => sum + (p.totalSessions > 0 ? p.totalSessions : sessionUnit),
         0
       );
       const remaining = capacity - attended;
@@ -1985,22 +1997,17 @@ const DashboardView = ({
 
   // 2. 수납 상태 계산
   const isPaymentDue = (s) => {
-    const totalAttended = (s.attendanceHistory || [])
-      .filter((h) => h.status === "present" || h.status === "canceled")
-      .reduce((sum, h) => sum + (h.status === "canceled" ? 1 : (h.count || 1)), 0);
     const sessionUnit = getEffectiveSessions(s);
     const sortedPays = [...(s.paymentHistory || [])].sort((a, b) => a.date.localeCompare(b.date));
-    const scheduleBasedUnit = Object.keys(s.schedules || {}).length >= 2 ? 8 : 4;
-    const legacyFallback = sortedPays.find(p => p.totalSessions > 0)?.totalSessions || scheduleBasedUnit;
-    const totalPaidCapacity = sortedPays.reduce(
-      (sum, p) => sum + (p.totalSessions || legacyFallback), 0
-    );
-    const remainingCapacity = totalPaidCapacity - totalAttended;
-
-    const isOverdue = remainingCapacity < 0;
-    const isCompleted = remainingCapacity === 0 && totalPaidCapacity > 0;
-
-    return isOverdue || isCompleted;
+    if (sortedPays.length === 0) return false;
+    // 선불: 마지막 결제의 sessionStartDate 이후 출석 횟수 vs 마지막 결제 회차
+    const lastPay = sortedPays[sortedPays.length - 1];
+    const lastPayStart = lastPay.sessionStartDate || lastPay.date;
+    const lastPaySessions = lastPay.totalSessions > 0 ? lastPay.totalSessions : sessionUnit;
+    const attended = (s.attendanceHistory || [])
+      .filter((h) => (h.status === "present" || h.status === "canceled") && h.date >= lastPayStart)
+      .reduce((sum, h) => sum + (h.status === "canceled" ? 1 : (h.count || 1)), 0);
+    return attended >= lastPaySessions;
   };
 
   // 3. 주요 지표 계산
@@ -2080,16 +2087,7 @@ const DashboardView = ({
       );
       if (!hasTodayRecord) return false;
 
-      const totalAttended = history
-        .filter((h) => h.status === "present" || h.status === "canceled")
-        .reduce((sum, h) => sum + (h.status === "canceled" ? 1 : (h.count || 1)), 0);
-      const sortedPays = [...(s.paymentHistory || [])].sort((a, b) => a.date.localeCompare(b.date));
-      const scheduleBasedUnit = Object.keys(s.schedules || {}).length >= 2 ? 8 : 4;
-      const legacyFallback = sortedPays.find((p) => p.totalSessions > 0)?.totalSessions || scheduleBasedUnit;
-      const totalPaidCapacity = sortedPays.reduce(
-        (sum, p) => sum + (p.totalSessions || legacyFallback), 0
-      );
-      return totalPaidCapacity - totalAttended <= 0;
+      return isPaymentDue(s);
     });
   }, [students, user]);
 
@@ -3157,6 +3155,7 @@ const ConsultationView = ({
   consultations: allConsultations,
   targetConsultation,
   onClearTargetConsultation,
+  students: allStudents = [],
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -3309,7 +3308,31 @@ const ConsultationView = ({
       return `안녕하세요, J&C 음악학원입니다.\n\n문의주신 ${subject} 수업 가능 시간 안내드립니다.\n\n- 요일/시간: (예: 월요일 오후 4시, 수요일 오후 5시)\n\n편하신 시간에 방문하시거나 연락 주시면 자세히 안내드리겠습니다.\n\nJ&C 음악학원 (☎ 010-4028-9803)`;
     }
     if (type === "new_lesson") {
-      return `안녕하세요, J&C 음악학원입니다.\n\n${nameLabel}의 첫 수업 안내드립니다.\n\n* 첫 수업: (날짜/요일/시간 입력)\n* 과목: ${subject}\n\n* 원비 안내\n월 원비: (금액)원 / (횟수)회 수업\n하나은행 125-91025-766307 강열혁(제이앤씨음악학원)\n방문(카드/현금), 계좌이체·제로페이, 온라인 카드결제 모두 가능합니다.\n\n* 취소/노쇼 안내\n당일 취소 및 노쇼는 수업 1회 차감됩니다.\n변경 사항은 수업 전날까지 연락 부탁드립니다.\n\n항상 감사드립니다 :)\nJ&C 음악학원장 드림.`;
+      // 이름 또는 전화번호로 등록 학생 조회 → 원비·회차·등록일 자동 채움
+      const matched = allStudents.find(
+        (s) => s.name === consult.name || (consult.phone && s.phone === consult.phone)
+      );
+      const DAYS_KO = ["일", "월", "화", "수", "목", "금", "토"];
+      const formatDateKo = (dateStr) => {
+        if (!dateStr) return null;
+        const d = new Date(dateStr + "T00:00:00");
+        return `${dateStr} (${DAYS_KO[d.getDay()]})`;
+      };
+      const regDateStr = matched
+        ? formatDateKo(matched.registrationDate || matched.createdAt?.slice(0, 10))
+        : null;
+      const firstLesson = regDateStr ? regDateStr : "(날짜/요일/시간 입력)";
+      const fee = matched && matched.tuitionFee
+        ? `${Number(matched.tuitionFee).toLocaleString()}원`
+        : "(금액)원";
+      const sessions = matched
+        ? (() => {
+            const saved = parseInt(matched.totalSessions);
+            if (!isNaN(saved) && saved > 0) return saved;
+            return Object.keys(matched.schedules || {}).length >= 2 ? 8 : 4;
+          })()
+        : "(횟수)";
+      return `안녕하세요, J&C 음악학원입니다.\n\n${nameLabel}의 첫 수업 안내드립니다.\n\n* 첫 수업: ${firstLesson}\n* 과목: ${subject}\n\n* 원비 안내\n월 원비: ${fee} / ${sessions}회 수업\n하나은행 125-91025-766307 강열혁(제이앤씨음악학원)\n방문(카드/현금), 계좌이체·제로페이, 온라인 카드결제 모두 가능합니다.\n\n* 취소/노쇼 안내\n당일 취소 및 노쇼는 수업 1회 차감됩니다.\n변경 사항은 수업 전날까지 연락 부탁드립니다.\n\n항상 감사드립니다 :)\nJ&C 음악학원장 드림.`;
     }
     if (type === "consult_confirm") {
       return `안녕하세요, J&C 음악학원입니다.\n\n${nameLabel}, 상담 예약이 확인되었습니다.\n\n* 상담 일시: (날짜/요일/시간 입력)\n* 장소: J&C 음악학원 (목동)\n\n문의사항이 있으시면 언제든지 연락 주세요.\n연락처: 010-4028-9803\n\n감사합니다 :)\nJ&C 음악학원장 드림.`;
@@ -9177,13 +9200,30 @@ const StudentManagementModal = ({
       return sum;
     }, 0);
 
-    // 결제 이력 totalSessions 보존:
-    // totalSessions 없이 저장된 기존 결제 항목은 변경 전 원생의 수강 단위로 채워 보존
-    const originalEffectiveSessions = student ? getEffectiveSessions(student) : 4;
-    const correctedPayHistory = payHistory.map((p) => ({
-      ...p,
-      totalSessions: p.totalSessions || originalEffectiveSessions,
-    }));
+    // 결제 이력 totalSessions 보존 + sessionDates 재계산:
+    // totalSessions 없이 저장된 기존 결제 항목은 변경 후 수강 단위로 채워 보존
+    // sessionDates는 출석 이력 기반으로 순서대로 재할당 (변경 시 히스토리 보존)
+    const newEffectiveSessions = parseInt(formData.totalSessions) > 0
+      ? parseInt(formData.totalSessions)
+      : (Object.keys(formData.schedules || {}).length >= 2 ? 8 : 4);
+    const sortedAttForCorr = [...attHistory]
+      .filter((h) => h.status === "present" || h.status === "canceled")
+      .sort((a, b) => a.date.localeCompare(b.date));
+    const corrAttSlots = [];
+    sortedAttForCorr.forEach((h) => {
+      const cnt = h.status === "canceled" ? 1 : (h.count || 1);
+      for (let i = 0; i < cnt; i++) corrAttSlots.push(h.date);
+    });
+    const sortedPayForCorr = [...payHistory].sort((a, b) => a.date.localeCompare(b.date));
+    // 선불 방식: 각 결제의 sessionStartDate부터 시작하는 첫 N회를 sessionDates로 저장
+    const correctedPayHistory = sortedPayForCorr.map((p) => {
+      const ps = p.totalSessions > 0 ? p.totalSessions : newEffectiveSessions;
+      const startDate = p.sessionStartDate || p.date;
+      const recalcSessionDates = corrAttSlots
+        .filter((d) => d >= startDate)
+        .slice(0, ps);
+      return { ...p, totalSessions: ps, sessionDates: recalcSessionDates };
+    });
 
     const updatedData = {
       ...formData,
@@ -9673,10 +9713,25 @@ const StudentManagementModal = ({
                     const payWithIdx = sortedPay.map((h, i) => ({ ...h, payIdx: i }));
                     const recentPays = [...payWithIdx].reverse().slice(0, 3);
                     return recentPays.map((h, idx) => {
-                      const startSession = h.payIdx * sessionUnit;
-                      const slots = sessionSlots.slice(startSession, startSession + sessionUnit);
-                      const startNum = startSession + 1;
-                      const endNum = startSession + slots.length;
+                      // sessionDates가 저장된 경우 우선 사용, 없으면 sessionStartDate 기반 fallback
+                      let slots;
+                      let startNum;
+                      if (h.sessionDates && h.sessionDates.length > 0) {
+                        slots = h.sessionDates;
+                        // sessionDates 첫 번째 날짜가 전체 출석 슬롯에서 몇 번째인지 계산
+                        const firstDate = h.sessionDates[0];
+                        const firstIdx = sessionSlots.indexOf(firstDate);
+                        startNum = firstIdx >= 0 ? firstIdx + 1 : 1;
+                      } else {
+                        // sessionDates 미저장 → sessionStartDate 기준 동적 계산
+                        const startDate = h.sessionStartDate || h.date;
+                        const payUnit = h.totalSessions > 0 ? h.totalSessions : sessionUnit;
+                        const fromStart = sessionSlots.filter((d) => d >= startDate);
+                        slots = fromStart.slice(0, payUnit);
+                        const firstIdx = sessionSlots.indexOf(slots[0]);
+                        startNum = firstIdx >= 0 ? firstIdx + 1 : 1;
+                      }
+                      const endNum = startNum + slots.length - 1;
                       // 날짜별로 그룹화 (연강 여부 확인)
                       const dateGroups = [];
                       slots.forEach((date) => {
@@ -9981,12 +10036,38 @@ J&C 음악학원 발표회에 소중한 여러분을 초대합니다 🎵
 항상 감사드립니다. {{시즌인사2}}
 J&C 음악학원장 드림.`,
   },
+
+  // ── 첫 수업 안내 ──────────────────────────────────────
+  {
+    id: "new_lesson",
+    label: "첫 수업 안내",
+    text:
+`안녕하세요, J&C 음악학원입니다.
+
+[이름] 학생의 첫 수업 안내드립니다.
+
+* 첫 수업: (날짜/요일/시간 입력)
+* 과목: [과목]
+
+* 원비 안내
+월 원비: (금액)원 / (횟수)회 수업
+하나은행 125-91025-766307 강열혁(제이앤씨음악학원)
+방문(카드/현금), 계좌이체·제로페이, 온라인 카드결제 모두 가능합니다.
+
+* 취소/노쇼 안내
+당일 취소 및 노쇼는 수업 1회 차감됩니다.
+변경 사항은 수업 전날까지 연락 부탁드립니다.
+
+항상 감사드립니다 :)
+J&C 음악학원장 드림.`,
+  },
 ];
 
 const BulkSmsView = ({ students, teachers, showToast }) => {
   const [selectedIds, setSelectedIds] = useState([]);
   const [filterTeacher, setFilterTeacher] = useState("");
   const [filterPart, setFilterPart] = useState("");
+  const [searchName, setSearchName] = useState("");
   const [templateId, setTemplateId] = useState("custom");
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
@@ -9998,9 +10079,10 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
     return students.filter((s) => {
       if (filterTeacher && s.teacher !== filterTeacher) return false;
       if (filterPart && s.part !== filterPart) return false;
+      if (searchName && !s.name.includes(searchName)) return false;
       return true;
     });
-  }, [students, filterTeacher, filterPart]);
+  }, [students, filterTeacher, filterPart, searchName]);
 
   const toggleAll = () => {
     if (selectedIds.length === filteredStudents.length) {
@@ -10010,17 +10092,55 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
     }
   };
 
+  const DAYS_KO_BULK = ["일", "월", "화", "수", "목", "금", "토"];
+
+  // 1명 선택 시 new_lesson 템플릿에 학생 정보 자동 채움
+  const buildNewLessonMsg = (ids) => {
+    const base = BULK_SMS_TEMPLATES.find((t) => t.id === "new_lesson")?.text || "";
+    if (ids.length !== 1) return base;
+    const s = students.find((st) => st.id === ids[0]);
+    if (!s) return base;
+    const nameSuffix = s.grade === "성인" ? "님" : " 학생";
+    const regDateStr = s.registrationDate || (s.createdAt ? s.createdAt.slice(0, 10) : "");
+    const firstLesson = regDateStr
+      ? `${regDateStr} (${DAYS_KO_BULK[new Date(regDateStr + "T00:00:00").getDay()]})`
+      : "(날짜/요일/시간 입력)";
+    const fee = s.tuitionFee ? `${Number(s.tuitionFee).toLocaleString()}원` : "(금액)원";
+    const sessions = (() => {
+      const saved = parseInt(s.totalSessions);
+      if (!isNaN(saved) && saved > 0) return saved;
+      return Object.keys(s.schedules || {}).length >= 2 ? 8 : 4;
+    })();
+    return base
+      .replace("[이름]", s.name + nameSuffix)
+      .replace("[과목]", s.subject || "(과목)")
+      .replace("(날짜/요일/시간 입력)", firstLesson)
+      .replace("(금액)원", fee)
+      .replace("(횟수)회", `${sessions}회`);
+  };
+
   const toggleOne = (id) => {
     setSelectedIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
   };
 
+  // new_lesson 템플릿 활성화 중 선택 변경 시 자동 갱신
+  useEffect(() => {
+    if (templateId === "new_lesson") {
+      setMessage(buildNewLessonMsg(selectedIds));
+    }
+  }, [selectedIds, templateId]); // eslint-disable-line
+
   const handleTemplateChange = (tid) => {
     setTemplateId(tid);
-    const t = BULK_SMS_TEMPLATES.find((t) => t.id === tid);
-    if (t && t.text) setMessage(applyTemplateGreetings(t.text));
-    else setMessage("");
+    if (tid === "new_lesson") {
+      setMessage(buildNewLessonMsg(selectedIds));
+    } else {
+      const t = BULK_SMS_TEMPLATES.find((t) => t.id === tid);
+      if (t && t.text) setMessage(applyTemplateGreetings(t.text));
+      else setMessage("");
+    }
   };
 
   const handleSend = async () => {
@@ -10072,6 +10192,15 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
         {/* 왼쪽: 원생 선택 */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
           <div className="p-4 border-b bg-slate-50 flex flex-wrap gap-2 items-center">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+              <input
+                placeholder="이름 검색"
+                value={searchName}
+                onChange={(e) => setSearchName(e.target.value)}
+                className="pl-8 pr-3 py-1.5 text-sm border rounded-lg bg-white focus:outline-indigo-500 w-28"
+              />
+            </div>
             <select
               value={filterTeacher}
               onChange={(e) => setFilterTeacher(e.target.value)}
@@ -10271,35 +10400,28 @@ const PaymentView = ({
 
   // 수강 현황 계산 헬퍼
   const getStudentProgress = (s) => {
-    const totalAttended = (s.attendanceHistory || [])
-      .filter((h) => h.status === "present" || h.status === "canceled")
-      .reduce((sum, h) => sum + (h.status === "canceled" ? 1 : (h.count || 1)), 0);
     const sessionUnit = getEffectiveSessions(s);
     const sortedPayments = [...(s.paymentHistory || [])].sort((a, b) =>
       a.date.localeCompare(b.date)
     );
-    // totalSessions 없는 구버전 기록 fallback: 가장 오래된 저장값 → 스케줄 수 기반 (현재 설정값과 독립)
-    const scheduleBasedUnit = Object.keys(s.schedules || {}).length >= 2 ? 8 : 4;
-    const legacyFallback = sortedPayments.find(p => p.totalSessions > 0)?.totalSessions || scheduleBasedUnit;
-    const totalPaidCapacity = sortedPayments.reduce(
-      (sum, p) => sum + (p.totalSessions || legacyFallback),
-      0
-    );
 
-    const remainingCapacity = totalPaidCapacity - totalAttended;
+    let currentUsage = 0;
+    let lastPayUnit = sessionUnit;
+    let isOverdue = false;
+    let isCompleted = false;
 
-    // 마지막 결제 사이클 단위 (표시용) — legacyFallback 통일 적용
-    const lastPayUnit =
-      sortedPayments.length > 0
-        ? sortedPayments[sortedPayments.length - 1].totalSessions || legacyFallback
-        : sessionUnit;
-    const lastCycleStart = Math.max(0, totalPaidCapacity - lastPayUnit);
-    let currentUsage = Math.max(0, totalAttended - lastCycleStart);
-    // 사이클 경계: 용량 소진 상태에서 나머지=0이면 마지막 사이클 완료로 표시
-    if (currentUsage === 0 && totalAttended > 0 && remainingCapacity <= 0)
-      currentUsage = lastPayUnit;
-    const isOverdue = remainingCapacity < 0;
-    const isCompleted = remainingCapacity === 0 && totalPaidCapacity > 0;
+    if (sortedPayments.length > 0) {
+      // 선불: 마지막 결제의 sessionStartDate 이후 출석 횟수로 판단
+      const lastPay = sortedPayments[sortedPayments.length - 1];
+      const lastPayStart = lastPay.sessionStartDate || lastPay.date;
+      lastPayUnit = lastPay.totalSessions > 0 ? lastPay.totalSessions : sessionUnit;
+      currentUsage = (s.attendanceHistory || [])
+        .filter((h) => (h.status === "present" || h.status === "canceled") && h.date >= lastPayStart)
+        .reduce((sum, h) => sum + (h.status === "canceled" ? 1 : (h.count || 1)), 0);
+      const remainingCapacity = lastPayUnit - currentUsage;
+      isOverdue = remainingCapacity < 0;
+      isCompleted = remainingCapacity === 0;
+    }
 
     return {
       currentUsage,
@@ -11903,12 +12025,28 @@ export default function App() {
         );
         if (!ok) return;
       }
+      const paymentSessionUnit = totalSessionsOverride ?? getEffectiveSessions(student);
+      // 선불 방식: sessionStartDate(=realSessionStartDate)부터 시작하는 수업 날짜 저장
+      const sortedAttForPay = [...(student.attendanceHistory || [])]
+        .filter((h) => h.status === "present" || h.status === "canceled")
+        .sort((a, b) => a.date.localeCompare(b.date));
+      const attSlotsForPay = [];
+      sortedAttForPay.forEach((h) => {
+        const cnt = h.status === "canceled" ? 1 : (h.count || 1);
+        for (let i = 0; i < cnt; i++) attSlotsForPay.push(h.date);
+      });
+      // sessionStartDate 이후의 수업 중 첫 N회를 이번 결제의 커버 세션으로 저장
+      const sessionDates = attSlotsForPay
+        .filter((d) => d >= realSessionStartDate)
+        .slice(0, paymentSessionUnit);
+
       const newHistoryItem = {
         date,
         amount,
         type: "tuition",
         sessionStartDate: realSessionStartDate,
-        totalSessions: totalSessionsOverride ?? getEffectiveSessions(student),
+        totalSessions: paymentSessionUnit,
+        sessionDates,
         createdAt: new Date().toISOString(),
         ...(method && { method }),
       };
@@ -12601,6 +12739,7 @@ export default function App() {
               onRegisterStudent={handleRegisterFromConsultation} // 👈 이 연결이 핵심입니다!
               targetConsultation={targetConsultation}
               onClearTargetConsultation={() => setTargetConsultation(null)}
+              students={students}
             />
           )}
           {activeTab === "bulkSms" && currentUser.role === "admin" && (

@@ -130,7 +130,11 @@ const KyuljePreviewModal = ({ student, onConfirm, onClose, sending }) => {
   const isAdult = student.grade === "성인";
   const nameSuffix = isAdult ? "님" : " 학생";
   const formattedName = `[J&C]${student.subject || ""}-${student.name}${nameSuffix}`;
-  const note = student.lastPaymentDate ? `최종결제일: ${student.lastPaymentDate}` : "";
+  const computedLastPay = (() => {
+    const sorted = [...(student.paymentHistory || [])].sort((a, b) => a.date.localeCompare(b.date));
+    return sorted.length > 0 ? sorted[sorted.length - 1].date : (student.lastPaymentDate || "");
+  })();
+  const note = computedLastPay ? `최종결제일: ${computedLastPay}` : "";
 
   return (
     <div className="fixed inset-0 bg-black/70 z-[220] flex items-center justify-center p-4 backdrop-blur-sm">
@@ -625,17 +629,32 @@ export const PaymentView = ({
   // ── 결제확인(confirm) 탭 상태 ─────────────────────────────────
   const [paymentMethods, setPaymentMethods] = useState({});
   const [completedPeriod, setCompletedPeriod] = useState("today");
+  const [dueSortOrder, setDueSortOrder] = useState("desc"); // "asc" | "desc"
   const [processQuickPay, setProcessQuickPay] = useState(null);
   const [processPayDate, setProcessPayDate] = useState(toLocalDateStr());
   const [processPaySessions, setProcessPaySessions] = useState(4);
   const [processPayAmount, setProcessPayAmount] = useState("");
   const [isProcessSaving, setIsProcessSaving] = useState(false);
 
+  // 결제 예정자 선택 시 해당 학생의 회차로 초기화
+  React.useEffect(() => {
+    if (processQuickPay) {
+      setProcessPaySessions(getEffectiveSessions(processQuickPay));
+    }
+  }, [processQuickPay]);
+
   // ── 수납현황(today) 빠른 결제입력 상태 ───────────────────────
   const [quickPayStudent, setQuickPayStudent] = useState(null);
   const [quickPayDate, setQuickPayDate] = useState("");
   const [quickPaySessions, setQuickPaySessions] = useState(4);
   const [quickPayAmount, setQuickPayAmount] = useState("");
+
+  // 수납현황 학생 선택 시 해당 학생의 회차로 초기화
+  React.useEffect(() => {
+    if (quickPayStudent) {
+      setQuickPaySessions(getEffectiveSessions(quickPayStudent));
+    }
+  }, [quickPayStudent]);
 
   // ── 히스토리(history) 탭 상태 ────────────────────────────────
   const [historyPeriod, setHistoryPeriod] = useState("month"); // "day" | "week" | "month"
@@ -668,33 +687,29 @@ export const PaymentView = ({
 
   // ── 수강 진척도 헬퍼 ──────────────────────────────────────────
   const getStudentProgress = (s) => {
-    const totalAttended = (s.attendanceHistory || [])
-      .filter((h) => h.status === "present" || h.status === "canceled")
-      .reduce((sum, h) => sum + (h.status === "canceled" ? 1 : (h.count || 1)), 0);
     const sessionUnit = getEffectiveSessions(s);
     const sortedPayments = [...(s.paymentHistory || [])].sort((a, b) =>
       a.date.localeCompare(b.date)
     );
-    const scheduleBasedUnit =
-      Object.keys(s.schedules || {}).length >= 2 ? 8 : 4;
-    const legacyFallback =
-      sortedPayments.find((p) => p.totalSessions > 0)?.totalSessions ||
-      scheduleBasedUnit;
-    const totalPaidCapacity = sortedPayments.reduce(
-      (sum, p) => sum + (p.totalSessions || legacyFallback),
-      0
-    );
-    const remainingCapacity = totalPaidCapacity - totalAttended;
-    const lastPayUnit =
-      sortedPayments.length > 0
-        ? sortedPayments[sortedPayments.length - 1].totalSessions || legacyFallback
-        : sessionUnit;
-    const lastCycleStart = Math.max(0, totalPaidCapacity - lastPayUnit);
-    let currentUsage = Math.max(0, totalAttended - lastCycleStart);
-    if (currentUsage === 0 && totalAttended > 0 && remainingCapacity <= 0)
-      currentUsage = lastPayUnit;
-    const isOverdue = remainingCapacity < 0;
-    const isCompleted = remainingCapacity === 0 && totalPaidCapacity > 0;
+
+    let currentUsage = 0;
+    let lastPayUnit = sessionUnit;
+    let isOverdue = false;
+    let isCompleted = false;
+
+    if (sortedPayments.length > 0) {
+      // 선불: 마지막 결제의 sessionStartDate 이후 출석 횟수로 판단
+      const lastPay = sortedPayments[sortedPayments.length - 1];
+      const lastPayStart = lastPay.sessionStartDate || lastPay.date;
+      lastPayUnit = lastPay.totalSessions > 0 ? lastPay.totalSessions : sessionUnit;
+      currentUsage = (s.attendanceHistory || [])
+        .filter((h) => (h.status === "present" || h.status === "canceled") && h.date >= lastPayStart)
+        .reduce((sum, h) => sum + (h.status === "canceled" ? 1 : (h.count || 1)), 0);
+      const remainingCapacity = lastPayUnit - currentUsage;
+      isOverdue = remainingCapacity < 0;
+      isCompleted = remainingCapacity === 0;
+    }
+
     return {
       currentUsage,
       sessionUnit: lastPayUnit,
@@ -707,6 +722,31 @@ export const PaymentView = ({
         ? "bg-amber-100 text-amber-700 font-bold"
         : "bg-emerald-100 text-emerald-700",
     };
+  };
+
+  // paymentHistory 기반 최종결제일 (lastPaymentDate 필드는 stale할 수 있음)
+  const getComputedLastPayDate = (s) => {
+    const sorted = [...(s.paymentHistory || [])].sort((a, b) => a.date.localeCompare(b.date));
+    return sorted.length > 0 ? sorted[sorted.length - 1].date : (s.lastPaymentDate || "");
+  };
+
+  // 마지막 결제 사이클의 N회차 소진 날짜 계산 (선불: sessionStartDate 이후 N회)
+  const getPaymentDueDate = (s) => {
+    const sessionUnit = getEffectiveSessions(s);
+    const sortedPayments = [...(s.paymentHistory || [])].sort((a, b) => a.date.localeCompare(b.date));
+    if (sortedPayments.length === 0) return "";
+    const lastPay = sortedPayments[sortedPayments.length - 1];
+    const lastPayStart = lastPay.sessionStartDate || lastPay.date;
+    const lastPaySessions = lastPay.totalSessions > 0 ? lastPay.totalSessions : sessionUnit;
+    const sortedAtt = [...(s.attendanceHistory || [])]
+      .filter((h) => (h.status === "present" || h.status === "canceled") && h.date >= lastPayStart)
+      .sort((a, b) => a.date.localeCompare(b.date));
+    let count = 0;
+    for (const h of sortedAtt) {
+      count += h.status === "canceled" ? 1 : (h.count || 1);
+      if (count >= lastPaySessions) return h.date;
+    }
+    return sortedAtt.length > 0 ? sortedAtt[sortedAtt.length - 1].date : "";
   };
 
   // ── 강사 목록 (드롭다운) ──────────────────────────────────────
@@ -947,10 +987,23 @@ export const PaymentView = ({
     students
       .filter((s) => {
         const { isCompleted, isOverdue } = getStudentProgress(s);
-        return s.status === "재원" && (isCompleted || isOverdue);
+        if (s.status !== "재원" || (!isCompleted && !isOverdue)) return false;
+        if (!searchTerm) return true;
+        return (
+          s.name.includes(searchTerm) ||
+          (s.subject && s.subject.includes(searchTerm)) ||
+          (s.teacher && s.teacher.includes(searchTerm))
+        );
       })
-      .sort((a, b) => a.name.localeCompare(b.name, "ko")),
-    [students]
+      .sort((a, b) => {
+        const da = getPaymentDueDate(a);
+        const db = getPaymentDueDate(b);
+        if (!da && !db) return a.name.localeCompare(b.name, "ko");
+        if (!da) return 1;
+        if (!db) return -1;
+        return dueSortOrder === "asc" ? da.localeCompare(db) : db.localeCompare(da);
+      }),
+    [students, dueSortOrder, searchTerm]
   );
 
   const recentlyPaidList = useMemo(() => {
@@ -1546,9 +1599,7 @@ export const PaymentView = ({
                             {Number(s.tuitionFee || 0).toLocaleString()}원
                           </td>
                           <td className="py-3 px-4 text-xs text-slate-500">
-                            {s.lastPaymentDate
-                              ? `${parseInt(s.lastPaymentDate.slice(5, 7))}월 ${parseInt(s.lastPaymentDate.slice(8, 10))}일`
-                              : <span className="text-slate-300">없음</span>}
+                            {(() => { const d = getComputedLastPayDate(s); return d ? `${parseInt(d.slice(5, 7))}월 ${parseInt(d.slice(8, 10))}일` : <span className="text-slate-300">없음</span>; })()}
                           </td>
                           <td className="py-3 px-4 text-center">
                             <div className="flex items-center justify-center gap-1">
@@ -1866,9 +1917,7 @@ export const PaymentView = ({
                           <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColor}`}>{displayStatus}</span>
                         </td>
                         <td className="py-3 px-4 text-xs text-slate-500">
-                          {s.lastPaymentDate
-                            ? `${s.lastPaymentDate.slice(2,4)}/${s.lastPaymentDate.slice(5,7)}/${s.lastPaymentDate.slice(8,10)}`
-                            : <span className="text-slate-300">-</span>}
+                          {(() => { const d = getComputedLastPayDate(s); return d ? `${d.slice(2,4)}/${d.slice(5,7)}/${d.slice(8,10)}` : <span className="text-slate-300">-</span>; })()}
                         </td>
                         <td className="py-3 px-4 text-xs">
                           {isPaidAfterNotif(s, lastNotif) ? (
@@ -1923,6 +1972,18 @@ export const PaymentView = ({
                 <AlertCircle size={15} className="text-rose-600" />
                 <span className="font-bold text-rose-700 text-sm">결제 예정자</span>
                 <span className="bg-rose-200 text-rose-800 text-xs px-1.5 py-0.5 rounded-full">{processableStudents.length}명</span>
+                <div className="flex rounded border border-rose-200 overflow-hidden text-xs ml-1">
+                  <button
+                    onClick={() => setDueSortOrder("desc")}
+                    className={`px-2 py-1 font-medium transition-colors ${dueSortOrder === "desc" ? "bg-rose-600 text-white" : "bg-white text-rose-500 hover:bg-rose-50"}`}
+                    title="최근 도래순 (내림차순)"
+                  >최근순</button>
+                  <button
+                    onClick={() => setDueSortOrder("asc")}
+                    className={`px-2 py-1 font-medium transition-colors ${dueSortOrder === "asc" ? "bg-rose-600 text-white" : "bg-white text-rose-500 hover:bg-rose-50"}`}
+                    title="오래된 도래순 (오름차순)"
+                  >오래된순</button>
+                </div>
                 {processableStudents.length > 0 && (
                   <span className="ml-auto text-rose-700 font-bold text-sm">
                     총 {processableStudents.reduce((sum, s) => sum + Number(s.tuitionFee || 0), 0).toLocaleString()}원
@@ -1936,6 +1997,7 @@ export const PaymentView = ({
                     <th className="py-2.5 px-4 text-left">강사</th>
                     <th className="py-2.5 px-4 text-right">원비</th>
                     <th className="py-2.5 px-4 text-left">최종결제일</th>
+                    <th className="py-2.5 px-4 text-left">도래일 {dueSortOrder === "asc" ? "↑" : "↓"}</th>
                     <th className="py-2.5 px-4 text-center">결제방법</th>
                     <th className="py-2.5 px-4 text-center w-32">액션</th>
                   </tr>
@@ -1955,7 +2017,20 @@ export const PaymentView = ({
                         <td className="py-3 px-4 text-right font-bold text-indigo-600">
                           {Number(s.tuitionFee || 0).toLocaleString()}원
                         </td>
-                        <td className="py-3 px-4 text-xs text-slate-500">{s.lastPaymentDate || "-"}</td>
+                        <td className="py-3 px-4 text-xs text-slate-500">{getComputedLastPayDate(s) || "-"}</td>
+                        <td className="py-3 px-4 text-xs">
+                          {(() => {
+                            const d = getPaymentDueDate(s);
+                            if (!d) return <span className="text-slate-300">-</span>;
+                            const days = Math.round((new Date() - new Date(d + "T00:00:00")) / 86400000);
+                            return (
+                              <span className={days >= 14 ? "font-bold text-rose-600" : days >= 7 ? "font-semibold text-amber-600" : "text-slate-500"}>
+                                {d.slice(5).replace("-", "/")}
+                                {days > 0 && <span className="ml-1 text-[10px]">({days}일 경과)</span>}
+                              </span>
+                            );
+                          })()}
+                        </td>
                         <td className="py-3 px-4">
                           <div className="flex flex-wrap gap-1 justify-center">
                             {["현장", "계좌이체", "기타", "결제선생"].map((m) => (
@@ -2146,7 +2221,7 @@ export const PaymentView = ({
                       <td className="py-3 px-4">
                         <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColor}`}>{displayStatus}</span>
                       </td>
-                      <td className="py-3 px-4 text-xs text-slate-500">{s.lastPaymentDate || "-"}</td>
+                      <td className="py-3 px-4 text-xs text-slate-500">{getComputedLastPayDate(s) || "-"}</td>
                       <td className="py-3 px-4 text-center" onClick={(e) => e.stopPropagation()}>
                         <button
                           onClick={(e) => handleOpenMsgPreview(e, s)}
