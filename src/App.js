@@ -1997,20 +1997,17 @@ const DashboardView = ({
 
   // 2. 수납 상태 계산
   const isPaymentDue = (s) => {
-    const totalAttended = (s.attendanceHistory || [])
-      .filter((h) => h.status === "present" || h.status === "canceled")
-      .reduce((sum, h) => sum + (h.status === "canceled" ? 1 : (h.count || 1)), 0);
     const sessionUnit = getEffectiveSessions(s);
     const sortedPays = [...(s.paymentHistory || [])].sort((a, b) => a.date.localeCompare(b.date));
-    const totalPaidCapacity = sortedPays.reduce(
-      (sum, p) => sum + (p.totalSessions > 0 ? p.totalSessions : sessionUnit), 0
-    );
-    const remainingCapacity = totalPaidCapacity - totalAttended;
-
-    const isOverdue = remainingCapacity < 0;
-    const isCompleted = remainingCapacity === 0 && totalPaidCapacity > 0;
-
-    return isOverdue || isCompleted;
+    if (sortedPays.length === 0) return false;
+    // 선불: 마지막 결제의 sessionStartDate 이후 출석 횟수 vs 마지막 결제 회차
+    const lastPay = sortedPays[sortedPays.length - 1];
+    const lastPayStart = lastPay.sessionStartDate || lastPay.date;
+    const lastPaySessions = lastPay.totalSessions > 0 ? lastPay.totalSessions : sessionUnit;
+    const attended = (s.attendanceHistory || [])
+      .filter((h) => (h.status === "present" || h.status === "canceled") && h.date >= lastPayStart)
+      .reduce((sum, h) => sum + (h.status === "canceled" ? 1 : (h.count || 1)), 0);
+    return attended >= lastPaySessions;
   };
 
   // 3. 주요 지표 계산
@@ -2090,15 +2087,7 @@ const DashboardView = ({
       );
       if (!hasTodayRecord) return false;
 
-      const totalAttended = history
-        .filter((h) => h.status === "present" || h.status === "canceled")
-        .reduce((sum, h) => sum + (h.status === "canceled" ? 1 : (h.count || 1)), 0);
-      const sessionUnit = getEffectiveSessions(s);
-      const sortedPays = [...(s.paymentHistory || [])].sort((a, b) => a.date.localeCompare(b.date));
-      const totalPaidCapacity = sortedPays.reduce(
-        (sum, p) => sum + (p.totalSessions > 0 ? p.totalSessions : sessionUnit), 0
-      );
-      return totalPaidCapacity - totalAttended <= 0;
+      return isPaymentDue(s);
     });
   }, [students, user]);
 
@@ -10411,35 +10400,28 @@ const PaymentView = ({
 
   // 수강 현황 계산 헬퍼
   const getStudentProgress = (s) => {
-    const totalAttended = (s.attendanceHistory || [])
-      .filter((h) => h.status === "present" || h.status === "canceled")
-      .reduce((sum, h) => sum + (h.status === "canceled" ? 1 : (h.count || 1)), 0);
     const sessionUnit = getEffectiveSessions(s);
     const sortedPayments = [...(s.paymentHistory || [])].sort((a, b) =>
       a.date.localeCompare(b.date)
     );
-    // totalSessions 없는 구버전 기록 fallback: 가장 오래된 저장값 → 스케줄 수 기반 (현재 설정값과 독립)
-    const scheduleBasedUnit = Object.keys(s.schedules || {}).length >= 2 ? 8 : 4;
-    const legacyFallback = sortedPayments.find(p => p.totalSessions > 0)?.totalSessions || scheduleBasedUnit;
-    const totalPaidCapacity = sortedPayments.reduce(
-      (sum, p) => sum + (p.totalSessions || legacyFallback),
-      0
-    );
 
-    const remainingCapacity = totalPaidCapacity - totalAttended;
+    let currentUsage = 0;
+    let lastPayUnit = sessionUnit;
+    let isOverdue = false;
+    let isCompleted = false;
 
-    // 마지막 결제 사이클 단위 (표시용) — legacyFallback 통일 적용
-    const lastPayUnit =
-      sortedPayments.length > 0
-        ? sortedPayments[sortedPayments.length - 1].totalSessions || legacyFallback
-        : sessionUnit;
-    const lastCycleStart = Math.max(0, totalPaidCapacity - lastPayUnit);
-    let currentUsage = Math.max(0, totalAttended - lastCycleStart);
-    // 사이클 경계: 용량 소진 상태에서 나머지=0이면 마지막 사이클 완료로 표시
-    if (currentUsage === 0 && totalAttended > 0 && remainingCapacity <= 0)
-      currentUsage = lastPayUnit;
-    const isOverdue = remainingCapacity < 0;
-    const isCompleted = remainingCapacity === 0 && totalPaidCapacity > 0;
+    if (sortedPayments.length > 0) {
+      // 선불: 마지막 결제의 sessionStartDate 이후 출석 횟수로 판단
+      const lastPay = sortedPayments[sortedPayments.length - 1];
+      const lastPayStart = lastPay.sessionStartDate || lastPay.date;
+      lastPayUnit = lastPay.totalSessions > 0 ? lastPay.totalSessions : sessionUnit;
+      currentUsage = (s.attendanceHistory || [])
+        .filter((h) => (h.status === "present" || h.status === "canceled") && h.date >= lastPayStart)
+        .reduce((sum, h) => sum + (h.status === "canceled" ? 1 : (h.count || 1)), 0);
+      const remainingCapacity = lastPayUnit - currentUsage;
+      isOverdue = remainingCapacity < 0;
+      isCompleted = remainingCapacity === 0;
+    }
 
     return {
       currentUsage,
