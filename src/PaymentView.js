@@ -987,7 +987,13 @@ export const PaymentView = ({
     students
       .filter((s) => {
         const { isCompleted, isOverdue } = getStudentProgress(s);
-        return s.status === "재원" && (isCompleted || isOverdue);
+        if (s.status !== "재원" || (!isCompleted && !isOverdue)) return false;
+        if (!searchTerm) return true;
+        return (
+          s.name.includes(searchTerm) ||
+          (s.subject && s.subject.includes(searchTerm)) ||
+          (s.teacher && s.teacher.includes(searchTerm))
+        );
       })
       .sort((a, b) => {
         const da = getPaymentDueDate(a);
@@ -997,7 +1003,7 @@ export const PaymentView = ({
         if (!db) return -1;
         return dueSortOrder === "asc" ? da.localeCompare(db) : db.localeCompare(da);
       }),
-    [students, dueSortOrder]
+    [students, dueSortOrder, searchTerm]
   );
 
   const recentlyPaidList = useMemo(() => {
