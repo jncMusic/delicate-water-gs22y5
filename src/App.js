@@ -1593,7 +1593,7 @@ const PaymentDetailModal = ({
                               : "bg-slate-50 border-slate-200 text-slate-600"
                           }`}
                         >
-                          <span className="text-[10px] font-bold mb-0.5 opacity-70">
+                          <span className="text-xs font-bold mb-0.5 opacity-70">
                             {isUnpaid ? "미납" : isDouble ? "연강" : "결제됨"}
                           </span>
                           <span className="font-bold font-mono text-sm">
@@ -1683,7 +1683,7 @@ const PaymentDetailModal = ({
                 <tbody className="divide-y divide-slate-100">
                   {historyRows.length > 0 ? (
                     historyRows.map((row, index) => (
-                      <tr key={index} className="hover:bg-slate-50">
+                      <tr key={index} className="hover:bg-slate-50 active:bg-slate-100">
                         <td className="px-4 py-3 font-mono text-slate-600 align-top">
                           {editingHistoryId === row.payment ? (
                             <input
@@ -1718,7 +1718,7 @@ const PaymentDetailModal = ({
                                   (sum, c) => sum + (c.count || 1), 0
                                 );
                                 return usedSessions < row.payUnit && index === 0 ? (
-                                  <span className="text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 ml-1">
+                                  <span className="text-xs text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 ml-1">
                                     +{row.payUnit - usedSessions}회 잔여
                                   </span>
                                 ) : null;
@@ -1847,7 +1847,7 @@ const PaymentManagementModal = ({ students, messageLogs, onClose, user, onNaviga
           </h2>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100"
+            className="text-slate-400 hover:text-slate-600 p-2 rounded-lg hover:bg-slate-100"
           >
             <X size={20} />
           </button>
@@ -1927,21 +1927,21 @@ const PaymentManagementModal = ({ students, messageLogs, onClose, user, onNaviga
                             showToast?.(`${s.name} 결제안내 문자 복사됨`);
                           });
                         }}
-                        className="text-[10px] bg-indigo-50 text-indigo-600 border border-indigo-200 px-2 py-1 rounded-full font-bold hover:bg-indigo-100"
+                        className="text-xs bg-indigo-50 text-indigo-600 border border-indigo-200 px-2 py-1 rounded-full font-bold hover:bg-indigo-100"
                       >
                         문자 복사
                       </button>
                     )}
                     {isSentToday ? (
-                      <span className="text-[10px] bg-emerald-50 text-emerald-600 border border-emerald-200 px-2 py-1 rounded-full font-bold">
+                      <span className="text-xs bg-emerald-50 text-emerald-600 border border-emerald-200 px-2 py-1 rounded-full font-bold">
                         오늘 발송
                       </span>
                     ) : lastSent ? (
-                      <span className="text-[10px] bg-slate-100 text-slate-500 border border-slate-200 px-2 py-1 rounded-full">
+                      <span className="text-xs bg-slate-100 text-slate-500 border border-slate-200 px-2 py-1 rounded-full">
                         {lastSent} 발송
                       </span>
                     ) : (
-                      <span className="text-[10px] bg-rose-50 text-rose-500 border border-rose-200 px-2 py-1 rounded-full font-bold">
+                      <span className="text-xs bg-rose-50 text-rose-500 border border-rose-200 px-2 py-1 rounded-full font-bold">
                         미발송
                       </span>
                     )}
@@ -2431,7 +2431,7 @@ const DashboardView = ({
                         return (
                           <span
                             key={actionId}
-                            className={`text-[10px] px-1.5 py-0.5 rounded border hidden md:inline ${
+                            className={`text-xs px-1.5 py-0.5 rounded border hidden md:inline ${
                               colorMap[opt.color] || colorMap.blue
                             }`}
                           >
@@ -2439,7 +2439,7 @@ const DashboardView = ({
                           </span>
                         );
                       })}
-                      <span className="text-[10px] text-slate-400 font-mono">
+                      <span className="text-xs text-slate-400 font-mono">
                         {consult.date}
                       </span>
                     </div>
@@ -2530,7 +2530,7 @@ const DashboardView = ({
                 ))}
               </tbody>
             </table>
-            <p className="text-[10px] text-slate-400 mt-2">
+            <p className="text-xs text-slate-400 mt-2">
               * 재원생 수는 현재 재원 중인 학생 기준으로, 이미 퇴원한 학생은 반영되지 않습니다.
             </p>
           </div>
@@ -3057,7 +3057,7 @@ const ReportView = ({
                                     {s.name}
                                   </span>
                                   <span
-                                    className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                                    className={`text-xs px-2 py-0.5 rounded-full border ${
                                       sData.feedbackSent
                                         ? "bg-emerald-50 text-emerald-600 border-emerald-100"
                                         : "bg-amber-50 text-amber-600 border-amber-100"
@@ -3073,7 +3073,7 @@ const ReportView = ({
                                       setStudentModalTab("attendance");
                                       setIsStudentModalOpen(true);
                                     }}
-                                    className="text-[10px] px-2 py-0.5 rounded-full border bg-blue-50 text-blue-600 border-blue-100 hover:bg-blue-100 transition-colors"
+                                    className="text-xs px-2 py-0.5 rounded-full border bg-blue-50 text-blue-600 border-blue-100 hover:bg-blue-100 transition-colors"
                                   >
                                     출석콕콕
                                   </button>
@@ -3084,7 +3084,7 @@ const ReportView = ({
                                         setStudentModalTab("payment");
                                         setIsStudentModalOpen(true);
                                       }}
-                                      className="text-[10px] px-2 py-0.5 rounded-full border bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-100 transition-colors"
+                                      className="text-xs px-2 py-0.5 rounded-full border bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-100 transition-colors"
                                     >
                                       수납콕콕
                                     </button>
@@ -3378,7 +3378,7 @@ const ConsultationView = ({
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">{msgTargetConsult.name} · {msgTargetConsult.phone}</p>
               </div>
-              <button onClick={() => setShowMsgModal(false)} className="p-1 hover:bg-slate-100 rounded-full transition-colors">
+              <button onClick={() => setShowMsgModal(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
                 <X size={22} className="text-slate-400" />
               </button>
             </div>
@@ -3400,7 +3400,7 @@ const ConsultationView = ({
                     className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
                       msgTemplateType === t.id
                         ? "bg-indigo-600 text-white border-indigo-600"
-                        : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
+                        : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50 active:bg-slate-100"
                     }`}
                   >
                     {t.label}
@@ -3474,7 +3474,7 @@ const ConsultationView = ({
               </h2>
               <button
                 onClick={() => setIsModalOpen(false)}
-                className="p-1 hover:bg-slate-100 rounded-full transition-colors"
+                className="p-2 hover:bg-slate-100 rounded-full transition-colors"
               >
                 <X size={24} className="text-slate-400" />
               </button>
@@ -3686,7 +3686,7 @@ const ConsultationView = ({
                             : status === "dropped"
                             ? "bg-rose-500 border-rose-600 text-white shadow-md"
                             : "bg-slate-600 border-slate-700 text-white shadow-md"
-                          : "bg-white border-slate-200 text-slate-400 hover:bg-slate-50"
+                          : "bg-white border-slate-200 text-slate-400 hover:bg-slate-50 active:bg-slate-100"
                       }`}
                     >
                       {status === "pending"
@@ -3786,7 +3786,7 @@ const ConsultationView = ({
                 <td className="px-6 py-4">
                   <div className="text-xs text-slate-500 mb-1">{c.date}</div>
                   <span
-                    className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                    className={`text-xs px-2 py-0.5 rounded-full font-bold ${
                       c.type === "adult"
                         ? "bg-slate-100 text-slate-600"
                         : "bg-indigo-50 text-indigo-600"
@@ -4303,11 +4303,11 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                             <span className="truncate">{s.name}</span>
                             {sessionNum > 0 && <span className="shrink-0 text-[9px] opacity-60 font-normal">({sessionNum})</span>}
                             {isDoubleLesson && <span className="shrink-0 text-[8px] bg-indigo-700 text-white px-1 rounded leading-tight">×2</span>}
-                            {isLast && <span className="shrink-0 text-[10px]">💳</span>}
+                            {isLast && <span className="shrink-0 text-xs">💳</span>}
                             {isUnprocessed && <span className="shrink-0 text-amber-500 font-bold">!</span>}
                             {isMakeup && <span className="shrink-0 text-[9px] bg-sky-500 text-white px-1 rounded leading-tight">보강</span>}
                           </div>
-                          <div className="text-[10px] text-slate-500 truncate">{s.teacher} · {s.subject}</div>
+                          <div className="text-xs text-slate-500 truncate">{s.teacher} · {s.subject}</div>
                           {status === "present" && !isDoubleLesson && <div className="text-[9px] text-emerald-600 font-medium">✓ 출석</div>}
                           {isDoubleLesson && <div className="text-[9px] text-indigo-600 font-medium">✓ 연강 출석</div>}
                           {isAbsent && <div className="text-[9px] text-rose-500">✗ 결석</div>}
@@ -4397,7 +4397,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                     return (
                       <div
                         key={hour}
-                        className={`h-20 border-b p-1 transition-colors ${emptySlot ? "bg-emerald-50/40" : "hover:bg-slate-50"}`}
+                        className={`h-20 border-b p-1 transition-colors ${emptySlot ? "bg-emerald-50/40" : "hover:bg-slate-50 active:bg-slate-100"}`}
                       >
                         {emptySlot && (
                           <div className="text-[9px] text-emerald-400 text-center mt-1 font-medium">빈 슬롯</div>
@@ -4430,7 +4430,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                                   date: dateStr,
                                 });
                               }}
-                              className={`text-[10px] p-1 rounded border mb-1 cursor-pointer shadow-sm flex items-center gap-0.5 ${bgClass}`}
+                              className={`text-xs p-1 rounded border mb-1 cursor-pointer shadow-sm flex items-center gap-0.5 ${bgClass}`}
                             >
                               <span className="truncate">{s.name} {sessionNum ? `(${sessionNum})` : ""}{isDoubleLesson ? "×2" : ""}</span>
                               {isLast && <span className="shrink-0">💳</span>}
@@ -4521,7 +4521,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                   {day}
                 </span>
                 {isHoliday && (
-                  <span className="text-[10px] font-bold text-rose-500 bg-rose-50 px-1 rounded">
+                  <span className="text-xs font-bold text-rose-500 bg-rose-50 px-1 rounded">
                     {isHoliday}
                   </span>
                 )}
@@ -4537,7 +4537,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                       return (
                         <span
                           key={i}
-                          className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded truncate"
+                          className="text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded truncate"
                         >
                           {item.name}
                         </span>
@@ -4552,7 +4552,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                       const isLast = status === "present" && isLastSessionOfCycle(s, dateStr);
                       const isUnprocessed = isUnprocessedPast(s, dateStr);
                       let bgClass =
-                        "bg-slate-100 text-slate-600 border-slate-200 hover:border-indigo-300 hover:bg-indigo-50";
+                        "bg-slate-100 text-slate-600 border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 active:bg-indigo-100";
                       if (isUnprocessed)
                         bgClass = "bg-amber-50 text-amber-700 border-amber-400 hover:bg-amber-100";
                       else if (status === "present")
@@ -4571,7 +4571,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                             e.stopPropagation();
                             setAttendanceMenu({ student: s, date: dateStr });
                           }}
-                          className={`text-[10px] px-1.5 py-1 rounded border ${bgClass} font-medium flex justify-between items-center gap-0.5 transition-all shadow-sm`}
+                          className={`text-xs px-1.5 py-1 rounded border ${bgClass} font-medium flex justify-between items-center gap-0.5 transition-all shadow-sm`}
                         >
                           <span className="truncate">
                             {s.name} {sessionNum ? `(${sessionNum})` : ""}
@@ -4588,7 +4588,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                     }
                   })}
                   {overflowCount > 0 && (
-                    <div className="text-[10px] text-slate-400 font-medium text-center mt-1">
+                    <div className="text-xs text-slate-400 font-medium text-center mt-1">
                       + {overflowCount}명 더보기
                     </div>
                   )}
@@ -4731,7 +4731,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
         </div>
       </div>
       {/* 범례 */}
-      <div className="flex items-center gap-3 text-[10px] text-slate-500 mb-2 flex-wrap">
+      <div className="flex items-center gap-3 text-xs text-slate-500 mb-2 flex-wrap">
         <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-emerald-100 border border-emerald-200 inline-block"></span>출석 완료</span>
         <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-amber-50 border border-amber-400 inline-block"></span>미처리 과거 수업 <b className="text-amber-500">!</b></span>
         <span className="flex items-center gap-1"><span>💳</span>이번 수업 후 결제 필요</span>
@@ -4942,7 +4942,7 @@ const ClassLogView = ({ students, teachers, user, showToast }) => {
                     {day}
                   </span>
                   {isHoliday && (
-                    <span className="text-[10px] text-rose-500 font-bold">
+                    <span className="text-xs text-rose-500 font-bold">
                       {isHoliday}
                     </span>
                   )}
@@ -4952,7 +4952,7 @@ const ClassLogView = ({ students, teachers, user, showToast }) => {
                     <div
                       key={idx}
                       onClick={() => handleItemClick(item.id, dateStr)}
-                      className={`text-[10px] px-1 py-0.5 rounded truncate cursor-pointer transition-colors ${
+                      className={`text-xs px-1 py-0.5 rounded truncate cursor-pointer transition-colors ${
                         item.status === "present"
                           ? "text-slate-700 hover:bg-emerald-100"
                           : "text-slate-400 line-through hover:bg-slate-100"
@@ -5624,7 +5624,7 @@ const SettingsView = ({ teachers, students, showToast, seedData, adminPassword, 
                       setIsDirectInput(false);
                       setNewTeacherPart("피아노");
                     }}
-                    className="ml-2 text-[10px] text-indigo-500 hover:underline cursor-pointer"
+                    className="ml-2 text-xs text-indigo-500 hover:underline cursor-pointer"
                   >
                     (목록 선택)
                   </span>
@@ -5702,7 +5702,7 @@ const SettingsView = ({ teachers, students, showToast, seedData, adminPassword, 
               className="bg-white p-4 border rounded-xl flex flex-col justify-between shadow-sm cursor-pointer hover:border-indigo-500 hover:shadow-md transition-all group relative overflow-hidden"
             >
               {/* 파트 뱃지 */}
-              <div className="absolute top-0 right-0 px-3 py-1 rounded-bl-xl text-[10px] font-bold bg-slate-100 text-slate-600 border-l border-b border-slate-200">
+              <div className="absolute top-0 right-0 px-3 py-1 rounded-bl-xl text-xs font-bold bg-slate-100 text-slate-600 border-l border-b border-slate-200">
                 {t.part || "미지정"}
               </div>
 
@@ -5714,7 +5714,7 @@ const SettingsView = ({ teachers, students, showToast, seedData, adminPassword, 
                 </div>
                 {/* 비밀번호 표시 박스 */}
                 <div className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1.5 flex items-center justify-between">
-                  <span className="text-[10px] font-bold text-slate-500">
+                  <span className="text-xs font-bold text-slate-500">
                     🔑 비밀번호
                   </span>
                   <span className="text-sm font-mono font-bold text-indigo-600">
@@ -5732,20 +5732,20 @@ const SettingsView = ({ teachers, students, showToast, seedData, adminPassword, 
                   t.days.map((d) => (
                     <span
                       key={d}
-                      className="text-[10px] bg-white border border-slate-200 text-slate-500 px-1.5 py-0.5 rounded shadow-sm"
+                      className="text-xs bg-white border border-slate-200 text-slate-500 px-1.5 py-0.5 rounded shadow-sm"
                     >
                       {DAYS_OF_WEEK.find((day) => day.id === d)?.label}
                     </span>
                   ))
                 ) : (
-                  <span className="text-[10px] text-slate-300">요일 미정</span>
+                  <span className="text-xs text-slate-300">요일 미정</span>
                 )}
               </div>
 
               <div className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button
                   onClick={(e) => handleDeleteTeacher(t.id, e)}
-                  className="text-rose-400 hover:text-rose-600 p-1 hover:bg-rose-50 rounded"
+                  className="text-rose-400 hover:text-rose-600 p-2 hover:bg-rose-50 rounded"
                 >
                   <Trash2 size={16} />
                 </button>
@@ -5937,7 +5937,7 @@ const EditTeacherModal = ({
                     setIsDirectInput(false);
                     setPart("피아노");
                   }}
-                  className="ml-2 text-[10px] text-indigo-500 hover:underline cursor-pointer"
+                  className="ml-2 text-xs text-indigo-500 hover:underline cursor-pointer"
                 >
                   (목록 선택)
                 </span>
@@ -6444,7 +6444,7 @@ const FastAttendanceModal = ({ student, onClose, onSave }) => {
         </div>
         <div className="grid grid-cols-7 gap-1 text-center">
           {["일", "월", "화", "수", "목", "금", "토"].map((d) => (
-            <div key={d} className="text-[10px] text-slate-400">
+            <div key={d} className="text-xs text-slate-400">
               {d}
             </div>
           ))}
@@ -6617,7 +6617,7 @@ const FastPaymentModal = ({ student, onClose, onSave }) => {
         </div>
         <div className="grid grid-cols-7 gap-1 text-center">
           {["일", "월", "화", "수", "목", "금", "토"].map((d) => (
-            <div key={d} className="text-[10px] text-slate-400">
+            <div key={d} className="text-xs text-slate-400">
               {d}
             </div>
           ))}
@@ -6641,7 +6641,7 @@ const FastPaymentModal = ({ student, onClose, onSave }) => {
                   ${
                     isPaid
                       ? "bg-indigo-600 text-white font-bold border-indigo-700 shadow-md transform scale-105"
-                      : "bg-white text-slate-500 border-slate-100 hover:border-indigo-300 hover:bg-indigo-50"
+                      : "bg-white text-slate-500 border-slate-100 hover:border-indigo-300 hover:bg-indigo-50 active:bg-indigo-100"
                   }
                 `}
               >
@@ -6923,7 +6923,7 @@ const StudentModal = ({
           </div>
           <div className="grid grid-cols-7 gap-1 text-center">
             {["일", "월", "화", "수", "목", "금", "토"].map((day) => (
-              <div key={day} className="text-[10px] text-slate-400">
+              <div key={day} className="text-xs text-slate-400">
                 {day}
               </div>
             ))}
@@ -7228,7 +7228,7 @@ const StudentModal = ({
                   {schedule[day] && (
                     <button
                       onClick={() => handleScheduleChange(day, "")}
-                      className="text-[10px] text-red-400 hover:text-red-600 underline text-center"
+                      className="text-xs text-red-400 hover:text-red-600 underline text-center"
                     >
                       지우기
                     </button>
@@ -8235,7 +8235,7 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
                   {status && status !== "reschedule" && (
                     <div className="text-right">
                       <span
-                        className={`text-[10px] font-bold px-2 py-1 rounded-lg block w-fit ml-auto mb-1 ${
+                        className={`text-xs font-bold px-2 py-1 rounded-lg block w-fit ml-auto mb-1 ${
                           status === "present"
                             ? "bg-emerald-500 text-white"
                             : status === "canceled"
@@ -8250,14 +8250,14 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
                           : "결석"}
                       </span>
                       {detailInfo && (
-                        <span className="text-[10px] text-slate-500 font-medium">
+                        <span className="text-xs text-slate-500 font-medium">
                           ({detailInfo})
                         </span>
                       )}
                     </div>
                   )}
                   {status === "reschedule" && (
-                    <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-blue-500 text-white">보강등록</span>
+                    <span className="text-xs font-bold px-2 py-1 rounded-lg bg-blue-500 text-white">보강등록</span>
                   )}
                 </div>
 
@@ -8375,7 +8375,7 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
                   ) : (
                     <button
                       onClick={() => { setMemoEditId(s.id); setMemoInput(""); }}
-                      className="w-full text-[10px] text-slate-300 hover:text-amber-400 flex items-center justify-center gap-1 py-0.5"
+                      className="w-full text-xs text-slate-300 hover:text-amber-400 flex items-center justify-center gap-1 py-0.5"
                     >
                       + 메모 추가
                     </button>
@@ -8387,7 +8387,7 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
                       e.stopPropagation();
                       onActionClick(s, "delete");
                     }}
-                    className="w-full mt-1 text-[10px] text-slate-300 hover:text-rose-400 flex items-center justify-center gap-1 py-1"
+                    className="w-full mt-1 text-xs text-slate-300 hover:text-rose-400 flex items-center justify-center gap-1 py-1"
                   >
                     <Trash2 size={10} /> 기록 삭제/초기화
                   </button>
@@ -8448,7 +8448,7 @@ const AttendanceDetailModal = ({ config, onClose, onConfirm }) => {
                   className={`py-2 rounded-lg text-sm font-bold border transition-all ${
                     cancelType === type
                       ? "bg-indigo-600 text-white border-indigo-600"
-                      : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
+                      : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50 active:bg-slate-100"
                   }`}
                 >
                   {type}
@@ -8662,7 +8662,7 @@ const StudentView = ({
               }`}
             >
               재원
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${filterStatus === "재원" ? "bg-white/25 text-white" : "bg-slate-200 text-slate-500"}`}>
+              <span className={`text-xs px-1.5 py-0.5 rounded-full ${filterStatus === "재원" ? "bg-white/25 text-white" : "bg-slate-200 text-slate-500"}`}>
                 {stats.재원}
               </span>
             </button>
@@ -8677,7 +8677,7 @@ const StudentView = ({
               }`}
             >
               휴원
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${filterStatus === "휴원" ? "bg-white/25 text-white" : "bg-slate-200 text-slate-500"}`}>
+              <span className={`text-xs px-1.5 py-0.5 rounded-full ${filterStatus === "휴원" ? "bg-white/25 text-white" : "bg-slate-200 text-slate-500"}`}>
                 {stats.휴원}
               </span>
             </button>
@@ -8692,7 +8692,7 @@ const StudentView = ({
               }`}
             >
               퇴원
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${filterStatus === "퇴원" ? "bg-white/25 text-white" : "bg-slate-200 text-slate-500"}`}>
+              <span className={`text-xs px-1.5 py-0.5 rounded-full ${filterStatus === "퇴원" ? "bg-white/25 text-white" : "bg-slate-200 text-slate-500"}`}>
                 {stats.퇴원}
               </span>
             </button>
@@ -8780,7 +8780,7 @@ const StudentView = ({
                     <div className="flex flex-col gap-1">
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-slate-700 cursor-pointer hover:text-indigo-600 hover:underline" onClick={() => openWithTab(s, "info")}>{s.name}</span>
-                        <span className="text-[10px] px-2 py-0.5 bg-rose-50 text-rose-500 rounded-full font-bold border border-rose-100">{s.subject}</span>
+                        <span className="text-xs px-2 py-0.5 bg-rose-50 text-rose-500 rounded-full font-bold border border-rose-100">{s.subject}</span>
                       </div>
                       <span className="text-xs text-slate-400">{s.teacher}</span>
                     </div>
@@ -8867,11 +8867,11 @@ const StudentView = ({
                         >
                           {s.name}
                         </span>
-                        <span className="text-[10px] px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-full font-bold border border-indigo-100">
+                        <span className="text-xs px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-full font-bold border border-indigo-100">
                           {s.subject}
                         </span>
                         <span
-                          className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
+                          className={`text-xs px-2 py-0.5 rounded-full font-bold border ${
                             getWeeklyFrequency(s) === 2
                               ? "bg-violet-50 text-violet-600 border-violet-100"
                               : "bg-slate-50 text-slate-500 border-slate-200"
@@ -8928,7 +8928,7 @@ const StudentView = ({
                           ([day, time]) => (
                             <span
                               key={day}
-                              className="px-2.5 py-1 bg-slate-100 text-slate-700 rounded-lg text-[10px] font-bold border border-slate-200"
+                              className="px-2.5 py-1 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold border border-slate-200"
                             >
                               {day} {time}
                             </span>
@@ -9272,7 +9272,7 @@ const StudentManagementModal = ({
             {["일", "월", "화", "수", "목", "금", "토"].map((day, idx) => (
               <div
                 key={day}
-                className={`text-[10px] font-bold ${
+                className={`text-xs font-bold ${
                   idx === 0
                     ? "text-rose-400"
                     : idx === 6
@@ -9375,7 +9375,7 @@ const StudentManagementModal = ({
                     : tab === "payment"
                     ? "bg-indigo-50 text-indigo-700 shadow-inner ring-1 ring-indigo-100"
                     : "bg-slate-100 text-slate-800 shadow-inner"
-                  : "text-slate-400 hover:bg-slate-50"
+                  : "text-slate-400 hover:bg-slate-50 active:bg-slate-100"
               }`}
             >
               {tab === "info" && <User size={16} />}
@@ -9595,7 +9595,7 @@ const StudentManagementModal = ({
                 <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
                   {DAYS.map((day) => (
                     <div key={day} className="space-y-1">
-                      <div className="text-[10px] text-center font-bold text-slate-400">
+                      <div className="text-xs text-center font-bold text-slate-400">
                         {day}
                       </div>
                       <input
@@ -10705,11 +10705,11 @@ const PaymentView = ({
                 <div className="flex rounded-lg border border-slate-200 overflow-hidden text-xs font-bold">
                   <button
                     onClick={() => { setMsgStyle("detailed"); setMsgContent(generatePaymentMessage(msgStudent, paymentUrl, "detailed")); }}
-                    className={`px-3 py-1 transition-colors ${msgStyle === "detailed" ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+                    className={`px-3 py-1 transition-colors ${msgStyle === "detailed" ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50 active:bg-slate-100"}`}
                   >상세</button>
                   <button
                     onClick={() => { setMsgStyle("simple"); setMsgContent(generatePaymentMessage(msgStudent, paymentUrl, "simple")); }}
-                    className={`px-3 py-1 transition-colors ${msgStyle === "simple" ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+                    className={`px-3 py-1 transition-colors ${msgStyle === "simple" ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50 active:bg-slate-100"}`}
                   >간결</button>
                 </div>
               </div>
@@ -10828,7 +10828,7 @@ const PaymentView = ({
                 <label className="block text-xs font-bold text-slate-500 mb-1">
                   결제방법
                   {quickPayStudent.lastPaymentMethod && (
-                    <span className="ml-2 text-[10px] text-slate-400 font-normal">
+                    <span className="ml-2 text-xs text-slate-400 font-normal">
                       (이전: {quickPayStudent.lastPaymentMethod})
                     </span>
                   )}
@@ -10843,7 +10843,7 @@ const PaymentView = ({
                           ? m === "결제선생"
                             ? "bg-blue-600 text-white border-blue-600"
                             : "bg-indigo-600 text-white border-indigo-600"
-                          : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
+                          : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50 active:bg-slate-100"
                       }`}
                     >
                       {m}
@@ -10994,19 +10994,19 @@ const PaymentView = ({
           <div className="flex rounded-lg overflow-hidden border text-sm">
             <button
               onClick={() => { setNotifMode(false); setProcessMode(false); setSelectedIds([]); }}
-              className={`px-3 py-1.5 font-medium transition-colors ${!notifMode && !processMode ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+              className={`px-3 py-1.5 font-medium transition-colors ${!notifMode && !processMode ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50 active:bg-slate-100"}`}
             >
               명단 관리
             </button>
             <button
               onClick={() => { setNotifMode(true); setProcessMode(false); setSelectedIds([]); }}
-              className={`px-3 py-1.5 font-medium transition-colors flex items-center gap-1 ${notifMode ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+              className={`px-3 py-1.5 font-medium transition-colors flex items-center gap-1 ${notifMode ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50 active:bg-slate-100"}`}
             >
               <MessageSquareText size={14} /> 안내 발송
             </button>
             <button
               onClick={() => { setNotifMode(false); setProcessMode(true); setSelectedIds([]); }}
-              className={`px-3 py-1.5 font-medium transition-colors flex items-center gap-1 ${processMode ? "bg-emerald-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+              className={`px-3 py-1.5 font-medium transition-colors flex items-center gap-1 ${processMode ? "bg-emerald-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50 active:bg-slate-100"}`}
             >
               <CreditCard size={14} /> 결제 처리
             </button>
@@ -11033,14 +11033,14 @@ const PaymentView = ({
           {!notifMode && (
             <button
               onClick={() => setFilterDue(!filterDue)}
-              className={`px-3 py-1.5 rounded text-sm border flex items-center transition-colors ${filterDue ? "bg-rose-50 border-rose-200 text-rose-600" : "bg-white hover:bg-slate-50"}`}
+              className={`px-3 py-1.5 rounded text-sm border flex items-center transition-colors ${filterDue ? "bg-rose-50 border-rose-200 text-rose-600" : "bg-white hover:bg-slate-50 active:bg-slate-100"}`}
             >
               <AlertCircle size={14} className="mr-1" /> {filterDue ? "전체 보기" : "미납/만료만"}
             </button>
           )}
           <button
             onClick={() => setFilterWeek(!filterWeek)}
-            className={`px-3 py-1.5 rounded text-sm border flex items-center transition-colors ${filterWeek ? "bg-violet-50 border-violet-300 text-violet-700 font-bold" : "bg-white hover:bg-slate-50"}`}
+            className={`px-3 py-1.5 rounded text-sm border flex items-center transition-colors ${filterWeek ? "bg-violet-50 border-violet-300 text-violet-700 font-bold" : "bg-white hover:bg-slate-50 active:bg-slate-100"}`}
           >
             <AlertCircle size={14} className="mr-1" /> {filterWeek ? "주간 해제" : "주간 미발송"}
           </button>
@@ -11057,7 +11057,7 @@ const PaymentView = ({
                 ? "bg-amber-50 border-amber-300 text-amber-700 font-bold"
                 : sentFilter === "done"
                 ? "bg-emerald-50 border-emerald-300 text-emerald-700 font-bold"
-                : "bg-white hover:bg-slate-50"
+                : "bg-white hover:bg-slate-50 active:bg-slate-100"
             }`}
           >
             <MessageSquareText size={14} className="mr-1" />
@@ -11092,7 +11092,7 @@ const PaymentView = ({
                 >
                   {student.name}
                   {payment.method && (
-                    <span className="text-[10px] text-slate-400 ml-1">
+                    <span className="text-xs text-slate-400 ml-1">
                       · {payment.method}
                     </span>
                   )}
@@ -11165,11 +11165,11 @@ const PaymentView = ({
                   const method = getMethodForStudent(s);
                   const { displayStatus, statusColor } = getStudentProgress(s);
                   return (
-                    <tr key={s.id} className="hover:bg-slate-50">
+                    <tr key={s.id} className="hover:bg-slate-50 active:bg-slate-100">
                       <td className="py-3 px-4">
                         <div className="font-medium">{s.name}</div>
                         <div className="text-xs text-slate-400">{s.subject}</div>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded ${statusColor}`}>{displayStatus}</span>
+                        <span className={`text-xs px-1.5 py-0.5 rounded ${statusColor}`}>{displayStatus}</span>
                       </td>
                       <td className="py-3 px-4 text-slate-600">{s.teacher || "-"}</td>
                       <td className="py-3 px-4 text-right font-bold text-indigo-600">
@@ -11187,7 +11187,7 @@ const PaymentView = ({
                                   ? m === "결제선생"
                                     ? "bg-blue-600 text-white border-blue-600"
                                     : "bg-indigo-600 text-white border-indigo-600"
-                                  : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
+                                  : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50 active:bg-slate-100"
                               }`}
                             >
                               {m}
@@ -11256,7 +11256,7 @@ const PaymentView = ({
               </thead>
               <tbody className="divide-y divide-slate-100 bg-white">
                 {recentlyPaidList.map(({ student: s, payment: p }, i) => (
-                  <tr key={`${s.id}-${i}`} className="hover:bg-slate-50">
+                  <tr key={`${s.id}-${i}`} className="hover:bg-slate-50 active:bg-slate-100">
                     <td className="py-2.5 px-4">
                       <div className="font-medium">{s.name}</div>
                       <div className="text-xs text-slate-400">{s.subject}</div>
@@ -11317,7 +11317,7 @@ const PaymentView = ({
                       const stateLabel = stInfo?.state ? (STATE_LABEL[stInfo.state] || { text: stInfo.state, cls: "bg-slate-100 text-slate-600" }) : null;
                       const student = students.find((s) => s.id === log.studentId);
                       return (
-                        <tr key={log.billId} className={`${stInfo?.state === "D" ? "bg-rose-50" : "hover:bg-slate-50"}`}>
+                        <tr key={log.billId} className={`${stInfo?.state === "D" ? "bg-rose-50" : "hover:bg-slate-50 active:bg-slate-100"}`}>
                           <td className="py-2.5 px-4 font-medium">{log.studentName || "-"}</td>
                           <td className="py-2.5 px-4 text-xs text-slate-500">{log.sentAt}</td>
                           <td className="py-2.5 px-4">
@@ -11402,7 +11402,7 @@ const PaymentView = ({
               return (
                 <tr
                   key={s.id}
-                  className={`border-b transition-colors ${notifMode ? (selectedIds.includes(s.id) ? "bg-indigo-50" : "hover:bg-slate-50") : "hover:bg-slate-50 cursor-pointer"}`}
+                  className={`border-b transition-colors ${notifMode ? (selectedIds.includes(s.id) ? "bg-indigo-50" : "hover:bg-slate-50 active:bg-slate-100") : "hover:bg-slate-50 cursor-pointer"}`}
                   onClick={() => { if (!notifMode) setSelectedStudentId(s.id); else toggleSelect(s.id); }}
                 >
                   {notifMode && (
@@ -11460,7 +11460,7 @@ const PaymentView = ({
                                   href={kyLog.shortURL}
                                   target="_blank"
                                   rel="noreferrer"
-                                  className="text-blue-500 underline text-[10px] hover:text-blue-700"
+                                  className="text-blue-500 underline text-xs hover:text-blue-700"
                                 >
                                   💳 청구서
                                 </a>
@@ -11475,7 +11475,7 @@ const PaymentView = ({
                                     showToast("파기 실패: " + e.message, "error");
                                   }
                                 }}
-                                className="text-rose-400 text-[10px] hover:text-rose-600 hover:underline"
+                                className="text-rose-400 text-xs hover:text-rose-600 hover:underline"
                               >
                                 파기
                               </button>
@@ -11646,11 +11646,11 @@ const BulkMessageModal = ({ students, messageLogs, paymentUrl, onSaveLog, onClos
             <div className="flex rounded-lg border border-slate-200 overflow-hidden text-xs font-bold">
               <button
                 onClick={() => handleStyleChange("detailed")}
-                className={`px-3 py-1.5 transition-colors ${msgStyle === "detailed" ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+                className={`px-3 py-1.5 transition-colors ${msgStyle === "detailed" ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50 active:bg-slate-100"}`}
               >상세</button>
               <button
                 onClick={() => handleStyleChange("simple")}
-                className={`px-3 py-1.5 transition-colors ${msgStyle === "simple" ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+                className={`px-3 py-1.5 transition-colors ${msgStyle === "simple" ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50 active:bg-slate-100"}`}
               >간결</button>
             </div>
             <button
@@ -11659,7 +11659,7 @@ const BulkMessageModal = ({ students, messageLogs, paymentUrl, onSaveLog, onClos
             >
               <Copy size={13} /> 전체 복사
             </button>
-            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1">
+            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-2">
               <X size={24} />
             </button>
           </div>
@@ -11720,7 +11720,7 @@ const BulkMessageModal = ({ students, messageLogs, paymentUrl, onSaveLog, onClos
                   </div>
                   <button
                     onClick={() => handleCopySingle(activeStudent.id)}
-                    className="px-3 py-1.5 text-xs border rounded-lg font-bold flex items-center gap-1 hover:bg-slate-50"
+                    className="px-3 py-1.5 text-xs border rounded-lg font-bold flex items-center gap-1 hover:bg-slate-50 active:bg-slate-100"
                   >
                     <Copy size={13} /> 복사
                   </button>
@@ -12588,7 +12588,7 @@ export default function App() {
               <p className="text-sm font-bold text-slate-800 truncate">
                 {currentUser.name} 님
               </p>
-              <p className="text-[10px] text-slate-500 bg-white border px-1.5 py-0.5 rounded-full inline-block mt-0.5">
+              <p className="text-xs text-slate-500 bg-white border px-1.5 py-0.5 rounded-full inline-block mt-0.5">
                 {currentUser.role === "admin" ? "원장님" : "강사님"}
               </p>
             </div>
@@ -13854,7 +13854,7 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
         <div className="inline-block min-w-full pb-20 print:pb-0">
           {/* 헤더 */}
           <div className="flex border-b bg-white sticky top-0 z-10 shadow-sm print:static print:shadow-none print:border-slate-300">
-            <div className="w-[50px] md:w-[80px] p-2 md:p-4 text-center text-[10px] md:text-xs font-bold text-slate-400 border-r bg-slate-50 sticky left-0 z-20 shrink-0 flex items-center justify-center print:bg-white print:border-slate-300">
+            <div className="w-[50px] md:w-[80px] p-2 md:p-4 text-center text-xs md:text-xs font-bold text-slate-400 border-r bg-slate-50 sticky left-0 z-20 shrink-0 flex items-center justify-center print:bg-white print:border-slate-300">
               TIME
             </div>
 
@@ -13946,7 +13946,7 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
                       {consultStart !== null && (
                         <div style={{ position: "absolute", top: consultStart * PX_PER_MIN, height: (consultEnd - consultStart) * PX_PER_MIN, left: 1, right: 1, zIndex: 1 }} className="bg-amber-50 border border-amber-200 rounded print:bg-transparent">
                           <div className="px-1.5 pt-1 leading-tight">
-                            <div className="text-[9px] md:text-[10px] font-extrabold text-amber-600">상담가능</div>
+                            <div className="text-[9px] md:text-xs font-extrabold text-amber-600">상담가능</div>
                             <div className="text-[8px] md:text-[9px] font-bold text-amber-500">10:00 ~ 12:00</div>
                           </div>
                         </div>
@@ -13967,7 +13967,7 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
                         return (
                           <div key={wi} style={{ position: "absolute", top: (startMin - TL_START * 60) * PX_PER_MIN, height: (endMin - startMin) * PX_PER_MIN, left: 1, right: 1, zIndex: 1 }} className="bg-emerald-50 border border-emerald-200 rounded print:bg-transparent">
                             <div className="px-1.5 pt-1 leading-tight">
-                              <div className="text-[9px] md:text-[10px] font-extrabold text-emerald-600">수강 가능</div>
+                              <div className="text-[9px] md:text-xs font-extrabold text-emerald-600">수강 가능</div>
                               <div className="text-[8px] md:text-[9px] font-bold text-emerald-500">{sH}:{String(sM).padStart(2,"0")} ~ {eH}:{String(eM).padStart(2,"0")}</div>
                             </div>
                           </div>
@@ -13978,7 +13978,7 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
                         <div
                           key={li}
                           style={{ position: "absolute", top: (l.hour * 60 + l.minute - TL_START * 60) * PX_PER_MIN, height: LESSON_HEIGHT - 2, left: 2, right: 2, zIndex: 2 }}
-                          className={`rounded-lg border text-[9px] md:text-[10px] shadow-sm overflow-hidden px-1.5 py-0.5 print:border-slate-400 ${getSubjectColor(l.student.subject)}`}
+                          className={`rounded-lg border text-[9px] md:text-xs shadow-sm overflow-hidden px-1.5 py-0.5 print:border-slate-400 ${getSubjectColor(l.student.subject)}`}
                         >
                           <div className="font-semibold truncate">{l.student.subject || l.student.name}</div>
                           <div className="font-bold">{l.timeStr} ~ {getEndTimeStr(l.timeStr)}</div>
@@ -14016,7 +14016,7 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
                           <div style={{ position: "absolute", top: consultStart * PX_PER_MIN, height: (consultEnd - consultStart) * PX_PER_MIN, left: 1, right: 1, zIndex: 1 }} className="bg-amber-50 border border-amber-200 rounded print:bg-transparent">
                             <div className="px-1.5 pt-1 leading-tight">
                               <div className="text-[9px] md:text-[11px] font-extrabold text-amber-600">상담가능</div>
-                              <div className="text-[8px] md:text-[10px] font-bold text-amber-500">10:00 ~ 12:00</div>
+                              <div className="text-[8px] md:text-xs font-bold text-amber-500">10:00 ~ 12:00</div>
                             </div>
                           </div>
                         )}
@@ -14037,7 +14037,7 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
                           <div key={wi} style={{ position: "absolute", top: (startMin - TL_START * 60) * PX_PER_MIN, height: (endMin - startMin) * PX_PER_MIN, left: 1, right: 1, zIndex: 1 }} className="bg-emerald-50 border border-emerald-200 rounded print:bg-transparent">
                             <div className="px-1.5 pt-1 leading-tight">
                               <div className="text-[9px] md:text-[11px] font-extrabold text-emerald-600">수강 가능</div>
-                              <div className="text-[8px] md:text-[10px] font-bold text-emerald-500">{sH}:{String(sM).padStart(2,"0")} ~ {eH}:{String(eM).padStart(2,"0")}</div>
+                              <div className="text-[8px] md:text-xs font-bold text-emerald-500">{sH}:{String(sM).padStart(2,"0")} ~ {eH}:{String(eM).padStart(2,"0")}</div>
                             </div>
                           </div>
                           );
@@ -14047,11 +14047,11 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
                           <div
                             key={li}
                             style={{ position: "absolute", top: (l.hour * 60 + l.minute - TL_START * 60) * PX_PER_MIN, height: LESSON_HEIGHT - 2, left: 2, right: 2, zIndex: 2 }}
-                            className={`rounded-lg border shadow-sm text-[10px] md:text-xs overflow-hidden print:border-slate-400 print:shadow-none ${getSubjectColor(l.student.subject)}`}
+                            className={`rounded-lg border shadow-sm text-xs md:text-xs overflow-hidden print:border-slate-400 print:shadow-none ${getSubjectColor(l.student.subject)}`}
                           >
                             <div className="px-1.5 py-1">
                               <div className="font-semibold truncate">{l.student.subject || l.student.name}</div>
-                              <div className="font-bold text-[10px]">{l.timeStr} ~ {getEndTimeStr(l.timeStr)}</div>
+                              <div className="font-bold text-xs">{l.timeStr} ~ {getEndTimeStr(l.timeStr)}</div>
                             </div>
                           </div>
                         ))}
@@ -14149,7 +14149,7 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
                         }
                         items.push(
                           <div key={i} className="flex items-baseline gap-1 py-0.5 whitespace-nowrap">
-                            <span className="text-slate-400 tabular-nums text-[10px]">
+                            <span className="text-slate-400 tabular-nums text-xs">
                               {String(Math.floor(l.min / 60)).padStart(2, "0")}:{String(l.min % 60).padStart(2, "0")}
                             </span>
                             <span className="font-medium text-slate-800">{l.name}</span>
@@ -14289,7 +14289,7 @@ const SubjectTimetableView = ({ students, showToast }) => {
           <div ref={printRef} className="bg-white p-3 min-w-[600px]">
             <div className="text-center mb-4">
               <p className="text-base font-bold text-slate-800">J&C 음악학원 수업 시간표</p>
-              <p className="text-[10px] text-slate-400 mt-0.5">상담 문의: 010-4028-9803</p>
+              <p className="text-xs text-slate-400 mt-0.5">상담 문의: 010-4028-9803</p>
             </div>
 
             <div className="border border-slate-200 rounded-xl overflow-hidden">
@@ -14334,7 +14334,7 @@ const SubjectTimetableView = ({ students, showToast }) => {
                             {lessonBlocks.map((lb) => (
                               <span
                                 key={lb.s}
-                                className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${colors.light} ${colors.text} border ${colors.border}`}
+                                className={`inline-block px-1.5 py-0.5 rounded text-xs font-bold ${colors.light} ${colors.text} border ${colors.border}`}
                               >
                                 {toStr(lb.s)}~{toStr(lb.e)}
                               </span>
@@ -14367,11 +14367,11 @@ const SubjectTimetableView = ({ students, showToast }) => {
             <div className="flex items-center gap-4 mt-3 justify-center">
               <div className="flex items-center gap-1.5">
                 <div className="w-3 h-3 rounded bg-indigo-50 border border-indigo-200" />
-                <span className="text-[10px] text-slate-500">수업 시간</span>
+                <span className="text-xs text-slate-500">수업 시간</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="w-3 h-3 rounded bg-emerald-50 border border-emerald-200" />
-                <span className="text-[10px] text-slate-500">수강신청 가능 시간</span>
+                <span className="text-xs text-slate-500">수강신청 가능 시간</span>
               </div>
             </div>
           </div>
