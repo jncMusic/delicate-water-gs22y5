@@ -5119,8 +5119,8 @@ const SettingsView = ({ teachers, students, showToast, seedData, adminPassword, 
 
   // 2. 강사 정보 수정 (Update) - 비밀번호 포함
   const handleUpdateTeacher = async (id, data) => {
-    // data 안에 name, password, part, days가 모두 들어있음
-    const { name, password, part, days, oldName } = data;
+    // data 안에 name, password, part, days, residentId, bankName, bankAccount가 모두 들어있음
+    const { name, password, part, days, oldName, residentId, bankName, bankAccount } = data;
 
     try {
       const teacherRef = doc(
@@ -5136,9 +5136,12 @@ const SettingsView = ({ teachers, students, showToast, seedData, adminPassword, 
       // Firebase 업데이트 (비밀번호, 파트, 요일 등 모두 갱신)
       await updateDoc(teacherRef, {
         name,
-        password, // 🔥 중요: 수정된 비밀번호 반영
+        password,
         part,
         days,
+        residentId: residentId || "",
+        bankName: bankName || "",
+        bankAccount: bankAccount || "",
       });
 
       // 강사 이름이 바뀌었다면, 원생 데이터의 담당 강사명도 변경
@@ -5865,7 +5868,10 @@ const EditTeacherModal = ({
   onSave,
 }) => {
   const [name, setName] = useState(teacher.name);
-  const [password, setPassword] = useState(teacher.password || ""); // 기존 비밀번호 불러오기
+  const [password, setPassword] = useState(teacher.password || "");
+  const [residentId, setResidentId] = useState(teacher.residentId || "");
+  const [bankName, setBankName] = useState(teacher.bankName || "");
+  const [bankAccount, setBankAccount] = useState(teacher.bankAccount || "");
 
   const isPredefined = teacherParts.some((p) => p.id === teacher.part);
   const [part, setPart] = useState(teacher.part || "피아노");
@@ -5994,6 +6000,41 @@ const EditTeacherModal = ({
               ))}
             </div>
           </div>
+
+          {/* 주민번호 */}
+          <div>
+            <label className="block text-xs font-bold text-slate-500 mb-1">
+              주민등록번호 <span className="font-normal text-slate-400">(세무 자료용)</span>
+            </label>
+            <input
+              className="w-full p-3 border rounded-xl bg-slate-50 focus:outline-indigo-600 font-mono tracking-widest"
+              value={residentId}
+              onChange={(e) => setResidentId(e.target.value)}
+              placeholder="000000-0000000"
+              maxLength={14}
+            />
+          </div>
+
+          {/* 계좌번호 */}
+          <div>
+            <label className="block text-xs font-bold text-slate-500 mb-1">
+              계좌번호 <span className="font-normal text-slate-400">(급여 이체용)</span>
+            </label>
+            <div className="flex gap-2">
+              <input
+                className="w-24 p-3 border rounded-xl bg-slate-50 focus:outline-indigo-600 text-sm"
+                value={bankName}
+                onChange={(e) => setBankName(e.target.value)}
+                placeholder="은행명"
+              />
+              <input
+                className="flex-1 p-3 border rounded-xl bg-slate-50 focus:outline-indigo-600 font-mono"
+                value={bankAccount}
+                onChange={(e) => setBankAccount(e.target.value)}
+                placeholder="계좌번호"
+              />
+            </div>
+          </div>
         </div>
 
         <div className="flex justify-end gap-2 mt-8">
@@ -6012,6 +6053,9 @@ const EditTeacherModal = ({
                 part,
                 days,
                 oldName: teacher.name,
+                residentId,
+                bankName,
+                bankAccount,
               });
               onClose();
             }}
@@ -13052,7 +13096,7 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
       [`${selectedYear}년 ${selectedMonth}월 강사료 세무 자료`],
       [`정산 기간: ${periodStart} ~ ${periodEnd}`],
       [],
-      ["연번", "강사명", "파트", "귀속월", "지급액(강사료)", "소득세(3%)", "지방소득세(0.3%)", "합계세액", "실지급액"],
+      ["연번", "강사명", "주민등록번호", "은행", "계좌번호", "파트", "귀속월", "지급액(강사료)", "소득세(3%)", "지방소득세(0.3%)", "합계세액", "실지급액"],
     ];
     let seq = 0;
     const dataRows = teacherList
@@ -13068,6 +13112,9 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
         return [
           seq,
           t.name,
+          t.residentId || "",
+          t.bankName || "",
+          t.bankAccount || "",
           t.part || "",
           `${selectedYear}-${String(selectedMonth).padStart(2, "0")}`,
           gross,
