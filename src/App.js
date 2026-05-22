@@ -12821,6 +12821,15 @@ const resolveFeeTeacher = (student, date, record) => {
   return entry ? entry.teacher : student.teacher || "";
 };
 
+const calcDefaultPeriod = (year, month) => {
+  let py = year, pm = month - 1;
+  if (pm === 0) { pm = 12; py = year - 1; }
+  return {
+    start: `${py}-${String(pm).padStart(2, "0")}-24`,
+    end: `${year}-${String(month).padStart(2, "0")}-23`,
+  };
+};
+
 const InstructorFeeView = ({ teachers, students, showToast }) => {
   const [subTab, setSubTab] = useState("calc");
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -12831,6 +12840,10 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
   const [savingId, setSavingId] = useState(null);
   const [editFeeData, setEditFeeData] = useState({});
   const slipRef = useRef(null);
+
+  const defaultPeriod = calcDefaultPeriod(selectedYear, selectedMonth);
+  const [periodStart, setPeriodStart] = useState(defaultPeriod.start);
+  const [periodEnd, setPeriodEnd] = useState(defaultPeriod.end);
 
   const teacherList = teachers.filter((t) => t.name && t.name.trim());
 
@@ -12865,14 +12878,11 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
     });
   }, [teachers]);
 
-  // 정산 기간: 전월 24일 ~ 당월 23일
-  const period = useMemo(() => {
-    let py = selectedYear, pm = selectedMonth - 1;
-    if (pm === 0) { pm = 12; py = selectedYear - 1; }
-    return {
-      start: `${py}-${String(pm).padStart(2, "0")}-24`,
-      end: `${selectedYear}-${String(selectedMonth).padStart(2, "0")}-23`,
-    };
+  // 연/월 변경 시 기간 기본값으로 리셋
+  useEffect(() => {
+    const p = calcDefaultPeriod(selectedYear, selectedMonth);
+    setPeriodStart(p.start);
+    setPeriodEnd(p.end);
   }, [selectedYear, selectedMonth]);
 
   // 강사별 학생 수업 횟수 집계
@@ -12882,8 +12892,8 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
         .map((s) => {
           const allRecs = (s.attendanceHistory || []).filter(
             (h) =>
-              h.date >= period.start &&
-              h.date <= period.end &&
+              h.date >= periodStart &&
+              h.date <= periodEnd &&
               (h.status === "present" || h.status === "canceled")
           );
           const recs = allRecs.filter(
@@ -12904,7 +12914,7 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
         })
         .filter(Boolean)
         .sort((a, b) => b.sessions - a.sessions),
-    [students, period]
+    [students, periodStart, periodEnd]
   );
 
   // 학생 1명에 대한 강사료 계산 (override → revenueShare → 기본 단가)
@@ -13010,7 +13020,7 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
     const wb = window.XLSX.utils.book_new();
     const rows = [
       [`${selectedYear}년 ${selectedMonth}월 강사료 계산서 — ${selectedTeacherName}`],
-      [`정산 기간: ${period.start} ~ ${period.end}`],
+      [`정산 기간: ${periodStart} ~ ${periodEnd}`],
       [],
       ["학생명", "회차", "강사료(원)"],
       ...sessionRows.map((r) => [
@@ -13040,7 +13050,7 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
     const wb = window.XLSX.utils.book_new();
     const header = [
       [`${selectedYear}년 ${selectedMonth}월 강사료 세무 자료`],
-      [`정산 기간: ${period.start} ~ ${period.end}`],
+      [`정산 기간: ${periodStart} ~ ${periodEnd}`],
       [],
       ["연번", "강사명", "파트", "귀속월", "지급액(강사료)", "소득세(3%)", "지방소득세(0.3%)", "합계세액", "실지급액"],
     ];
@@ -13114,30 +13124,52 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
               </select>
             </div>
             <div>
-              <label className="text-xs font-bold text-slate-500 block mb-1">연도</label>
-              <select
-                value={selectedYear}
-                onChange={(e) => setSelectedYear(Number(e.target.value))}
-                className="border rounded-lg px-3 py-2 text-sm"
-              >
-                {yearOptions.map((y) => <option key={y} value={y}>{y}년</option>)}
-              </select>
+              <label className="text-xs font-bold text-slate-500 block mb-1">귀속 연/월</label>
+              <div className="flex gap-1 items-center">
+                <select
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(Number(e.target.value))}
+                  className="border rounded-lg px-3 py-2 text-sm"
+                >
+                  {yearOptions.map((y) => <option key={y} value={y}>{y}년</option>)}
+                </select>
+                <select
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                  className="border rounded-lg px-3 py-2 text-sm"
+                >
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                    <option key={m} value={m}>{m}월</option>
+                  ))}
+                </select>
+              </div>
             </div>
             <div>
-              <label className="text-xs font-bold text-slate-500 block mb-1">월</label>
-              <select
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(Number(e.target.value))}
+              <label className="text-xs font-bold text-slate-500 block mb-1">집계 시작일</label>
+              <input
+                type="date"
+                value={periodStart}
+                onChange={(e) => setPeriodStart(e.target.value)}
                 className="border rounded-lg px-3 py-2 text-sm"
-              >
-                {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                  <option key={m} value={m}>{m}월</option>
-                ))}
-              </select>
+              />
             </div>
-            <p className="text-xs text-slate-400 self-end pb-2">
-              집계 기간: {period.start} ~ {period.end}
-            </p>
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">집계 종료일</label>
+              <input
+                type="date"
+                value={periodEnd}
+                onChange={(e) => setPeriodEnd(e.target.value)}
+                className="border rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            {(periodStart !== defaultPeriod.start || periodEnd !== defaultPeriod.end) && (
+              <button
+                onClick={() => { setPeriodStart(defaultPeriod.start); setPeriodEnd(defaultPeriod.end); }}
+                className="self-end pb-0.5 text-xs text-indigo-500 hover:text-indigo-700 underline"
+              >
+                기본값으로
+              </button>
+            )}
           </div>
 
           {/* 단가 미설정 경고 */}
@@ -13405,7 +13437,7 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
               <Download size={15} /> 엑셀 다운로드
             </button>
           </div>
-          <p className="text-xs text-slate-400">집계 기간: {period.start} ~ {period.end}</p>
+          <p className="text-xs text-slate-400">집계 기간: {periodStart} ~ {periodEnd}</p>
 
           <div className="bg-white rounded-2xl border overflow-x-auto">
             <table className="w-full text-sm">
@@ -13493,7 +13525,7 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
                 {selectedYear}년 {selectedMonth}월 급여 명세서
               </h2>
               <p className="text-center text-xs text-slate-400 mb-5">
-                {period.start} ~ {period.end}
+                {periodStart} ~ {periodEnd}
               </p>
               <div className="space-y-2.5 text-sm">
                 {[
