@@ -309,7 +309,7 @@ const SidebarItem = ({ icon: Icon, label, active, onClick }) => (
     className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
       active
         ? "bg-indigo-600 text-white shadow-md"
-        : "text-slate-500 hover:bg-indigo-50 hover:text-indigo-600"
+        : "text-slate-500 hover:bg-indigo-50 active:bg-indigo-100 hover:text-indigo-600"
     }`}
   >
     {Icon && <Icon size={20} className="shrink-0" />}
@@ -853,7 +853,7 @@ const LoginModal = ({
         <div className="p-6 space-y-6 overflow-y-auto">
           <button
             onClick={() => setIsAdminLoginMode(true)}
-            className="w-full p-4 bg-slate-50 hover:bg-indigo-50 border rounded-xl flex items-center group transition-colors"
+            className="w-full p-4 bg-slate-50 hover:bg-indigo-50 active:bg-indigo-100 border rounded-xl flex items-center group transition-colors"
           >
             <div className="w-10 h-10 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold mr-3">
               M
@@ -1321,7 +1321,7 @@ const StudentEditModal = ({ student, teachers, onClose, onUpdate, user, onUpdate
               <button
                 type="button"
                 onClick={() => setIsAttModalOpen(true)}
-                className="flex-1 py-3 rounded-xl border border-indigo-200 text-indigo-600 font-bold hover:bg-indigo-50 flex items-center justify-center gap-1.5 text-sm"
+                className="flex-1 py-3 rounded-xl border border-indigo-200 text-indigo-600 font-bold hover:bg-indigo-50 active:bg-indigo-100 flex items-center justify-center gap-1.5 text-sm"
               >
                 <CalendarDays size={15} /> 출석 기록 편집
               </button>
@@ -2392,7 +2392,7 @@ const DashboardView = ({
             </h3>
             <button
               onClick={() => onNavigate("consultations")}
-              className="text-xs font-bold text-indigo-500 hover:bg-indigo-50 px-2.5 py-1 rounded-lg transition-colors"
+              className="text-xs font-bold text-indigo-500 hover:bg-indigo-50 active:bg-indigo-100 px-2.5 py-1 rounded-lg transition-colors"
             >
               전체 보기
             </button>
@@ -2413,7 +2413,7 @@ const DashboardView = ({
                       onNavigateToConsultation &&
                       onNavigateToConsultation(consult)
                     }
-                    className="flex items-center gap-3 py-2.5 hover:bg-slate-50 cursor-pointer rounded-lg px-1 -mx-1 transition-colors group"
+                    className="flex items-center gap-3 py-2.5 hover:bg-slate-50 active:bg-slate-100 cursor-pointer rounded-lg px-1 -mx-1 transition-colors group"
                   >
                     <div className="flex-1 min-w-0">
                       <span className="font-bold text-slate-800 text-sm group-hover:text-indigo-600 transition-colors">
@@ -2518,7 +2518,7 @@ const DashboardView = ({
               </thead>
               <tbody>
                 {trendData.map((d) => (
-                  <tr key={d.month} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
+                  <tr key={d.month} className="border-b border-slate-50 hover:bg-slate-50 active:bg-slate-100 transition-colors">
                     <td className="py-2 pr-4 font-bold text-slate-700">
                       {d.month.replace("-", "년 ")}월
                     </td>
@@ -3041,7 +3041,7 @@ const ReportView = ({
                           return (
                             <div
                               key={s.id}
-                              className="p-4 hover:bg-slate-50 transition-colors"
+                              className="p-4 hover:bg-slate-50 active:bg-slate-100 transition-colors"
                             >
                               <div className="flex justify-between items-start mb-2">
                                 <div className="flex items-center gap-2 flex-wrap">
@@ -3781,7 +3781,7 @@ const ConsultationView = ({
               <tr
                 key={c.id}
                 onClick={() => openModal(c)}
-                className="hover:bg-indigo-50/20 cursor-pointer transition-all"
+                className="hover:bg-indigo-50 active:bg-indigo-100/20 cursor-pointer transition-all"
               >
                 <td className="px-6 py-4">
                   <div className="text-xs text-slate-500 mb-1">{c.date}</div>
@@ -4200,7 +4200,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
               <div
                 key={i}
                 onClick={() => { setCurrentDate(new Date(date)); setViewType("day"); }}
-                className={`p-2 text-center border-r last:border-r-0 cursor-pointer hover:bg-indigo-50 transition-colors ${isToday ? "bg-indigo-50" : ""}`}
+                className={`p-2 text-center border-r last:border-r-0 cursor-pointer hover:bg-indigo-50 active:bg-indigo-100 transition-colors ${isToday ? "bg-indigo-50" : ""}`}
               >
                 <div className={`text-xs font-bold ${i === 6 ? "text-rose-500" : i === 5 ? "text-blue-500" : "text-slate-700"}`}>
                   {DAYS_OF_WEEK.find((d) => d.id === (i + 1) % 7)?.label}
@@ -4497,7 +4497,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
           return (
             <div
               key={idx}
-              className={`bg-white p-2 min-h-[80px] hover:bg-indigo-50 transition-colors relative group border-t border-slate-50 cursor-pointer`}
+              className={`bg-white p-2 min-h-[80px] hover:bg-indigo-50 active:bg-indigo-100 transition-colors relative group border-t border-slate-50 cursor-pointer`}
               onClick={() => {
                 const details = getDetailModalData(dateStr, dayOfWeek);
                 if (
@@ -4927,7 +4927,7 @@ const ClassLogView = ({ students, teachers, user, showToast }) => {
             return (
               <div
                 key={i}
-                className="min-h-[100px] p-1 relative hover:bg-slate-50 transition-colors"
+                className="min-h-[100px] p-1 relative hover:bg-slate-50 active:bg-slate-100 transition-colors"
               >
                 <div className="flex justify-between px-1">
                   <span
@@ -5485,7 +5485,7 @@ const SettingsView = ({ teachers, students, showToast, seedData, adminPassword, 
             >
               <Download size={16} className="mr-2" /> 백업(저장)
             </button>
-            <label className="flex-1 inline-flex justify-center items-center px-4 py-2 bg-white border border-indigo-300 text-indigo-700 rounded-lg cursor-pointer hover:bg-indigo-50 font-bold shadow-sm transition-colors text-sm">
+            <label className="flex-1 inline-flex justify-center items-center px-4 py-2 bg-white border border-indigo-300 text-indigo-700 rounded-lg cursor-pointer hover:bg-indigo-50 active:bg-indigo-100 font-bold shadow-sm transition-colors text-sm">
               <RefreshCcw size={16} className="mr-2" /> 복구(로드)
               <input
                 type="file"
@@ -6372,7 +6372,7 @@ const DateDetailModal = ({ date, students, onClose, onStudentClick }) => (
                 onClick={() => {
                   onStudentClick(s, date);
                 }}
-                className="flex justify-between items-center p-3 border rounded-lg hover:bg-slate-50 cursor-pointer"
+                className="flex justify-between items-center p-3 border rounded-lg hover:bg-slate-50 active:bg-slate-100 cursor-pointer"
               >
                 <div>
                   <span className="font-bold">{s.name}</span>{" "}
@@ -6553,7 +6553,7 @@ const FastAttendanceModal = ({ student, onClose, onSave }) => {
               onClick={() => {
                 setBaseDate(new Date(baseDate.getFullYear(), baseDate.getMonth() - 1, 1));
               }}
-              className="px-4 py-2 bg-white border rounded-lg hover:bg-slate-50 text-sm font-bold shadow-sm"
+              className="px-4 py-2 bg-white border rounded-lg hover:bg-slate-50 active:bg-slate-100 text-sm font-bold shadow-sm"
             >
               ◀ 이전 달
             </button>
@@ -6561,7 +6561,7 @@ const FastAttendanceModal = ({ student, onClose, onSave }) => {
               onClick={() => {
                 setBaseDate(new Date(baseDate.getFullYear(), baseDate.getMonth() + 1, 1));
               }}
-              className="px-4 py-2 bg-white border rounded-lg hover:bg-slate-50 text-sm font-bold shadow-sm"
+              className="px-4 py-2 bg-white border rounded-lg hover:bg-slate-50 active:bg-slate-100 text-sm font-bold shadow-sm"
             >
               다음 달 ▶
             </button>
@@ -6743,7 +6743,7 @@ const FastPaymentModal = ({ student, onClose, onSave }) => {
               onClick={() => {
                 setBaseDate(new Date(baseDate.getFullYear(), baseDate.getMonth() - 1, 1));
               }}
-              className="px-4 py-2 bg-white border rounded-lg hover:bg-slate-50 text-sm font-bold shadow-sm"
+              className="px-4 py-2 bg-white border rounded-lg hover:bg-slate-50 active:bg-slate-100 text-sm font-bold shadow-sm"
             >
               ◀ 이전 달
             </button>
@@ -6751,7 +6751,7 @@ const FastPaymentModal = ({ student, onClose, onSave }) => {
               onClick={() => {
                 setBaseDate(new Date(baseDate.getFullYear(), baseDate.getMonth() + 1, 1));
               }}
-              className="px-4 py-2 bg-white border rounded-lg hover:bg-slate-50 text-sm font-bold shadow-sm"
+              className="px-4 py-2 bg-white border rounded-lg hover:bg-slate-50 active:bg-slate-100 text-sm font-bold shadow-sm"
             >
               다음 달 ▶
             </button>
@@ -7769,7 +7769,7 @@ const KioskView = ({ students, onExitKiosk }) => {
                 key={n}
                 onClick={() => handleKeypad(String(n))}
                 disabled={phoneInput.length >= 4}
-                className="w-full py-4 bg-white border-2 border-slate-200 rounded-2xl text-2xl font-bold text-slate-700 hover:bg-indigo-50 hover:border-indigo-300 active:bg-indigo-100 disabled:opacity-40 transition-all shadow-sm"
+                className="w-full py-4 bg-white border-2 border-slate-200 rounded-2xl text-2xl font-bold text-slate-700 hover:bg-indigo-50 active:bg-indigo-100 hover:border-indigo-300 active:bg-indigo-100 disabled:opacity-40 transition-all shadow-sm"
               >
                 {n}
               </button>
@@ -7783,7 +7783,7 @@ const KioskView = ({ students, onExitKiosk }) => {
             <button
               onClick={() => handleKeypad("0")}
               disabled={phoneInput.length >= 4}
-              className="w-full py-4 bg-white border-2 border-slate-200 rounded-2xl text-2xl font-bold text-slate-700 hover:bg-indigo-50 hover:border-indigo-300 active:bg-indigo-100 disabled:opacity-40 transition-all shadow-sm"
+              className="w-full py-4 bg-white border-2 border-slate-200 rounded-2xl text-2xl font-bold text-slate-700 hover:bg-indigo-50 active:bg-indigo-100 hover:border-indigo-300 active:bg-indigo-100 disabled:opacity-40 transition-all shadow-sm"
             >
               0
             </button>
@@ -8856,9 +8856,9 @@ const StudentView = ({
               filteredStudents.map((s) => (
                 <tr
                   key={s.id}
-                  className="hover:bg-slate-50/50 transition-colors group"
+                  className="hover:bg-slate-50 active:bg-slate-100/50 transition-colors group"
                 >
-                  <td className="p-4 sticky left-0 bg-white group-hover:bg-slate-50 z-10 border-r border-slate-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                  <td className="p-4 sticky left-0 bg-white group-hover:bg-slate-50 active:bg-slate-100 z-10 border-r border-slate-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
                     <div className="flex flex-col gap-1.5">
                       <div className="flex items-center gap-2">
                         <span
@@ -9643,13 +9643,13 @@ const StudentManagementModal = ({
                 <div className="flex gap-2">
                   <button
                     onClick={() => moveMonth(-1)}
-                    className="px-3 py-1 bg-white border rounded text-xs hover:bg-slate-50 font-medium"
+                    className="px-3 py-1 bg-white border rounded text-xs hover:bg-slate-50 active:bg-slate-100 font-medium"
                   >
                     ◀ 이전
                   </button>
                   <button
                     onClick={() => moveMonth(1)}
-                    className="px-3 py-1 bg-white border rounded text-xs hover:bg-slate-50 font-medium"
+                    className="px-3 py-1 bg-white border rounded text-xs hover:bg-slate-50 active:bg-slate-100 font-medium"
                   >
                     다음 ▶
                   </button>
@@ -9682,13 +9682,13 @@ const StudentManagementModal = ({
                   <div className="flex gap-2">
                     <button
                       onClick={() => moveMonth(-1)}
-                      className="px-3 py-1 bg-white border rounded text-xs hover:bg-slate-50 font-medium"
+                      className="px-3 py-1 bg-white border rounded text-xs hover:bg-slate-50 active:bg-slate-100 font-medium"
                     >
                       ◀ 이전
                     </button>
                     <button
                       onClick={() => moveMonth(1)}
-                      className="px-3 py-1 bg-white border rounded text-xs hover:bg-slate-50 font-medium"
+                      className="px-3 py-1 bg-white border rounded text-xs hover:bg-slate-50 active:bg-slate-100 font-medium"
                     >
                       다음 ▶
                     </button>
@@ -10266,7 +10266,7 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
               filteredStudents.map((s) => (
                 <label
                   key={s.id}
-                  className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 cursor-pointer border-b border-slate-50"
+                  className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 active:bg-slate-100 cursor-pointer border-b border-slate-50"
                 >
                   <input
                     type="checkbox"
@@ -11149,13 +11149,14 @@ const PaymentView = ({
               <span className="font-bold text-rose-700 text-sm">결제 예정자</span>
               <span className="bg-rose-200 text-rose-800 text-xs px-1.5 py-0.5 rounded-full">{processableStudents.length}명</span>
             </div>
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b text-xs text-slate-400 uppercase">
                 <tr>
                   <th className="py-2.5 px-4 text-left">이름/과목</th>
-                  <th className="py-2.5 px-4 text-left">강사</th>
+                  <th className="py-2.5 px-4 text-left hidden sm:table-cell">강사</th>
                   <th className="py-2.5 px-4 text-right">원비</th>
-                  <th className="py-2.5 px-4 text-left">최종결제일</th>
+                  <th className="py-2.5 px-4 text-left hidden sm:table-cell">최종결제일</th>
                   <th className="py-2.5 px-4 text-center">결제방법</th>
                   <th className="py-2.5 px-4 text-center w-32">액션</th>
                 </tr>
@@ -11171,11 +11172,11 @@ const PaymentView = ({
                         <div className="text-xs text-slate-400">{s.subject}</div>
                         <span className={`text-xs px-1.5 py-0.5 rounded ${statusColor}`}>{displayStatus}</span>
                       </td>
-                      <td className="py-3 px-4 text-slate-600">{s.teacher || "-"}</td>
+                      <td className="py-3 px-4 text-slate-600 hidden sm:table-cell">{s.teacher || "-"}</td>
                       <td className="py-3 px-4 text-right font-bold text-indigo-600">
                         {Number(s.tuitionFee || 0).toLocaleString()}원
                       </td>
-                      <td className="py-3 px-4 text-xs text-slate-500">{getComputedLastPayDate(s) || "-"}</td>
+                      <td className="py-3 px-4 text-xs text-slate-500 hidden sm:table-cell">{getComputedLastPayDate(s) || "-"}</td>
                       <td className="py-3 px-4">
                         <div className="flex flex-wrap gap-1 justify-center">
                           {["현장", "계좌이체", "기타", "결제선생"].map((m) => (
@@ -11222,6 +11223,7 @@ const PaymentView = ({
                 )}
               </tbody>
             </table>
+            </div>
           </div>
 
           {/* 결제 완료자 */}
@@ -11244,12 +11246,13 @@ const PaymentView = ({
                 ))}
               </div>
             </div>
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b text-xs text-slate-400 uppercase">
                 <tr>
                   <th className="py-2.5 px-4 text-left">이름/과목</th>
-                  <th className="py-2.5 px-4 text-left">강사</th>
-                  <th className="py-2.5 px-4 text-left">결제일</th>
+                  <th className="py-2.5 px-4 text-left hidden sm:table-cell">강사</th>
+                  <th className="py-2.5 px-4 text-left hidden sm:table-cell">결제일</th>
                   <th className="py-2.5 px-4 text-right">금액</th>
                   <th className="py-2.5 px-4 text-center">결제방법</th>
                 </tr>
@@ -11261,8 +11264,8 @@ const PaymentView = ({
                       <div className="font-medium">{s.name}</div>
                       <div className="text-xs text-slate-400">{s.subject}</div>
                     </td>
-                    <td className="py-2.5 px-4 text-slate-600">{s.teacher || "-"}</td>
-                    <td className="py-2.5 px-4 text-slate-600">{p.date}</td>
+                    <td className="py-2.5 px-4 text-slate-600 hidden sm:table-cell">{s.teacher || "-"}</td>
+                    <td className="py-2.5 px-4 text-slate-600 hidden sm:table-cell">{p.date}</td>
                     <td className="py-2.5 px-4 text-right font-bold text-indigo-600">
                       {Number(p.amount || 0).toLocaleString()}원
                     </td>
@@ -11285,6 +11288,7 @@ const PaymentView = ({
                 )}
               </tbody>
             </table>
+            </div>
           </div>
 
           {/* 결제선생 청구서 현황 */}
@@ -11380,9 +11384,9 @@ const PaymentView = ({
                 </th>
               )}
               <th className="py-3 px-4">이름/과목</th>
-              <th className="py-3 px-4">강사</th>
+              <th className="py-3 px-4 hidden sm:table-cell">강사</th>
               <th className="py-3 px-4">원비</th>
-              <th className="py-3 px-4">진척도</th>
+              <th className="py-3 px-4 hidden sm:table-cell">진척도</th>
               <th className="py-3 px-4">상태</th>
               {notifMode ? (
                 <>
@@ -11402,7 +11406,7 @@ const PaymentView = ({
               return (
                 <tr
                   key={s.id}
-                  className={`border-b transition-colors ${notifMode ? (selectedIds.includes(s.id) ? "bg-indigo-50" : "hover:bg-slate-50 active:bg-slate-100") : "hover:bg-slate-50 cursor-pointer"}`}
+                  className={`border-b transition-colors ${notifMode ? (selectedIds.includes(s.id) ? "bg-indigo-50" : "hover:bg-slate-50 active:bg-slate-100") : "hover:bg-slate-50 active:bg-slate-100 cursor-pointer"}`}
                   onClick={() => { if (!notifMode) setSelectedStudentId(s.id); else toggleSelect(s.id); }}
                 >
                   {notifMode && (
@@ -11420,13 +11424,13 @@ const PaymentView = ({
                     {s.subject && <span className="text-xs text-slate-500 ml-1">({s.subject})</span>}
                     {s.phone && <div className="text-xs text-slate-400">{s.phone}</div>}
                   </td>
-                  <td className="py-3 px-4 text-sm text-slate-600">
+                  <td className="py-3 px-4 text-sm text-slate-600 hidden sm:table-cell">
                     {s.teacher || <span className="text-slate-300">-</span>}
                   </td>
                   <td className="py-3 px-4 font-bold text-indigo-600">
                     {s.tuitionFee ? Number(s.tuitionFee).toLocaleString() : 0}
                   </td>
-                  <td className="py-3 px-4 font-mono font-bold text-slate-700">
+                  <td className="py-3 px-4 font-mono font-bold text-slate-700 hidden sm:table-cell">
                     {currentUsage} / {sessionUnit}
                   </td>
                   <td className="py-3 px-4">
@@ -11506,7 +11510,7 @@ const PaymentView = ({
                     <td className="py-3 px-4 text-center">
                       <button
                         onClick={(e) => handleOpenMsgPreview(e, s)}
-                        className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                        className="p-2 text-indigo-600 hover:bg-indigo-50 active:bg-indigo-100 rounded-lg transition-colors"
                         title="안내 문자 미리보기"
                       >
                         <MessageSquareText size={18} />
@@ -11655,7 +11659,7 @@ const BulkMessageModal = ({ students, messageLogs, paymentUrl, onSaveLog, onClos
             </div>
             <button
               onClick={handleCopyAll}
-              className="px-3 py-1.5 text-xs border border-indigo-300 text-indigo-700 rounded-lg font-bold hover:bg-indigo-50 flex items-center gap-1"
+              className="px-3 py-1.5 text-xs border border-indigo-300 text-indigo-700 rounded-lg font-bold hover:bg-indigo-50 active:bg-indigo-100 flex items-center gap-1"
             >
               <Copy size={13} /> 전체 복사
             </button>
@@ -12649,7 +12653,7 @@ export default function App() {
           <h1 className="font-bold text-lg">JnC Music</h1>
           <button
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className="p-1 rounded-lg hover:bg-slate-100 transition-colors"
+            className="p-2 rounded-lg hover:bg-slate-100 active:bg-slate-200 transition-colors"
           >
             {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
           </button>
@@ -13197,7 +13201,7 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
                     const rowFee = isMonthly ? null : calcStudentFee(currentTeacher, row);
                     const hasOverride = currentTeacher && (currentTeacher.studentFeeOverrides || {})[row.studentId] != null;
                     return (
-                      <tr key={i} className="border-t hover:bg-slate-50 transition-colors">
+                      <tr key={i} className="border-t hover:bg-slate-50 active:bg-slate-100 transition-colors">
                         <td className="px-5 py-3 font-medium">
                           {row.name}
                           {hasOverride && (
@@ -13287,7 +13291,7 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
                           [t.id]: { ...prev[t.id], showOverrides: !prev[t.id]?.showOverrides },
                         }))
                       }
-                      className="px-3 py-2 text-xs font-bold border rounded-lg text-slate-600 hover:bg-slate-50 transition-colors"
+                      className="px-3 py-2 text-xs font-bold border rounded-lg text-slate-600 hover:bg-slate-50 active:bg-slate-100 transition-colors"
                     >
                       학생별 단가 {ed.showOverrides ? "▲ 닫기" : "▼ 설정"}
                     </button>
@@ -13426,7 +13430,7 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
                     const it = Math.round(gross * 0.03);
                     const lt = Math.round(gross * 0.003);
                     return (
-                      <tr key={t.id} className="border-t hover:bg-slate-50 transition-colors">
+                      <tr key={t.id} className="border-t hover:bg-slate-50 active:bg-slate-100 transition-colors">
                         <td className="px-4 py-3 font-medium">{t.name}</td>
                         <td className="px-4 py-3 text-slate-500">{t.part || "—"}</td>
                         <td className="px-4 py-3 text-right">{gross.toLocaleString()}</td>
@@ -13468,7 +13472,7 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
               <h3 className="font-bold text-slate-800">급여 명세서</h3>
               <button
                 onClick={() => setShowSlip(false)}
-                className="p-1 rounded-lg hover:bg-slate-100 transition-colors"
+                className="p-2 rounded-lg hover:bg-slate-100 active:bg-slate-200 transition-colors"
               >
                 <X size={20} />
               </button>
@@ -13771,14 +13775,14 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
           <div className="flex gap-2">
             <button
               onClick={handleDownloadImage}
-              className="p-2 rounded-lg border hover:bg-slate-50 text-slate-500 shadow-sm"
+              className="p-2 rounded-lg border hover:bg-slate-50 active:bg-slate-100 text-slate-500 shadow-sm"
               title="이미지 저장"
             >
               <Download size={18} />
             </button>
             <button
               onClick={handlePrint}
-              className="p-2 rounded-lg border hover:bg-slate-50 text-slate-500 shadow-sm"
+              className="p-2 rounded-lg border hover:bg-slate-50 active:bg-slate-100 text-slate-500 shadow-sm"
               title="출력하기"
             >
               <Printer size={18} />

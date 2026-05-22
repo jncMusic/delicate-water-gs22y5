@@ -145,7 +145,7 @@ const KyuljePreviewModal = ({ student, onConfirm, onClose, sending }) => {
             <p className="text-base font-bold text-slate-800">💳 결제선생 발송 확인</p>
             <p className="text-xs text-slate-400 mt-0.5">회차와 금액을 확인 후 발송하세요.</p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1">
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 active:bg-slate-100 p-2">
             <X size={18} />
           </button>
         </div>
@@ -198,7 +198,7 @@ const KyuljePreviewModal = ({ student, onConfirm, onClose, sending }) => {
         <div className="px-5 pb-5 pt-3 flex gap-2">
           <button
             onClick={onClose}
-            className="flex-1 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-600 font-bold hover:bg-slate-50 transition-colors"
+            className="flex-1 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-600 font-bold hover:bg-slate-50 active:bg-slate-100 transition-colors"
           >
             취소
           </button>
@@ -382,7 +382,7 @@ export const BulkMessageModal = ({
             </button>
             <button
               onClick={onClose}
-              className="text-slate-400 hover:text-slate-600 p-1"
+              className="text-slate-400 hover:text-slate-600 active:bg-slate-100 p-2"
             >
               <X size={24} />
             </button>
@@ -390,14 +390,14 @@ export const BulkMessageModal = ({
         </div>
 
         <div className="flex flex-1 overflow-hidden">
-          <div className="w-44 shrink-0 border-r overflow-y-auto bg-slate-50">
+          <div className="w-32 sm:w-44 shrink-0 border-r overflow-y-auto bg-slate-50">
             {students.map((s, idx) => {
               const lastNotif = getLastNotif(s.id);
               return (
                 <button
                   key={s.id}
                   onClick={() => setActiveIdx(idx)}
-                  className={`w-full text-left px-3 py-2.5 border-b text-sm transition-colors ${
+                  className={`w-full text-left px-2 py-2 sm:px-3 sm:py-2.5 border-b text-sm transition-colors ${
                     activeIdx === idx
                       ? "bg-indigo-100 border-l-4 border-l-indigo-600"
                       : "hover:bg-white"
@@ -1246,7 +1246,7 @@ export const PaymentView = ({
               <h3 className="text-lg font-bold flex items-center text-indigo-900">
                 <MessageSquareText className="mr-2" size={20} /> 안내 문자 미리보기
               </h3>
-              <button onClick={() => setShowMsgPreview(false)} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => setShowMsgPreview(false)} className="text-slate-400 hover:text-slate-600 active:bg-slate-100 p-2">
                 <X size={24} />
               </button>
             </div>
@@ -1510,7 +1510,7 @@ export const PaymentView = ({
               {tab.icon}
               {tab.label}
               {tab.badge > 0 && (
-                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${
                   activeTab === tab.id ? "bg-indigo-100 text-indigo-700" : "bg-slate-200 text-slate-600"
                 }`}>{tab.badge}</span>
               )}
@@ -1618,7 +1618,7 @@ export const PaymentView = ({
                               </button>
                               <button
                                 onClick={(e) => { e.stopPropagation(); setKyuljePreviewStudent(s); }}
-                                className="px-2 py-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 font-medium"
+                                className="px-2 py-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 active:bg-emerald-200 font-medium"
                               >
                                 💳
                               </button>
@@ -1875,11 +1875,11 @@ export const PaymentView = ({
                       />
                     </th>
                     <th className="py-3 px-4 text-left">이름 / 과목</th>
-                    <th className="py-3 px-4 text-left">강사</th>
+                    <th className="py-3 px-4 text-left hidden sm:table-cell">강사</th>
                     <th className="py-3 px-4 text-right">원비</th>
                     <th className="py-3 px-4 text-left">상태</th>
                     <th className="py-3 px-4 text-left">최종결제일</th>
-                    <th className="py-3 px-4 text-left">마지막 안내</th>
+                    <th className="py-3 px-4 text-left hidden sm:table-cell">마지막 안내</th>
                     <th className="py-3 px-4 text-center">액션</th>
                   </tr>
                 </thead>
@@ -1909,7 +1909,7 @@ export const PaymentView = ({
                           {s.subject && <span className="text-xs text-slate-500 ml-1">({s.subject})</span>}
                           {s.phone && <div className="text-xs text-slate-400">{s.phone}</div>}
                         </td>
-                        <td className="py-3 px-4 text-slate-600">{s.teacher || "-"}</td>
+                        <td className="py-3 px-4 text-slate-600 hidden sm:table-cell">{s.teacher || "-"}</td>
                         <td className="py-3 px-4 text-right font-bold text-indigo-600">
                           {s.tuitionFee ? Number(s.tuitionFee).toLocaleString() : 0}
                         </td>
@@ -1919,7 +1919,7 @@ export const PaymentView = ({
                         <td className="py-3 px-4 text-xs text-slate-500">
                           {(() => { const d = getComputedLastPayDate(s); return d ? `${d.slice(2,4)}/${d.slice(5,7)}/${d.slice(8,10)}` : <span className="text-slate-300">-</span>; })()}
                         </td>
-                        <td className="py-3 px-4 text-xs">
+                        <td className="py-3 px-4 text-xs hidden sm:table-cell">
                           {isPaidAfterNotif(s, lastNotif) ? (
                             <span className="font-medium text-blue-600">✅ {lastNotif} 결제완료</span>
                           ) : notifSt === "done" ? (
@@ -1938,14 +1938,14 @@ export const PaymentView = ({
                           <div className="flex items-center justify-center gap-1">
                             <button
                               onClick={(e) => handleOpenMsgPreview(e, s)}
-                              className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                              className="p-1.5 text-indigo-600 hover:bg-indigo-50 active:bg-indigo-100 rounded-lg transition-colors"
                               title="안내 문자 미리보기"
                             >
                               <MessageSquareText size={16} />
                             </button>
                             <button
                               onClick={(e) => { e.stopPropagation(); setKyuljePreviewStudent(s); }}
-                              className="px-2 py-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 font-medium"
+                              className="px-2 py-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 active:bg-emerald-200 font-medium"
                               title="결제선생 발송"
                             >💳</button>
                           </div>
@@ -1994,7 +1994,7 @@ export const PaymentView = ({
                 <thead className="bg-slate-50 border-b text-xs text-slate-400 uppercase">
                   <tr>
                     <th className="py-2.5 px-4 text-left">이름 / 과목</th>
-                    <th className="py-2.5 px-4 text-left">강사</th>
+                    <th className="py-2.5 px-4 text-left hidden sm:table-cell">강사</th>
                     <th className="py-2.5 px-4 text-right">원비</th>
                     <th className="py-2.5 px-4 text-left">최종결제일</th>
                     <th className="py-2.5 px-4 text-left">도래일 {dueSortOrder === "asc" ? "↑" : "↓"}</th>
@@ -2011,9 +2011,9 @@ export const PaymentView = ({
                         <td className="py-3 px-4">
                           <div className="font-medium">{s.name}</div>
                           <div className="text-xs text-slate-400">{s.subject}</div>
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${statusColor}`}>{displayStatus}</span>
+                          <span className={`text-xs px-1.5 py-0.5 rounded ${statusColor}`}>{displayStatus}</span>
                         </td>
-                        <td className="py-3 px-4 text-slate-600">{s.teacher || "-"}</td>
+                        <td className="py-3 px-4 text-slate-600 hidden sm:table-cell">{s.teacher || "-"}</td>
                         <td className="py-3 px-4 text-right font-bold text-indigo-600">
                           {Number(s.tuitionFee || 0).toLocaleString()}원
                         </td>
@@ -2026,7 +2026,7 @@ export const PaymentView = ({
                             return (
                               <span className={days >= 14 ? "font-bold text-rose-600" : days >= 7 ? "font-semibold text-amber-600" : "text-slate-500"}>
                                 {d.slice(5).replace("-", "/")}
-                                {days > 0 && <span className="ml-1 text-[10px]">({days}일 경과)</span>}
+                                {days > 0 && <span className="ml-1 text-xs">({days}일 경과)</span>}
                               </span>
                             );
                           })()}
@@ -2052,14 +2052,14 @@ export const PaymentView = ({
                           {method === "결제선생" ? (
                             <button
                               onClick={(e) => handleOpenMsgPreview(e, s)}
-                              className="px-3 py-1.5 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 font-medium"
+                              className="px-3 py-1.5 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 active:bg-blue-200 font-medium"
                             >
                               📱 문자 발송
                             </button>
                           ) : method ? (
                             <button
                               onClick={() => { setProcessQuickPay({ student: s, method }); setProcessPayDate(toLocalDateStr()); }}
-                              className="px-3 py-1.5 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 font-medium"
+                              className="px-3 py-1.5 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 active:bg-emerald-200 font-medium"
                             >
                               ✅ 수납 완료
                             </button>
@@ -2106,7 +2106,7 @@ export const PaymentView = ({
                 <thead className="bg-slate-50 border-b text-xs text-slate-400 uppercase">
                   <tr>
                     <th className="py-2.5 px-4 text-left">이름 / 과목</th>
-                    <th className="py-2.5 px-4 text-left">강사</th>
+                    <th className="py-2.5 px-4 text-left hidden sm:table-cell">강사</th>
                     <th className="py-2.5 px-4 text-left">결제일</th>
                     <th className="py-2.5 px-4 text-right">금액</th>
                     <th className="py-2.5 px-4 text-center">결제방법</th>
@@ -2119,7 +2119,7 @@ export const PaymentView = ({
                         <div className="font-medium">{s.name}</div>
                         <div className="text-xs text-slate-400">{s.subject}</div>
                       </td>
-                      <td className="py-2.5 px-4 text-slate-600">{s.teacher || "-"}</td>
+                      <td className="py-2.5 px-4 text-slate-600 hidden sm:table-cell">{s.teacher || "-"}</td>
                       <td className="py-2.5 px-4 text-slate-600">{p.date}</td>
                       <td className="py-2.5 px-4 text-right font-bold text-indigo-600">
                         {Number(p.amount || 0).toLocaleString()}원
@@ -2189,9 +2189,9 @@ export const PaymentView = ({
               <thead className="sticky top-0 bg-slate-50 border-b">
                 <tr className="text-slate-400 text-xs uppercase">
                   <th className="py-3 px-4 text-left">이름 / 과목</th>
-                  <th className="py-3 px-4 text-left">강사</th>
+                  <th className="py-3 px-4 text-left hidden sm:table-cell">강사</th>
                   <th className="py-3 px-4 text-right">원비</th>
-                  <th className="py-3 px-4 text-center">진척도</th>
+                  <th className="py-3 px-4 text-center hidden sm:table-cell">진척도</th>
                   <th className="py-3 px-4 text-left">상태</th>
                   <th className="py-3 px-4 text-left">최종결제일</th>
                   <th className="py-3 px-4 text-center">안내</th>
@@ -2211,11 +2211,11 @@ export const PaymentView = ({
                         {s.subject && <span className="text-xs text-slate-500 ml-1">({s.subject})</span>}
                         {s.phone && <div className="text-xs text-slate-400">{s.phone}</div>}
                       </td>
-                      <td className="py-3 px-4 text-slate-600">{s.teacher || "-"}</td>
+                      <td className="py-3 px-4 text-slate-600 hidden sm:table-cell">{s.teacher || "-"}</td>
                       <td className="py-3 px-4 text-right font-bold text-indigo-600">
                         {s.tuitionFee ? Number(s.tuitionFee).toLocaleString() : 0}
                       </td>
-                      <td className="py-3 px-4 text-center font-mono font-bold text-slate-700">
+                      <td className="py-3 px-4 text-center font-mono font-bold text-slate-700 hidden sm:table-cell">
                         {currentUsage} / {sessionUnit}
                       </td>
                       <td className="py-3 px-4">
@@ -2225,7 +2225,7 @@ export const PaymentView = ({
                       <td className="py-3 px-4 text-center" onClick={(e) => e.stopPropagation()}>
                         <button
                           onClick={(e) => handleOpenMsgPreview(e, s)}
-                          className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                          className="p-2 text-indigo-600 hover:bg-indigo-50 active:bg-indigo-100 rounded-lg transition-colors"
                           title="안내 문자 미리보기"
                         >
                           <MessageSquareText size={16} />
