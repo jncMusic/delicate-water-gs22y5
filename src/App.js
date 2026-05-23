@@ -431,25 +431,35 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
   let lastPaySessions = sessionUnit; // 마지막 결제 회차 (simple 형식에서도 사용)
 
   if (allPayments.length > 0) {
-    const lastPay = allPayments[allPayments.length - 1];
-    const lastPayStartDate = lastPay.sessionStartDate || lastPay.date;
-    lastPaySessions = lastPay.totalSessions > 0 ? lastPay.totalSessions : sessionUnit;
-    let lastPayCovered = 0;
+    // 결제 이력을 순서대로 처리 — 각 결제는 이전 결제가 커버하지 않은 수업 중
+    // sessionStartDate 이후 최대 N회를 커버 (결제 사이 미납 수업은 미납으로 보존)
+    const allCoveredSlotIndices = new Set();
 
-    for (const slot of sessionSlots) {
-      if (slot.date < lastPayStartDate) {
-        // 마지막 결제 주기 이전 수업 → 이전 결제들로 커버된 것으로 간주
-        lastCoveredDate = slot.label.replace("(당일취소)", "");
-      } else {
-        // 마지막 결제 주기 이후 수업 → lastPaySessions까지 커버, 초과는 미납
-        if (lastPayCovered < lastPaySessions) {
-          lastPayCovered += slot.weight;
-          lastCoveredDate = slot.label.replace("(당일취소)", "");
-          lastPayCoveredSlots.push(slot.label);
-        } else {
-          unpaidItems.push(slot);
+    for (let payIdx = 0; payIdx < allPayments.length; payIdx++) {
+      const pay = allPayments[payIdx];
+      const payStart = pay.sessionStartDate || pay.date;
+      const paySessions = pay.totalSessions > 0 ? pay.totalSessions : sessionUnit;
+      const isLastPay = payIdx === allPayments.length - 1;
+      if (isLastPay) lastPaySessions = paySessions;
+      let count = 0;
+
+      for (let si = 0; si < sessionSlots.length; si++) {
+        if (allCoveredSlotIndices.has(si)) continue; // 이전 결제가 이미 커버
+        if (sessionSlots[si].date < payStart) continue; // 이 결제 시작일 이전은 스킵
+        if (count < paySessions) {
+          allCoveredSlotIndices.add(si);
+          count++;
+          if (isLastPay) {
+            lastCoveredDate = sessionSlots[si].label.replace("(당일취소)", "");
+            lastPayCoveredSlots.push(sessionSlots[si].label);
+          }
         }
       }
+    }
+
+    // 미납: 어느 결제도 커버하지 않은 슬롯
+    for (let si = 0; si < sessionSlots.length; si++) {
+      if (!allCoveredSlotIndices.has(si)) unpaidItems.push(sessionSlots[si]);
     }
   } else {
     // 결제 내역 없음 → 전체 미납
