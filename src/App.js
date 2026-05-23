@@ -9295,15 +9295,23 @@ const StudentManagementModal = ({
       for (let i = 0; i < cnt; i++) corrAttSlots.push(h.date);
     });
     const sortedPayForCorr = [...payHistory].sort((a, b) => a.date.localeCompare(b.date));
-    // 선불 방식: 각 결제의 sessionStartDate부터 시작하는 첫 N회를 sessionDates로 저장
-    const correctedPayHistory = sortedPayForCorr.map((p) => {
+    // 선불 방식: 결제 순서대로 커버되지 않은 슬롯을 순차 할당 (이전 결제와 중복 없음)
+    const correctedPayHistory = [];
+    const coveredSlotIdxSet = new Set();
+    for (const p of sortedPayForCorr) {
       const ps = p.totalSessions > 0 ? p.totalSessions : newEffectiveSessions;
       const startDate = p.sessionStartDate || p.date;
-      const recalcSessionDates = corrAttSlots
-        .filter((d) => d >= startDate)
-        .slice(0, ps);
-      return { ...p, totalSessions: ps, sessionDates: recalcSessionDates };
-    });
+      const recalcSessionDates = [];
+      for (let i = 0; i < corrAttSlots.length; i++) {
+        if (coveredSlotIdxSet.has(i)) continue;
+        if (corrAttSlots[i] < startDate) continue;
+        if (recalcSessionDates.length < ps) {
+          recalcSessionDates.push(corrAttSlots[i]);
+          coveredSlotIdxSet.add(i);
+        }
+      }
+      correctedPayHistory.push({ ...p, totalSessions: ps, sessionDates: recalcSessionDates });
+    }
 
     const updatedData = {
       ...formData,
@@ -12140,10 +12148,32 @@ export default function App() {
         const cnt = h.status === "canceled" ? 1 : (h.count || 1);
         for (let i = 0; i < cnt; i++) attSlotsForPay.push(h.date);
       });
-      // sessionStartDate 이후의 수업 중 첫 N회를 이번 결제의 커버 세션으로 저장
-      const sessionDates = attSlotsForPay
-        .filter((d) => d >= realSessionStartDate)
-        .slice(0, paymentSessionUnit);
+      // 기존 결제가 이미 커버한 슬롯 인덱스 계산 (순차 방식)
+      const existingPaysSorted = [...(student.paymentHistory || [])].sort((a, b) => a.date.localeCompare(b.date));
+      const prevCoveredIdx = new Set();
+      for (const prevPay of existingPaysSorted) {
+        const prevPs = prevPay.totalSessions > 0 ? prevPay.totalSessions : paymentSessionUnit;
+        if (prevPay.sessionDates && prevPay.sessionDates.length > 0) {
+          const dc = {};
+          for (const d of prevPay.sessionDates) dc[d] = (dc[d] || 0) + 1;
+          for (let i = 0; i < attSlotsForPay.length; i++) {
+            if (dc[attSlotsForPay[i]] > 0) { dc[attSlotsForPay[i]]--; prevCoveredIdx.add(i); }
+          }
+        } else {
+          const prevStart = prevPay.sessionStartDate || prevPay.date;
+          let cnt = 0;
+          for (let i = 0; i < attSlotsForPay.length; i++) {
+            if (prevCoveredIdx.has(i) || attSlotsForPay[i] < prevStart) continue;
+            if (cnt < prevPs) { prevCoveredIdx.add(i); cnt++; }
+          }
+        }
+      }
+      // 이번 결제: 커버되지 않은 슬롯 중 realSessionStartDate 이후 첫 N개
+      const sessionDates = [];
+      for (let i = 0; i < attSlotsForPay.length; i++) {
+        if (prevCoveredIdx.has(i) || attSlotsForPay[i] < realSessionStartDate) continue;
+        if (sessionDates.length < paymentSessionUnit) sessionDates.push(attSlotsForPay[i]);
+      }
 
       const newHistoryItem = {
         date,
