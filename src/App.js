@@ -426,45 +426,35 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
       ? allPayments[allPayments.length - 1].date
       : "기록 없음";
 
+  // 선불 방식: 마지막 결제의 sessionStartDate를 기준으로 커버 계산
+  // - sessionStartDate 이전 수업: 이전 결제에서 커버된 것으로 간주
+  // - sessionStartDate 이후 수업: 마지막 결제의 totalSessions만큼 커버, 초과분은 미납
   let lastCoveredDate = "없음";
   const unpaidItems = []; // { date, label }
-  const lastPayCoveredSlots = []; // 마지막 결제가 커버한 수업만 추적
-  let lastPaySessions = sessionUnit; // 마지막 결제 회차 (simple 형식에서도 사용)
+  const recentSlots = [];
+  let lastPaySessions = sessionUnit;
 
   if (allPayments.length > 0) {
-    // UI(수납관리)와 동일 방식: 각 결제를 sessionStartDate 기준으로 독립 계산
-    const getPayDates = (pay) => {
-      if (pay.sessionDates && pay.sessionDates.length > 0) return pay.sessionDates;
-      const startDate = pay.sessionStartDate || pay.date;
-      const ps = pay.totalSessions > 0 ? pay.totalSessions : sessionUnit;
-      const result = [];
-      for (const slot of sessionSlots) {
-        if (slot.date < startDate) continue;
-        if (result.length < ps) result.push(slot.date);
-      }
-      return result;
-    };
-
-    // 마지막 결제 커버 세션
     const lastPay = allPayments[allPayments.length - 1];
+    const lastPayStartDate = lastPay.sessionStartDate || lastPay.date;
     lastPaySessions = lastPay.totalSessions > 0 ? lastPay.totalSessions : sessionUnit;
-    const lastPayDates = getPayDates(lastPay);
-    for (const d of lastPayDates) {
-      const label = d.slice(5).replace("-", "/");
-      lastPayCoveredSlots.push(label);
-    }
-    if (lastPayCoveredSlots.length > 0) {
-      lastCoveredDate = lastPayCoveredSlots[lastPayCoveredSlots.length - 1];
-    }
+    let lastPayCovered = 0;
 
-    // 미납: 모든 결제의 커버 날짜를 합산(멀티셋)해서 세션슬롯과 비교
-    const coveredCount = {};
-    for (const pay of allPayments) {
-      for (const d of getPayDates(pay)) coveredCount[d] = (coveredCount[d] || 0) + 1;
-    }
     for (const slot of sessionSlots) {
-      if (coveredCount[slot.date] > 0) coveredCount[slot.date]--;
-      else unpaidItems.push(slot);
+      if (slot.date < lastPayStartDate) {
+        // 마지막 결제 주기 이전 수업 → 이전 결제들로 커버된 것으로 간주
+        lastCoveredDate = slot.label.replace("(당일취소)", "");
+        recentSlots.push(slot.label);
+      } else {
+        // 마지막 결제 주기 이후 수업 → lastPaySessions까지 커버, 초과는 미납
+        if (lastPayCovered < lastPaySessions) {
+          lastPayCovered += slot.weight;
+          lastCoveredDate = slot.label.replace("(당일취소)", "");
+          recentSlots.push(slot.label);
+        } else {
+          unpaidItems.push(slot);
+        }
+      }
     }
   } else {
     // 결제 내역 없음 → 전체 미납
@@ -474,9 +464,9 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
   }
   const unpaidSlots = unpaidItems.map((s) => s.label);
 
-  // 수업일자: 마지막 결제가 커버한 수업 + 미납분 (이전 주기 수업 제외)
+  const recentStart = Math.max(0, recentSlots.length - lastPaySessions);
   const recentSessions =
-    [...lastPayCoveredSlots, ...unpaidSlots].join(", ") ||
+    [...recentSlots.slice(recentStart), ...unpaidSlots].join(", ") ||
     "(출석 기록 없음)";
 
   const unpaidDatesStr = unpaidSlots.length > 0 ? unpaidSlots.join(", ") : "없음";
@@ -9280,12 +9270,9 @@ const StudentManagementModal = ({
       for (let i = 0; i < cnt; i++) corrAttSlots.push(h.date);
     });
     const sortedPayForCorr = [...payHistory].sort((a, b) => a.date.localeCompare(b.date));
-    // sessionDates가 이미 있으면 유지, 없으면 sessionStartDate 기반으로 비순차 계산 (UI와 동일)
+    // 선불 방식: 각 결제의 sessionStartDate부터 시작하는 첫 N회를 sessionDates로 저장
     const correctedPayHistory = sortedPayForCorr.map((p) => {
       const ps = p.totalSessions > 0 ? p.totalSessions : newEffectiveSessions;
-      if (p.sessionDates && p.sessionDates.length > 0) {
-        return { ...p, totalSessions: ps };
-      }
       const startDate = p.sessionStartDate || p.date;
       const recalcSessionDates = corrAttSlots.filter((d) => d >= startDate).slice(0, ps);
       return { ...p, totalSessions: ps, sessionDates: recalcSessionDates };
@@ -12126,32 +12113,10 @@ export default function App() {
         const cnt = h.status === "canceled" ? 1 : (h.count || 1);
         for (let i = 0; i < cnt; i++) attSlotsForPay.push(h.date);
       });
-      // 기존 결제가 이미 커버한 슬롯 인덱스 계산 (순차 방식)
-      const existingPaysSorted = [...(student.paymentHistory || [])].sort((a, b) => a.date.localeCompare(b.date));
-      const prevCoveredIdx = new Set();
-      for (const prevPay of existingPaysSorted) {
-        const prevPs = prevPay.totalSessions > 0 ? prevPay.totalSessions : paymentSessionUnit;
-        if (prevPay.sessionDates && prevPay.sessionDates.length > 0) {
-          const dc = {};
-          for (const d of prevPay.sessionDates) dc[d] = (dc[d] || 0) + 1;
-          for (let i = 0; i < attSlotsForPay.length; i++) {
-            if (dc[attSlotsForPay[i]] > 0) { dc[attSlotsForPay[i]]--; prevCoveredIdx.add(i); }
-          }
-        } else {
-          const prevStart = prevPay.sessionStartDate || prevPay.date;
-          let cnt = 0;
-          for (let i = 0; i < attSlotsForPay.length; i++) {
-            if (prevCoveredIdx.has(i) || attSlotsForPay[i] < prevStart) continue;
-            if (cnt < prevPs) { prevCoveredIdx.add(i); cnt++; }
-          }
-        }
-      }
-      // 이번 결제: 커버되지 않은 슬롯 중 realSessionStartDate 이후 첫 N개
-      const sessionDates = [];
-      for (let i = 0; i < attSlotsForPay.length; i++) {
-        if (prevCoveredIdx.has(i) || attSlotsForPay[i] < realSessionStartDate) continue;
-        if (sessionDates.length < paymentSessionUnit) sessionDates.push(attSlotsForPay[i]);
-      }
+      // sessionStartDate 이후의 수업 중 첫 N회를 이번 결제의 커버 세션으로 저장
+      const sessionDates = attSlotsForPay
+        .filter((d) => d >= realSessionStartDate)
+        .slice(0, paymentSessionUnit);
 
       const newHistoryItem = {
         date,
