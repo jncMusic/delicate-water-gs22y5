@@ -425,30 +425,27 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
       ? allPayments[allPayments.length - 1].date
       : "기록 없음";
 
-  // 선불 방식: 마지막 결제의 sessionStartDate를 기준으로 커버 계산
-  // - sessionStartDate 이전 수업: 이전 결제에서 커버된 것으로 간주
-  // - sessionStartDate 이후 수업: 마지막 결제의 totalSessions만큼 커버, 초과분은 미납
   let lastCoveredDate = "없음";
   const unpaidItems = []; // { date, label }
-  const recentSlots = [];
+  const lastPayCoveredSlots = []; // 마지막 결제가 커버한 수업만 추적
+  let lastPaySessions = sessionUnit; // 마지막 결제 회차 (simple 형식에서도 사용)
 
   if (allPayments.length > 0) {
     const lastPay = allPayments[allPayments.length - 1];
     const lastPayStartDate = lastPay.sessionStartDate || lastPay.date;
-    const lastPaySessions = lastPay.totalSessions > 0 ? lastPay.totalSessions : sessionUnit;
+    lastPaySessions = lastPay.totalSessions > 0 ? lastPay.totalSessions : sessionUnit;
     let lastPayCovered = 0;
 
     for (const slot of sessionSlots) {
       if (slot.date < lastPayStartDate) {
         // 마지막 결제 주기 이전 수업 → 이전 결제들로 커버된 것으로 간주
         lastCoveredDate = slot.label.replace("(당일취소)", "");
-        recentSlots.push(slot.label);
       } else {
         // 마지막 결제 주기 이후 수업 → lastPaySessions까지 커버, 초과는 미납
         if (lastPayCovered < lastPaySessions) {
           lastPayCovered += slot.weight;
           lastCoveredDate = slot.label.replace("(당일취소)", "");
-          recentSlots.push(slot.label);
+          lastPayCoveredSlots.push(slot.label);
         } else {
           unpaidItems.push(slot);
         }
@@ -462,9 +459,9 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
   }
   const unpaidSlots = unpaidItems.map((s) => s.label);
 
-  const recentStart = Math.max(0, recentSlots.length - sessionUnit);
+  // 수업일자: 마지막 결제가 커버한 수업 + 미납분 (이전 주기 수업 제외)
   const recentSessions =
-    [...recentSlots.slice(recentStart), ...unpaidSlots].join(", ") ||
+    [...lastPayCoveredSlots, ...unpaidSlots].join(", ") ||
     "(출석 기록 없음)";
 
   const unpaidDatesStr = unpaidSlots.length > 0 ? unpaidSlots.join(", ") : "없음";
@@ -546,7 +543,7 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
   if (style === "simple") {
     return `안녕하세요, J&C 음악학원입니다. ${getSeasonalGreeting()}
 
-${lastPaymentMD} 결제하신 ${nameLabel}의 ${subject} ${sessionUnit}회차가 ${lastCoveredMD}에 완료되어 ${nextDateMD} 새로운 ${subject} 1회차가 시작되어 안내드립니다.${additionalUnpaidStr}
+${lastPaymentMD} 결제하신 ${nameLabel}의 ${subject} ${lastPaySessions}회차가 ${lastCoveredMD}에 완료되어 ${nextDateMD} 새로운 ${subject} 1회차가 시작되어 안내드립니다.${additionalUnpaidStr}
 
 아직 결제 전으로 확인되어 안내드리오니 이미 결제하신 경우 알려주시면 감사하겠습니다. 제로페이/서울페이 등은 결제 후 알려주셔야 확인이 되는 점 양해부탁말씀 드립니다.
 
