@@ -9280,23 +9280,16 @@ const StudentManagementModal = ({
       for (let i = 0; i < cnt; i++) corrAttSlots.push(h.date);
     });
     const sortedPayForCorr = [...payHistory].sort((a, b) => a.date.localeCompare(b.date));
-    // 선불 방식: 결제 순서대로 커버되지 않은 슬롯을 순차 할당 (이전 결제와 중복 없음)
-    const correctedPayHistory = [];
-    const coveredSlotIdxSet = new Set();
-    for (const p of sortedPayForCorr) {
+    // sessionDates가 이미 있으면 유지, 없으면 sessionStartDate 기반으로 비순차 계산 (UI와 동일)
+    const correctedPayHistory = sortedPayForCorr.map((p) => {
       const ps = p.totalSessions > 0 ? p.totalSessions : newEffectiveSessions;
-      const startDate = p.sessionStartDate || p.date;
-      const recalcSessionDates = [];
-      for (let i = 0; i < corrAttSlots.length; i++) {
-        if (coveredSlotIdxSet.has(i)) continue;
-        if (corrAttSlots[i] < startDate) continue;
-        if (recalcSessionDates.length < ps) {
-          recalcSessionDates.push(corrAttSlots[i]);
-          coveredSlotIdxSet.add(i);
-        }
+      if (p.sessionDates && p.sessionDates.length > 0) {
+        return { ...p, totalSessions: ps };
       }
-      correctedPayHistory.push({ ...p, totalSessions: ps, sessionDates: recalcSessionDates });
-    }
+      const startDate = p.sessionStartDate || p.date;
+      const recalcSessionDates = corrAttSlots.filter((d) => d >= startDate).slice(0, ps);
+      return { ...p, totalSessions: ps, sessionDates: recalcSessionDates };
+    });
 
     const updatedData = {
       ...formData,
