@@ -93,6 +93,7 @@ import {
   Send,
   Bell,
   Calculator,
+  Loader,
 } from "lucide-react";
 import html2canvas from "html2canvas"; // 🔥 이미지 저장 라이브러리 추가
 
@@ -13007,6 +13008,48 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
   const totalSessions = sessionRows.reduce((s, r) => s + r.sessions, 0);
   const grossFee = calcFee(currentTeacher, sessionRows);
   const tax = Math.round(grossFee * 0.033);
+
+  // 일괄 다운로드 상태
+  const [bulkDownloadIdx, setBulkDownloadIdx] = useState(-1);
+  const [bulkDownloadDone, setBulkDownloadDone] = useState(0);
+  const bulkSlipRef = useRef(null);
+
+  // 단가 설정된 강사만 일괄 대상
+  const bulkTeachers = useMemo(
+    () => teacherList.filter((t) => {
+      const rows = calcSessions(t.name);
+      const sess = rows.reduce((s, r) => s + r.sessions, 0);
+      return sess > 0 && calcFee(t, rows) > 0;
+    }),
+    [teacherList, calcSessions]
+  );
+
+  // 일괄 다운로드: bulkDownloadIdx 변경 시 캡처 실행
+  useEffect(() => {
+    if (bulkDownloadIdx < 0 || bulkDownloadIdx >= bulkTeachers.length) {
+      if (bulkDownloadIdx >= bulkTeachers.length) {
+        setBulkDownloadIdx(-1);
+        setBulkDownloadDone(0);
+        showToast(`${bulkTeachers.length}명 명세서 다운로드 완료`, "success");
+      }
+      return;
+    }
+    const timer = setTimeout(async () => {
+      if (!bulkSlipRef.current) return;
+      try {
+        const canvas = await html2canvas(bulkSlipRef.current, { scale: 2.5, backgroundColor: "#ffffff", useCORS: true });
+        const link = document.createElement("a");
+        link.download = `급여명세서_${bulkTeachers[bulkDownloadIdx].name}_${selectedYear}년${selectedMonth}월.png`;
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+        setBulkDownloadDone((d) => d + 1);
+        setBulkDownloadIdx((i) => i + 1);
+      } catch {
+        setBulkDownloadIdx((i) => i + 1);
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [bulkDownloadIdx]); // eslint-disable-line
   const netFee = grossFee - tax;
 
   const yearOptions = [
@@ -13266,6 +13309,19 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
                 >
                   <File size={13} /> 명세서
                 </button>
+                {bulkDownloadIdx >= 0 ? (
+                  <span className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold bg-violet-50 text-violet-700 border border-violet-200 rounded-lg">
+                    <Loader size={13} className="animate-spin" />
+                    {bulkDownloadDone}/{bulkTeachers.length}
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => { setBulkDownloadDone(0); setBulkDownloadIdx(0); }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-violet-50 text-violet-700 border border-violet-200 rounded-lg hover:bg-violet-100 transition-colors"
+                  >
+                    <Download size={13} /> 일괄 다운
+                  </button>
+                )}
               </div>
             </div>
             {sessionRows.length === 0 ? (
@@ -13548,89 +13604,202 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
       )}
 
       {/* ── 급여 명세서 모달 ── */}
-      {showSlip && (
-        <div
-          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
-          onClick={(e) => { if (e.target === e.currentTarget) setShowSlip(false); }}
-        >
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
-            <div className="flex items-center justify-between px-5 py-4 border-b">
-              <h3 className="font-bold text-slate-800">급여 명세서</h3>
-              <button
-                onClick={() => setShowSlip(false)}
-                className="p-2 rounded-lg hover:bg-slate-100 active:bg-slate-200 transition-colors"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            {/* 지급일 입력 */}
-            <div className="px-5 pt-4 pb-2 flex items-center gap-3">
-              <label className="text-xs font-bold text-slate-500 whitespace-nowrap">지급일</label>
-              <input
-                type="date"
-                value={payDate}
-                onChange={(e) => setPayDate(e.target.value)}
-                className="border rounded-lg px-3 py-1.5 text-sm flex-1"
-              />
-            </div>
-            {/* 캡처 대상 영역 */}
-            <div ref={slipRef} className="mx-5 mb-2 mt-3 border-2 border-slate-200 rounded-xl p-6 bg-white">
-              <h2 className="text-center text-lg font-bold text-slate-800 mb-1">
-                {selectedYear}년 {selectedMonth}월 급여 명세서
-              </h2>
-              <p className="text-center text-xs text-slate-400 mb-5">
-                {periodStart} ~ {periodEnd}
-              </p>
-              <div className="space-y-2.5 text-sm">
-                {[
-                  ["강사명", selectedTeacherName],
-                  ["파트", currentTeacher?.part || "—"],
-                  ["지급일", payDate],
-                ].map(([k, v]) => (
-                  <div key={k} className="flex justify-between items-center border-b pb-2">
-                    <span className="text-slate-500">{k}</span>
-                    <span className="font-bold">{v}</span>
+      {showSlip && (() => {
+        const isMonthly = (currentTeacher?.feeType || "perSession") === "monthly";
+        return (
+          <div
+            className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4 overflow-y-auto"
+            onClick={(e) => { if (e.target === e.currentTarget) setShowSlip(false); }}
+          >
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md my-4">
+              <div className="flex items-center justify-between px-5 py-4 border-b">
+                <h3 className="font-bold text-slate-800">급여 명세서 미리보기</h3>
+                <button onClick={() => setShowSlip(false)} className="p-2 rounded-lg hover:bg-slate-100 active:bg-slate-200 transition-colors"><X size={20} /></button>
+              </div>
+              <div className="px-5 pt-4 pb-2 flex items-center gap-3">
+                <label className="text-xs font-bold text-slate-500 whitespace-nowrap">지급일</label>
+                <input type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} className="border rounded-lg px-3 py-1.5 text-sm flex-1" />
+              </div>
+              {/* 캡처 대상 */}
+              <div ref={slipRef} className="mx-4 mb-2 mt-3 bg-white rounded-xl overflow-hidden" style={{ fontFamily: "sans-serif" }}>
+                {/* 헤더 */}
+                <div style={{ background: "linear-gradient(135deg,#4f46e5,#7c3aed)", padding: "24px 28px 20px" }}>
+                  <div style={{ color: "#c7d2fe", fontSize: "11px", letterSpacing: "2px", marginBottom: "4px" }}>SALARY STATEMENT</div>
+                  <div style={{ color: "#fff", fontSize: "20px", fontWeight: 800, marginBottom: "2px" }}>J&C 음악학원</div>
+                  <div style={{ color: "#e0e7ff", fontSize: "13px", fontWeight: 600 }}>{selectedYear}년 {selectedMonth}월 급여 명세서</div>
+                  <div style={{ color: "#a5b4fc", fontSize: "11px", marginTop: "6px" }}>집계 기간: {periodStart} ~ {periodEnd}</div>
+                </div>
+                {/* 강사 정보 */}
+                <div style={{ background: "#f8fafc", padding: "16px 28px", borderBottom: "1px solid #e2e8f0" }}>
+                  <div style={{ display: "flex", gap: "32px", flexWrap: "wrap" }}>
+                    {[
+                      ["강사명", currentTeacher?.name || selectedTeacherName],
+                      ["파트", currentTeacher?.part || "—"],
+                      ["지급일", payDate],
+                    ].map(([k, v]) => (
+                      <div key={k}>
+                        <div style={{ fontSize: "10px", color: "#94a3b8", marginBottom: "2px" }}>{k}</div>
+                        <div style={{ fontSize: "14px", fontWeight: 700, color: "#1e293b" }}>{v}</div>
+                      </div>
+                    ))}
+                    {currentTeacher?.bankName && (
+                      <div>
+                        <div style={{ fontSize: "10px", color: "#94a3b8", marginBottom: "2px" }}>계좌번호</div>
+                        <div style={{ fontSize: "13px", fontWeight: 600, color: "#1e293b" }}>{currentTeacher.bankName} {currentTeacher.bankAccount}</div>
+                      </div>
+                    )}
                   </div>
-                ))}
-                <div className="flex justify-between items-center border-b pb-2">
-                  <span className="text-slate-500">담당 학생 수</span>
-                  <span className="font-bold">{sessionRows.length}명</span>
                 </div>
-                <div className="flex justify-between items-center border-b pb-2">
-                  <span className="text-slate-500">총 수업 횟수</span>
-                  <span className="font-bold">{totalSessions}회</span>
+                {/* 수업 내역 테이블 */}
+                {!isMonthly && sessionRows.length > 0 && (
+                  <div style={{ padding: "16px 28px" }}>
+                    <div style={{ fontSize: "11px", fontWeight: 700, color: "#6366f1", marginBottom: "8px", letterSpacing: "1px" }}>수업 내역</div>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                      <thead>
+                        <tr style={{ borderBottom: "2px solid #e2e8f0" }}>
+                          {["학생명", "회차", "강사료"].map((h) => (
+                            <th key={h} style={{ padding: "6px 4px", textAlign: h === "강사료" ? "right" : "left", color: "#64748b", fontWeight: 600, fontSize: "11px" }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sessionRows.map((row, i) => {
+                          const rowFee = calcStudentFee(currentTeacher, row);
+                          return (
+                            <tr key={i} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                              <td style={{ padding: "5px 4px", color: "#334155" }}>{row.name}</td>
+                              <td style={{ padding: "5px 4px", color: "#64748b" }}>{row.sessions}회</td>
+                              <td style={{ padding: "5px 4px", textAlign: "right", color: "#334155" }}>{rowFee.toLocaleString()}원</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {/* 급여 계산 */}
+                <div style={{ background: "#f8fafc", padding: "16px 28px", borderTop: "1px solid #e2e8f0" }}>
+                  <div style={{ fontSize: "11px", fontWeight: 700, color: "#6366f1", marginBottom: "10px", letterSpacing: "1px" }}>급여 계산</div>
+                  {[
+                    ["담당 학생 수", `${sessionRows.length}명`, "#334155", false],
+                    ["총 수업 횟수", `${totalSessions}회`, "#334155", false],
+                    ["강사료", `${grossFee.toLocaleString()}원`, "#1e293b", true],
+                    ["소득세 (3%)", `-${Math.round(grossFee * 0.03).toLocaleString()}원`, "#dc2626", false],
+                    ["지방소득세 (0.3%)", `-${Math.round(grossFee * 0.003).toLocaleString()}원`, "#dc2626", false],
+                  ].map(([k, v, color, bold]) => (
+                    <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid #e2e8f0" }}>
+                      <span style={{ color: "#64748b", fontSize: "13px" }}>{k}</span>
+                      <span style={{ color, fontWeight: bold ? 700 : 500, fontSize: "13px" }}>{v}</span>
+                    </div>
+                  ))}
+                  <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0 4px", marginTop: "4px", borderTop: "2px solid #6366f1" }}>
+                    <span style={{ fontSize: "16px", fontWeight: 800, color: "#1e293b" }}>실지급액</span>
+                    <span style={{ fontSize: "18px", fontWeight: 800, color: "#059669" }}>{netFee.toLocaleString()}원</span>
+                  </div>
                 </div>
-                <div className="h-1" />
-                <div className="flex justify-between items-center border-b pb-2">
-                  <span className="text-slate-500">강사료</span>
-                  <span className="font-bold">{grossFee.toLocaleString()}원</span>
-                </div>
-                <div className="flex justify-between items-center border-b pb-2">
-                  <span className="text-slate-500">세금 (3.3%)</span>
-                  <span className="font-bold text-rose-600">-{tax.toLocaleString()}원</span>
-                </div>
-                <div className="flex justify-between items-center pt-1">
-                  <span className="text-base font-bold">지급액</span>
-                  <span className="text-base font-bold text-emerald-700">{netFee.toLocaleString()}원</span>
+                {/* 하단 서명 */}
+                <div style={{ padding: "14px 28px", display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "12px", borderTop: "1px solid #e2e8f0" }}>
+                  <span style={{ fontSize: "12px", color: "#64748b" }}>{payDate} &nbsp; J&C 음악학원장 강열혁</span>
+                  <div style={{ width: "44px", height: "44px", borderRadius: "50%", border: "2px solid #6366f1", display: "flex", alignItems: "center", justifyContent: "center", color: "#6366f1", fontSize: "11px", fontWeight: 700 }}>인</div>
                 </div>
               </div>
-              <div className="mt-6 pt-4 border-t text-right">
-                <p className="text-sm text-slate-600">
-                  {payDate}&nbsp;&nbsp;J&amp;C 음악학원장 강열혁 (인)
-                </p>
+              <div className="px-5 pb-5 pt-3">
+                <button onClick={handleSaveSlipImage} className="w-full flex items-center justify-center gap-2 py-3 text-sm font-bold bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 active:bg-indigo-800 transition-colors">
+                  <Download size={16} /> 이미지 저장
+                </button>
               </div>
-            </div>
-            <div className="px-5 pb-5 pt-3">
-              <button
-                onClick={handleSaveSlipImage}
-                className="w-full flex items-center justify-center gap-2 py-3 text-sm font-bold bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors"
-              >
-                <Download size={16} /> 이미지 저장
-              </button>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
+
+      {/* ── 일괄 다운로드용 화면 밖 렌더링 ── */}
+      {bulkDownloadIdx >= 0 && bulkDownloadIdx < bulkTeachers.length && (() => {
+        const t = bulkTeachers[bulkDownloadIdx];
+        const rows = calcSessions(t.name);
+        const gross = calcFee(t, rows);
+        const taxAmt = Math.round(gross * 0.033);
+        const net = gross - taxAmt;
+        const totalSess = rows.reduce((s, r) => s + r.sessions, 0);
+        const isMonthly = (t.feeType || "perSession") === "monthly";
+        return (
+          <div style={{ position: "fixed", left: "-9999px", top: 0, zIndex: -1 }}>
+            <div ref={bulkSlipRef} style={{ width: "480px", background: "#fff", fontFamily: "sans-serif", borderRadius: "12px", overflow: "hidden" }}>
+              <div style={{ background: "linear-gradient(135deg,#4f46e5,#7c3aed)", padding: "24px 28px 20px" }}>
+                <div style={{ color: "#c7d2fe", fontSize: "11px", letterSpacing: "2px", marginBottom: "4px" }}>SALARY STATEMENT</div>
+                <div style={{ color: "#fff", fontSize: "20px", fontWeight: 800, marginBottom: "2px" }}>J&C 음악학원</div>
+                <div style={{ color: "#e0e7ff", fontSize: "13px", fontWeight: 600 }}>{selectedYear}년 {selectedMonth}월 급여 명세서</div>
+                <div style={{ color: "#a5b4fc", fontSize: "11px", marginTop: "6px" }}>집계 기간: {periodStart} ~ {periodEnd}</div>
+              </div>
+              <div style={{ background: "#f8fafc", padding: "16px 28px", borderBottom: "1px solid #e2e8f0" }}>
+                <div style={{ display: "flex", gap: "32px", flexWrap: "wrap" }}>
+                  {[["강사명", t.name], ["파트", t.part || "—"], ["지급일", payDate]].map(([k, v]) => (
+                    <div key={k}>
+                      <div style={{ fontSize: "10px", color: "#94a3b8", marginBottom: "2px" }}>{k}</div>
+                      <div style={{ fontSize: "14px", fontWeight: 700, color: "#1e293b" }}>{v}</div>
+                    </div>
+                  ))}
+                  {t.bankName && (
+                    <div>
+                      <div style={{ fontSize: "10px", color: "#94a3b8", marginBottom: "2px" }}>계좌번호</div>
+                      <div style={{ fontSize: "13px", fontWeight: 600, color: "#1e293b" }}>{t.bankName} {t.bankAccount}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+              {!isMonthly && rows.length > 0 && (
+                <div style={{ padding: "16px 28px" }}>
+                  <div style={{ fontSize: "11px", fontWeight: 700, color: "#6366f1", marginBottom: "8px", letterSpacing: "1px" }}>수업 내역</div>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                    <thead>
+                      <tr style={{ borderBottom: "2px solid #e2e8f0" }}>
+                        {["학생명", "회차", "강사료"].map((h) => (
+                          <th key={h} style={{ padding: "6px 4px", textAlign: h === "강사료" ? "right" : "left", color: "#64748b", fontWeight: 600, fontSize: "11px" }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((row, i) => {
+                        const rowFee = calcStudentFee(t, row);
+                        return (
+                          <tr key={i} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                            <td style={{ padding: "5px 4px", color: "#334155" }}>{row.name}</td>
+                            <td style={{ padding: "5px 4px", color: "#64748b" }}>{row.sessions}회</td>
+                            <td style={{ padding: "5px 4px", textAlign: "right", color: "#334155" }}>{rowFee.toLocaleString()}원</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <div style={{ background: "#f8fafc", padding: "16px 28px", borderTop: "1px solid #e2e8f0" }}>
+                <div style={{ fontSize: "11px", fontWeight: 700, color: "#6366f1", marginBottom: "10px", letterSpacing: "1px" }}>급여 계산</div>
+                {[
+                  ["담당 학생 수", `${rows.length}명`, "#334155", false],
+                  ["총 수업 횟수", `${totalSess}회`, "#334155", false],
+                  ["강사료", `${gross.toLocaleString()}원`, "#1e293b", true],
+                  ["소득세 (3%)", `-${Math.round(gross * 0.03).toLocaleString()}원`, "#dc2626", false],
+                  ["지방소득세 (0.3%)", `-${Math.round(gross * 0.003).toLocaleString()}원`, "#dc2626", false],
+                ].map(([k, v, color, bold]) => (
+                  <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid #e2e8f0" }}>
+                    <span style={{ color: "#64748b", fontSize: "13px" }}>{k}</span>
+                    <span style={{ color, fontWeight: bold ? 700 : 500, fontSize: "13px" }}>{v}</span>
+                  </div>
+                ))}
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0 4px", marginTop: "4px", borderTop: "2px solid #6366f1" }}>
+                  <span style={{ fontSize: "16px", fontWeight: 800, color: "#1e293b" }}>실지급액</span>
+                  <span style={{ fontSize: "18px", fontWeight: 800, color: "#059669" }}>{net.toLocaleString()}원</span>
+                </div>
+              </div>
+              <div style={{ padding: "14px 28px", display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "12px", borderTop: "1px solid #e2e8f0" }}>
+                <span style={{ fontSize: "12px", color: "#64748b" }}>{payDate} &nbsp; J&C 음악학원장 강열혁</span>
+                <div style={{ width: "44px", height: "44px", borderRadius: "50%", border: "2px solid #6366f1", display: "flex", alignItems: "center", justifyContent: "center", color: "#6366f1", fontSize: "11px", fontWeight: 700 }}>인</div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };
