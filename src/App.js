@@ -438,21 +438,40 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
 
     for (let payIdx = 0; payIdx < allPayments.length; payIdx++) {
       const pay = allPayments[payIdx];
-      const payStart = pay.sessionStartDate || pay.date;
-      const paySessions = pay.totalSessions > 0 ? pay.totalSessions : sessionUnit;
       const isLastPay = payIdx === allPayments.length - 1;
+      const paySessions = pay.totalSessions > 0 ? pay.totalSessions : sessionUnit;
       if (isLastPay) lastPaySessions = paySessions;
-      let count = 0;
 
-      for (let si = 0; si < sessionSlots.length; si++) {
-        if (allCoveredSlotIndices.has(si)) continue; // 이전 결제가 이미 커버
-        if (sessionSlots[si].date < payStart) continue; // 이 결제 시작일 이전은 스킵
-        if (count < paySessions) {
-          allCoveredSlotIndices.add(si);
-          count++;
-          if (isLastPay) {
-            lastCoveredDate = sessionSlots[si].label.replace("(당일취소)", "");
-            lastPayCoveredSlots.push(sessionSlots[si].label);
+      if (pay.sessionDates && pay.sessionDates.length > 0) {
+        // 저장된 sessionDates를 우선 사용 — 재계산 오류 방지
+        const dateCount = {};
+        for (const d of pay.sessionDates) dateCount[d] = (dateCount[d] || 0) + 1;
+        for (let si = 0; si < sessionSlots.length; si++) {
+          if (allCoveredSlotIndices.has(si)) continue;
+          const d = sessionSlots[si].date;
+          if (dateCount[d] > 0) {
+            dateCount[d]--;
+            allCoveredSlotIndices.add(si);
+            if (isLastPay) {
+              lastCoveredDate = sessionSlots[si].label.replace("(당일취소)", "");
+              lastPayCoveredSlots.push(sessionSlots[si].label);
+            }
+          }
+        }
+      } else {
+        // sessionDates 없으면 날짜 기반 순차 커버리지로 폴백
+        const payStart = pay.sessionStartDate || pay.date;
+        let count = 0;
+        for (let si = 0; si < sessionSlots.length; si++) {
+          if (allCoveredSlotIndices.has(si)) continue;
+          if (sessionSlots[si].date < payStart) continue;
+          if (count < paySessions) {
+            allCoveredSlotIndices.add(si);
+            count++;
+            if (isLastPay) {
+              lastCoveredDate = sessionSlots[si].label.replace("(당일취소)", "");
+              lastPayCoveredSlots.push(sessionSlots[si].label);
+            }
           }
         }
       }
