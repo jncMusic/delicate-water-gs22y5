@@ -13747,34 +13747,7 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
                   )}
                 </div>
               </div>
-              {!isMonthly && rows.length > 0 && (
-                <div style={{ padding: "16px 28px" }}>
-                  <div style={{ fontSize: "11px", fontWeight: 700, color: "#6366f1", marginBottom: "8px", letterSpacing: "1px" }}>수업 내역</div>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
-                    <thead>
-                      <tr style={{ borderBottom: "2px solid #e2e8f0" }}>
-                        {["학생명", "회차", "강사료"].map((h) => (
-                          <th key={h} style={{ padding: "6px 4px", textAlign: h === "강사료" ? "right" : "left", color: "#64748b", fontWeight: 600, fontSize: "11px" }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rows.map((row, i) => {
-                        const rowFee = calcStudentFee(t, row);
-                        return (
-                          <tr key={i} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                            <td style={{ padding: "5px 4px", color: "#334155" }}>{row.name}</td>
-                            <td style={{ padding: "5px 4px", color: "#64748b" }}>{row.sessions}회</td>
-                            <td style={{ padding: "5px 4px", textAlign: "right", color: "#334155" }}>{rowFee.toLocaleString()}원</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
               <div style={{ background: "#f8fafc", padding: "16px 28px", borderTop: "1px solid #e2e8f0" }}>
-                <div style={{ fontSize: "11px", fontWeight: 700, color: "#6366f1", marginBottom: "10px", letterSpacing: "1px" }}>급여 계산</div>
                 {[
                   ["담당 학생 수", `${rows.length}명`, "#334155", false],
                   ["총 수업 횟수", `${totalSess}회`, "#334155", false],
@@ -13782,7 +13755,7 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
                   ["소득세 (3%)", `-${Math.round(gross * 0.03).toLocaleString()}원`, "#dc2626", false],
                   ["지방소득세 (0.3%)", `-${Math.round(gross * 0.003).toLocaleString()}원`, "#dc2626", false],
                 ].map(([k, v, color, bold]) => (
-                  <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid #e2e8f0" }}>
+                  <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid #e2e8f0" }}>
                     <span style={{ color: "#64748b", fontSize: "13px" }}>{k}</span>
                     <span style={{ color, fontWeight: bold ? 700 : 500, fontSize: "13px" }}>{v}</span>
                   </div>
