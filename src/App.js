@@ -432,31 +432,47 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
   let lastPaySessions = sessionUnit; // 마지막 결제 회차 (simple 형식에서도 사용)
 
   if (allPayments.length > 0) {
-    // 마지막 결제의 sessionDates를 그대로 읽어서 표시
-    const lastPay = allPayments[allPayments.length - 1];
-    lastPaySessions = lastPay.totalSessions > 0 ? lastPay.totalSessions : sessionUnit;
+    // sessionDates 있으면 그대로, 없으면 sessionStartDate 기반 순차 폴백
+    const coveredIndices = new Set();
 
-    if (lastPay.sessionDates && lastPay.sessionDates.length > 0) {
-      for (const d of lastPay.sessionDates) {
-        const label = d.slice(5).replace("-", "/");
-        lastPayCoveredSlots.push(label);
-      }
-      lastCoveredDate = lastPayCoveredSlots[lastPayCoveredSlots.length - 1];
-    }
+    for (let payIdx = 0; payIdx < allPayments.length; payIdx++) {
+      const pay = allPayments[payIdx];
+      const isLast = payIdx === allPayments.length - 1;
+      const paySessions = pay.totalSessions > 0 ? pay.totalSessions : sessionUnit;
+      if (isLast) lastPaySessions = paySessions;
 
-    // 전체 결제의 sessionDates를 합산해 커버 여부 판단 (멀티셋)
-    const coveredCount = {};
-    for (const pay of allPayments) {
-      for (const d of (pay.sessionDates || [])) {
-        coveredCount[d] = (coveredCount[d] || 0) + 1;
-      }
-    }
-    for (const slot of sessionSlots) {
-      if (coveredCount[slot.date] > 0) {
-        coveredCount[slot.date]--;
+      // 이 결제가 커버하는 날짜 목록
+      let paySlotDates;
+      if (pay.sessionDates && pay.sessionDates.length > 0) {
+        paySlotDates = pay.sessionDates;
       } else {
-        unpaidItems.push(slot);
+        const startDate = pay.sessionStartDate || pay.date;
+        paySlotDates = [];
+        for (let i = 0; i < sessionSlots.length; i++) {
+          if (coveredIndices.has(i) || sessionSlots[i].date < startDate) continue;
+          if (paySlotDates.length < paySessions) paySlotDates.push(sessionSlots[i].date);
+        }
       }
+
+      // 해당 날짜들을 sessionSlots 인덱스와 매칭해 커버 표시
+      const dc = {};
+      for (const d of paySlotDates) dc[d] = (dc[d] || 0) + 1;
+      for (let i = 0; i < sessionSlots.length; i++) {
+        if (coveredIndices.has(i)) continue;
+        const d = sessionSlots[i].date;
+        if (dc[d] > 0) {
+          dc[d]--;
+          coveredIndices.add(i);
+          if (isLast) {
+            lastCoveredDate = sessionSlots[i].label.replace("(당일취소)", "");
+            lastPayCoveredSlots.push(sessionSlots[i].label);
+          }
+        }
+      }
+    }
+
+    for (let i = 0; i < sessionSlots.length; i++) {
+      if (!coveredIndices.has(i)) unpaidItems.push(sessionSlots[i]);
     }
   } else {
     // 결제 내역 없음 → 전체 미납
