@@ -1836,19 +1836,31 @@ const PaymentManagementModal = ({ students, messageLogs, onClose, user, onNaviga
         : students.filter((s) => s.status === "재원");
     const expired = [];
     const overdue = [];
+    // 마지막 결제의 sessionStartDate 이후 출석만 비교 (누적 비교 X)
+    // 원 데이터만 사용: paymentHistory.sessionStartDate, paymentHistory.totalSessions, attendanceHistory
     for (const s of filtered) {
-      const attended = (s.attendanceHistory || [])
-        .filter((h) => h.status === "present" || h.status === "canceled")
-        .reduce((sum, h) => sum + (h.status === "canceled" ? 1 : (h.count || 1)), 0);
-      const sessionUnit = getEffectiveSessions(s);
-      const sortedPays = [...(s.paymentHistory || [])].sort((a, b) => a.date.localeCompare(b.date));
-      const capacity = sortedPays.reduce(
-        (sum, p) => sum + (p.totalSessions > 0 ? p.totalSessions : sessionUnit),
-        0
+      const sortedPays = [...(s.paymentHistory || [])].sort((a, b) =>
+        a.date.localeCompare(b.date)
       );
-      const remaining = capacity - attended;
-      if (remaining < 0) overdue.push(s);
-      else if (remaining === 0 && capacity > 0) expired.push(s);
+      if (sortedPays.length === 0) continue;
+      const lastPay = sortedPays[sortedPays.length - 1];
+      const lastPaySessions =
+        lastPay.totalSessions > 0
+          ? lastPay.totalSessions
+          : getEffectiveSessions(s);
+      const lastPayStart = lastPay.sessionStartDate || lastPay.date;
+      const attendedInCycle = (s.attendanceHistory || [])
+        .filter(
+          (h) =>
+            (h.status === "present" || h.status === "canceled") &&
+            h.date >= lastPayStart
+        )
+        .reduce(
+          (sum, h) => sum + (h.status === "canceled" ? 1 : (h.count || 1)),
+          0
+        );
+      if (attendedInCycle > lastPaySessions) overdue.push(s);
+      else if (attendedInCycle === lastPaySessions) expired.push(s);
     }
     return { expiredStudents: expired, overdueStudents: overdue };
   }, [students, user]);
