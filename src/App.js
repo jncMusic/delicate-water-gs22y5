@@ -372,6 +372,25 @@ const getEffectiveSessions = (student) => {
   return scheduleCount >= 2 ? 8 : 4;
 };
 
+// 결제 주기별 유효 세션 날짜 배열 (sessionDates 불완전 시 sessionStartDate 기반 재계산)
+const getPaymentDates = (payment, student) => {
+  const payUnit =
+    payment.totalSessions > 0
+      ? payment.totalSessions
+      : getEffectiveSessions(student);
+  if (payment.sessionDates && payment.sessionDates.length >= payUnit) {
+    return payment.sessionDates;
+  }
+  const startDate = payment.sessionStartDate || payment.date;
+  const attSlots = (student.attendanceHistory || [])
+    .filter((h) => h.status === "present" || h.status === "canceled")
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .flatMap((h) =>
+      Array(h.status === "canceled" ? 1 : (h.count || 1)).fill(h.date)
+    );
+  return attSlots.filter((d) => d >= startDate).slice(0, payUnit);
+};
+
 // =================================================================
 // 4-1. 결제 안내 메시지 생성 헬퍼 (PaymentView 및 안내 발송 기능에서 공용)
 // =================================================================
@@ -4120,24 +4139,6 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
       });
       setAttendanceMenu(null);
     }
-  };
-
-  // 결제 주기별 유효 세션 날짜 배열 반환 (sessionDates 불완전 시 sessionStartDate 기반 재계산)
-  const getPaymentDates = (payment, student) => {
-    const payUnit =
-      payment.totalSessions > 0
-        ? payment.totalSessions
-        : getEffectiveSessions(student);
-    if (payment.sessionDates && payment.sessionDates.length >= payUnit) {
-      return payment.sessionDates;
-    }
-    // sessionDates 불완전 → sessionStartDate 기반 동적 재계산 (payment view fallback과 동일)
-    const startDate = payment.sessionStartDate || payment.date;
-    const attSlots = (student.attendanceHistory || [])
-      .filter((h) => h.status === "present" || h.status === "canceled")
-      .sort((a, b) => a.date.localeCompare(b.date))
-      .flatMap((h) => Array(h.status === "canceled" ? 1 : (h.count || 1)).fill(h.date));
-    return attSlots.filter((d) => d >= startDate).slice(0, payUnit);
   };
 
   const getSessionCount = (student, targetDate) => {
