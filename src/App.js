@@ -4122,24 +4122,36 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
     }
   };
 
-  // sessionDates에서 해당 날짜의 결제 주기 내 위치를 반환 (없으면 null)
-  const getSessionPosFromPayment = (student, targetDate) => {
-    const payments = [...(student.paymentHistory || [])]
-      .filter((p) => p.sessionDates && p.sessionDates.length > 0)
-      .sort((a, b) => a.date.localeCompare(b.date));
-    for (const payment of payments) {
-      const idx = payment.sessionDates.indexOf(targetDate);
-      if (idx !== -1) return idx + 1; // 1-indexed
+  // 결제 주기별 유효 세션 날짜 배열 반환 (sessionDates 불완전 시 sessionStartDate 기반 재계산)
+  const getPaymentDates = (payment, student) => {
+    const payUnit =
+      payment.totalSessions > 0
+        ? payment.totalSessions
+        : getEffectiveSessions(student);
+    if (payment.sessionDates && payment.sessionDates.length >= payUnit) {
+      return payment.sessionDates;
     }
-    return null;
+    // sessionDates 불완전 → sessionStartDate 기반 동적 재계산 (payment view fallback과 동일)
+    const startDate = payment.sessionStartDate || payment.date;
+    const attSlots = (student.attendanceHistory || [])
+      .filter((h) => h.status === "present" || h.status === "canceled")
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .flatMap((h) => Array(h.status === "canceled" ? 1 : (h.count || 1)).fill(h.date));
+    return attSlots.filter((d) => d >= startDate).slice(0, payUnit);
   };
 
   const getSessionCount = (student, targetDate) => {
-    // sessionDates 기준으로 결제 주기 내 위치 반환 (수납관리와 일치)
-    const posFromPayment = getSessionPosFromPayment(student, targetDate);
-    if (posFromPayment !== null) return posFromPayment;
+    // 결제 주기 내 위치 반환 (수납관리와 일치)
+    const sortedPayments = [...(student.paymentHistory || [])].sort((a, b) =>
+      a.date.localeCompare(b.date)
+    );
+    for (const payment of sortedPayments) {
+      const dates = getPaymentDates(payment, student);
+      const idx = dates.indexOf(targetDate);
+      if (idx !== -1) return idx + 1;
+    }
 
-    // fallback: sessionDates 없는 경우 누적 출석 기반 순환
+    // 미납 세션 → 누적 출석 기반 순환 fallback
     const total = getEffectiveSessions(student);
     const sessions = (student.attendanceHistory || [])
       .filter((h) => h.status === "present" || h.status === "canceled")
@@ -4155,22 +4167,21 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
 
   // [기능1] 해당 날짜가 학생의 현재 결제 사이클 마지막 회차인지 여부
   const isLastSessionOfCycle = (student, targetDate) => {
-    // sessionDates 기준: 결제의 마지막 슬롯 날짜인지 확인
-    const payments = [...(student.paymentHistory || [])]
-      .filter((p) => p.sessionDates && p.sessionDates.length > 0)
-      .sort((a, b) => a.date.localeCompare(b.date));
-    for (const payment of payments) {
-      const dates = payment.sessionDates;
+    const sortedPayments = [...(student.paymentHistory || [])].sort((a, b) =>
+      a.date.localeCompare(b.date)
+    );
+    for (const payment of sortedPayments) {
+      const dates = getPaymentDates(payment, student);
       const idx = dates.indexOf(targetDate);
       if (idx === -1) continue;
-      // 이 날짜가 결제의 마지막 슬롯인지 확인 (연강 포함)
-      const attRecord = (student.attendanceHistory || []).find((h) => h.date === targetDate);
+      const attRecord = (student.attendanceHistory || []).find(
+        (h) => h.date === targetDate
+      );
       const cnt = attRecord?.status === "canceled" ? 1 : (attRecord?.count || 1);
-      // targetDate의 마지막 슬롯 위치가 sessionDates 전체 길이와 같으면 마지막 회차
       return idx + cnt >= dates.length;
     }
 
-    // fallback: sessionDates 없는 경우 누적 출석 기반 순환
+    // 미납 세션 → 누적 출석 기반 순환 fallback
     const total = getEffectiveSessions(student);
     const sessions = (student.attendanceHistory || [])
       .filter((h) => h.status === "present" || h.status === "canceled")
@@ -4800,22 +4811,23 @@ const ClassLogView = ({ students, teachers, user, showToast }) => {
   for (let i = 0; i < firstDay; i++) days.push(null);
   for (let i = 1; i <= daysInMonth; i++) days.push(i);
   const getSessionNumbers = (student, targetDate) => {
-    // sessionDates 기준으로 결제 주기 내 위치 배열 반환 (수납관리와 일치)
-    // 연강(count=2)이면 [n, n+1] 두 회차를 반환, 일반은 [n] 한 개
-    const payments = [...(student.paymentHistory || [])]
-      .filter((p) => p.sessionDates && p.sessionDates.length > 0)
-      .sort((a, b) => a.date.localeCompare(b.date));
-    for (const payment of payments) {
-      const dates = payment.sessionDates;
+    // 결제 주기 내 위치 배열 반환 (수납관리와 일치, 연강=[n,n+1])
+    const sortedPayments = [...(student.paymentHistory || [])].sort((a, b) =>
+      a.date.localeCompare(b.date)
+    );
+    for (const payment of sortedPayments) {
+      const dates = getPaymentDates(payment, student);
       const idx = dates.indexOf(targetDate);
       if (idx !== -1) {
-        const attRecord = (student.attendanceHistory || []).find((h) => h.date === targetDate);
+        const attRecord = (student.attendanceHistory || []).find(
+          (h) => h.date === targetDate
+        );
         const cnt = attRecord?.status === "canceled" ? 1 : (attRecord?.count || 1);
         return Array.from({ length: cnt }, (_, i) => idx + i + 1);
       }
     }
 
-    // fallback: sessionDates 없는 경우 누적 출석 기반 순환
+    // 미납 세션 → 누적 출석 기반 순환 fallback
     const total = getEffectiveSessions(student);
     const sessions = (student.attendanceHistory || [])
       .filter((h) => h.status === "present" || h.status === "canceled")
