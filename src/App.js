@@ -10524,13 +10524,20 @@ const PaymentView = ({
     let isCompleted = false;
 
     if (sortedPayments.length > 0) {
-      // 선불: 마지막 결제의 sessionStartDate 이후 출석 횟수로 판단
       const lastPay = sortedPayments[sortedPayments.length - 1];
       const lastPayStart = lastPay.sessionStartDate || lastPay.date;
       lastPayUnit = lastPay.totalSessions > 0 ? lastPay.totalSessions : sessionUnit;
-      currentUsage = (s.attendanceHistory || [])
-        .filter((h) => (h.status === "present" || h.status === "canceled") && h.date >= lastPayStart)
-        .reduce((sum, h) => sum + (h.status === "canceled" ? 1 : (h.count || 1)), 0);
+      if (lastPay.sessionDates && lastPay.sessionDates.length >= lastPayUnit) {
+        // sessionDates가 완전히 저장된 경우: 해당 날짜의 출석만 카운트 (결제일 이전 날짜 포함)
+        currentUsage = (s.attendanceHistory || [])
+          .filter((h) => (h.status === "present" || h.status === "canceled") && lastPay.sessionDates.includes(h.date))
+          .reduce((sum, h) => sum + (h.status === "canceled" ? 1 : (h.count || 1)), 0);
+      } else {
+        // sessionDates 미저장 시 sessionStartDate 기준 폴백
+        currentUsage = (s.attendanceHistory || [])
+          .filter((h) => (h.status === "present" || h.status === "canceled") && h.date >= lastPayStart)
+          .reduce((sum, h) => sum + (h.status === "canceled" ? 1 : (h.count || 1)), 0);
+      }
       const remainingCapacity = lastPayUnit - currentUsage;
       isOverdue = remainingCapacity < 0;
       isCompleted = remainingCapacity === 0;
