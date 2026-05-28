@@ -391,57 +391,50 @@ const getPaymentDates = (payment, student) => {
   return attSlots.filter((d) => d >= startDate).slice(0, payUnit);
 };
 
-// 학생 결제 상태 통합 계산 헬퍼
-// - 마지막 결제 시작일 이후 출석을 순서대로 슬롯 분해 (연강=2슬롯, 당일취소=1슬롯)
-// - 첫 N개 = 결제 커버 (lastConsumed)
-// - N+1번째부터 = 미납 (unpaidCount)
-// - sessionDates는 결제 시점 예측이므로 실제 출석일과 불일치 무관
+// 학생 결제 상태 통합 계산 헬퍼 (순수 누적 모델)
+// - T = 총 출석 슬롯 (당일취소=1, 연강=2)
+// - P = 총 결제 회차 (모든 결제의 totalSessions 합)
+// - T > P → 미납 (T-P회), T == P → 결제 대상, T < P → 진행 중
+// - 날짜·시작점·sessionDates와 완전 무관
 const getStudentPaymentStatus = (student) => {
   const unit = getEffectiveSessions(student);
   const payments = [...(student.paymentHistory || [])].sort((a, b) =>
     a.date.localeCompare(b.date)
   );
-  const attendances = (student.attendanceHistory || [])
-    .filter((h) => h.status === "present" || h.status === "canceled")
-    .sort((a, b) => a.date.localeCompare(b.date));
 
-  if (payments.length === 0) {
-    return {
-      lastConsumed: 0,
-      lastPayUnit: unit,
-      unpaidCount: 0,
-      unpaidDates: [],
-      isCycleComplete: false,
-      isPaymentDue: false,
-      isOverdue: false,
-      isExpired: false,
-    };
-  }
-
-  const lastPay = payments[payments.length - 1];
-  const lastPayUnit = lastPay.totalSessions > 0 ? lastPay.totalSessions : unit;
-  const lastPayDates = getPaymentDates(lastPay, student);
-  // 결제 주기 시작점: sessionDates 첫 항목 우선, 없으면 sessionStartDate, 그것도 없으면 결제일
-  const firstCovered =
-    (lastPayDates && lastPayDates[0]) || lastPay.sessionStartDate || lastPay.date;
-
-  // 시작점 이후 출석을 슬롯 단위로 분해 (연강=2슬롯, 당일취소=1슬롯)
-  const slots = [];
-  for (const h of attendances) {
-    if (h.date < firstCovered) continue;
+  // 총 출석 슬롯 (날짜순으로 슬롯 분해)
+  const allSlots = [];
+  for (const h of (student.attendanceHistory || []).slice().sort((a, b) =>
+    a.date.localeCompare(b.date)
+  )) {
+    if (h.status !== "present" && h.status !== "canceled") continue;
     const cnt = h.status === "canceled" ? 1 : (h.count || 1);
-    for (let i = 0; i < cnt; i++) {
-      slots.push({ date: h.date, status: h.status });
-    }
+    for (let i = 0; i < cnt; i++) allSlots.push({ date: h.date, status: h.status });
   }
+  const T = allSlots.length;
 
-  const lastConsumed = Math.min(slots.length, lastPayUnit);
-  const unpaidSlots = slots.slice(lastPayUnit);
+  // 총 결제 회차
+  const P = payments.reduce(
+    (s, p) => s + (p.totalSessions > 0 ? p.totalSessions : unit),
+    0
+  );
+
+  const lastPay = payments.length > 0 ? payments[payments.length - 1] : null;
+  const lastPayUnit = lastPay
+    ? lastPay.totalSessions > 0 ? lastPay.totalSessions : unit
+    : unit;
+  const previousCovered = P - lastPayUnit;
+
+  // 현재 사이클 진행도 (X/Y 표시용)
+  const lastConsumed = Math.max(0, Math.min(T - previousCovered, lastPayUnit));
+
+  // 미납 = 결제 회차를 초과한 출석
+  const unpaidSlots = allSlots.slice(P);
   const unpaidCount = unpaidSlots.length;
   const unpaidDates = [...new Set(unpaidSlots.map((s) => s.date))];
 
-  const isCycleComplete = lastConsumed >= lastPayUnit;
-  const isOverdue = unpaidCount > 0;
+  const isCycleComplete = payments.length > 0 && T >= P;
+  const isOverdue = T > P;
 
   return {
     lastConsumed,
@@ -449,7 +442,7 @@ const getStudentPaymentStatus = (student) => {
     unpaidCount,
     unpaidDates,
     isCycleComplete,
-    isPaymentDue: isCycleComplete || isOverdue,
+    isPaymentDue: isCycleComplete,
     isOverdue,
     isExpired: isCycleComplete && !isOverdue,
   };
