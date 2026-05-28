@@ -392,8 +392,10 @@ const getPaymentDates = (payment, student) => {
 };
 
 // 학생 결제 상태 통합 계산 헬퍼
-// - lastConsumed: 마지막 결제 sessionDates 범위 내 출석 수 (cap = lastPayUnit)
-// - unpaidCount: 마지막 결제 마지막 커버일 이후의 출석 (보강/일정변경은 미납 아님)
+// - 마지막 결제 시작일 이후 출석을 순서대로 슬롯 분해 (연강=2슬롯, 당일취소=1슬롯)
+// - 첫 N개 = 결제 커버 (lastConsumed)
+// - N+1번째부터 = 미납 (unpaidCount)
+// - sessionDates는 결제 시점 예측이므로 실제 출석일과 불일치 무관
 const getStudentPaymentStatus = (student) => {
   const unit = getEffectiveSessions(student);
   const payments = [...(student.paymentHistory || [])].sort((a, b) =>
@@ -419,21 +421,24 @@ const getStudentPaymentStatus = (student) => {
   const lastPay = payments[payments.length - 1];
   const lastPayUnit = lastPay.totalSessions > 0 ? lastPay.totalSessions : unit;
   const lastPayDates = getPaymentDates(lastPay, student);
-  const firstCovered = lastPayDates[0] || lastPay.sessionStartDate || lastPay.date;
-  const lastCovered = lastPayDates[lastPayDates.length - 1] || firstCovered;
+  // 결제 주기 시작점: sessionDates 첫 항목 우선, 없으면 sessionStartDate, 그것도 없으면 결제일
+  const firstCovered =
+    (lastPayDates && lastPayDates[0]) || lastPay.sessionStartDate || lastPay.date;
 
-  // 마지막 결제 주기 내 출석 (첫 커버일 ~ 마지막 커버일)
-  let lastConsumed = attendances
-    .filter((h) => h.date >= firstCovered && h.date <= lastCovered)
-    .reduce((s, h) => s + (h.status === "canceled" ? 1 : (h.count || 1)), 0);
-  if (lastConsumed > lastPayUnit) lastConsumed = lastPayUnit;
+  // 시작점 이후 출석을 슬롯 단위로 분해 (연강=2슬롯, 당일취소=1슬롯)
+  const slots = [];
+  for (const h of attendances) {
+    if (h.date < firstCovered) continue;
+    const cnt = h.status === "canceled" ? 1 : (h.count || 1);
+    for (let i = 0; i < cnt; i++) {
+      slots.push({ date: h.date, status: h.status });
+    }
+  }
 
-  // 미납 = 마지막 커버일 이후의 출석
-  const unpaidAttendances = attendances.filter((h) => h.date > lastCovered);
-  const unpaidCount = unpaidAttendances.reduce(
-    (s, h) => s + (h.status === "canceled" ? 1 : (h.count || 1)),
-    0
-  );
+  const lastConsumed = Math.min(slots.length, lastPayUnit);
+  const unpaidSlots = slots.slice(lastPayUnit);
+  const unpaidCount = unpaidSlots.length;
+  const unpaidDates = [...new Set(unpaidSlots.map((s) => s.date))];
 
   const isCycleComplete = lastConsumed >= lastPayUnit;
   const isOverdue = unpaidCount > 0;
@@ -442,7 +447,7 @@ const getStudentPaymentStatus = (student) => {
     lastConsumed,
     lastPayUnit,
     unpaidCount,
-    unpaidDates: unpaidAttendances.map((h) => h.date),
+    unpaidDates,
     isCycleComplete,
     isPaymentDue: isCycleComplete || isOverdue,
     isOverdue,
