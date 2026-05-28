@@ -9832,28 +9832,23 @@ const StudentManagementModal = ({
                       const cnt = h.status === "canceled" ? 1 : (h.count || 1);
                       for (let i = 0; i < cnt; i++) sessionSlots.push(h.date);
                     });
-                    const payWithIdx = sortedPay.map((h, i) => ({ ...h, payIdx: i }));
+                    const payWithIdx = sortedPay.map((h, i) => {
+                      let prevUnits = 0;
+                      for (let j = 0; j < i; j++) {
+                        prevUnits +=
+                          sortedPay[j].totalSessions > 0
+                            ? sortedPay[j].totalSessions
+                            : sessionUnit;
+                      }
+                      return { ...h, payIdx: i, prevUnits };
+                    });
                     const recentPays = [...payWithIdx].reverse().slice(0, 3);
                     return recentPays.map((h, idx) => {
-                      // sessionDates가 저장된 경우 우선 사용, 없으면 sessionStartDate 기반 fallback
-                      let slots;
-                      let startNum;
-                      if (h.sessionDates && h.sessionDates.length > 0) {
-                        slots = h.sessionDates;
-                        // sessionDates 첫 번째 날짜가 전체 출석 슬롯에서 몇 번째인지 계산
-                        const firstDate = h.sessionDates[0];
-                        const firstIdx = sessionSlots.indexOf(firstDate);
-                        startNum = firstIdx >= 0 ? firstIdx + 1 : 1;
-                      } else {
-                        // sessionDates 미저장 → sessionStartDate 기준 동적 계산
-                        const startDate = h.sessionStartDate || h.date;
-                        const payUnit = h.totalSessions > 0 ? h.totalSessions : sessionUnit;
-                        const fromStart = sessionSlots.filter((d) => d >= startDate);
-                        slots = fromStart.slice(0, payUnit);
-                        const firstIdx = sessionSlots.indexOf(slots[0]);
-                        startNum = firstIdx >= 0 ? firstIdx + 1 : 1;
-                      }
-                      const endNum = startNum + slots.length - 1;
+                      // 누적 슬라이스: 이전 결제들의 총 회차 다음 구간을 이 결제가 커버
+                      const payUnit = h.totalSessions > 0 ? h.totalSessions : sessionUnit;
+                      const slots = sessionSlots.slice(h.prevUnits, h.prevUnits + payUnit);
+                      const startNum = h.prevUnits + 1;
+                      const endNum = h.prevUnits + payUnit;
                       // 날짜별로 그룹화 (연강 여부 확인)
                       const dateGroups = [];
                       slots.forEach((date) => {
