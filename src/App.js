@@ -4154,33 +4154,35 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
   };
 
   const getSessionCount = (student, targetDate) => {
-    // 결제 주기 내 위치 반환 (수납관리와 일치)
-    // 결제로 커버되지 않은 미납 세션은 null (회차 미표시 — 검증 불가능한 순환 번호를 피함)
-    const sortedPayments = [...(student.paymentHistory || [])].sort((a, b) =>
-      a.date.localeCompare(b.date)
-    );
-    for (const payment of sortedPayments) {
-      const dates = getPaymentDates(payment, student);
-      const idx = dates.indexOf(targetDate);
-      if (idx !== -1) return idx + 1;
+    // 누적 출석 기반 순환 회차 반환 (1·2·3·4·1·2·3·4…)
+    // 수납관리와 별개 — 수업일지/캘린더 표시 전용
+    const total = getEffectiveSessions(student);
+    const sessions = (student.attendanceHistory || [])
+      .filter((h) => h.status === "present" || h.status === "canceled")
+      .sort((a, b) => a.date.localeCompare(b.date));
+    let cumulative = 0;
+    for (const h of sessions) {
+      if (h.date === targetDate) return (cumulative % total) + 1;
+      if (h.date > targetDate) break;
+      cumulative += h.status === "canceled" ? 1 : (h.count || 1);
     }
     return null;
   };
 
   // [기능1] 해당 날짜가 학생의 현재 결제 사이클 마지막 회차인지 여부
   const isLastSessionOfCycle = (student, targetDate) => {
-    const sortedPayments = [...(student.paymentHistory || [])].sort((a, b) =>
-      a.date.localeCompare(b.date)
-    );
-    for (const payment of sortedPayments) {
-      const dates = getPaymentDates(payment, student);
-      const idx = dates.indexOf(targetDate);
-      if (idx === -1) continue;
-      const attRecord = (student.attendanceHistory || []).find(
-        (h) => h.date === targetDate
-      );
-      const cnt = attRecord?.status === "canceled" ? 1 : (attRecord?.count || 1);
-      return idx + cnt >= dates.length;
+    const total = getEffectiveSessions(student);
+    const sessions = (student.attendanceHistory || [])
+      .filter((h) => h.status === "present" || h.status === "canceled")
+      .sort((a, b) => a.date.localeCompare(b.date));
+    let cumulative = 0;
+    for (const h of sessions) {
+      if (h.date === targetDate) {
+        const cnt = h.status === "canceled" ? 1 : (h.count || 1);
+        return (cumulative + cnt) % total === 0;
+      }
+      if (h.date > targetDate) break;
+      cumulative += h.status === "canceled" ? 1 : (h.count || 1);
     }
     return false;
   };
@@ -4798,23 +4800,20 @@ const ClassLogView = ({ students, teachers, user, showToast }) => {
   for (let i = 0; i < firstDay; i++) days.push(null);
   for (let i = 1; i <= daysInMonth; i++) days.push(i);
   const getSessionNumbers = (student, targetDate) => {
-    // 결제 주기 내 위치 배열 반환 (수납관리와 일치, 연강=[n,n+1])
-    const sortedPayments = [...(student.paymentHistory || [])].sort((a, b) =>
-      a.date.localeCompare(b.date)
-    );
-    for (const payment of sortedPayments) {
-      const dates = getPaymentDates(payment, student);
-      const idx = dates.indexOf(targetDate);
-      if (idx !== -1) {
-        const attRecord = (student.attendanceHistory || []).find(
-          (h) => h.date === targetDate
-        );
-        const cnt = attRecord?.status === "canceled" ? 1 : (attRecord?.count || 1);
-        return Array.from({ length: cnt }, (_, i) => idx + i + 1);
+    // 누적 출석 순환 방식 (결제와 무관하게 1→2→3→4→1... 반복)
+    const total = getEffectiveSessions(student);
+    const sessions = (student.attendanceHistory || [])
+      .filter((h) => h.status === "present" || h.status === "canceled")
+      .sort((a, b) => a.date.localeCompare(b.date));
+    let cumulative = 0;
+    for (const h of sessions) {
+      if (h.date === targetDate) {
+        const cnt = h.status === "canceled" ? 1 : (h.count || 1);
+        return Array.from({ length: cnt }, (_, i) => (cumulative + i) % total + 1);
       }
+      if (h.date > targetDate) break;
+      cumulative += h.status === "canceled" ? 1 : (h.count || 1);
     }
-
-    // 결제로 커버되지 않은 미납 세션은 빈 배열 (회차 미표시)
     return [];
   };
   const getCellContent = (dateStr, dayIndex) => {
