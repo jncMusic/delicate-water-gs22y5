@@ -11202,7 +11202,12 @@ const PaymentView = ({
               {selectedIds.length === list.length ? "전체 해제" : "전체 선택"}
             </button>
             <span className="text-sm text-slate-500">
-              미납/만료 <span className="font-bold text-rose-600">{list.length}명</span> 중{" "}
+              미납/만료 <span className="font-bold text-rose-600">{list.length}명</span>
+              <span className="text-slate-400 mx-1">/</span>
+              <span className="font-bold text-rose-600">
+                {list.reduce((sum, s) => sum + (Number(s.tuitionFee) || 0), 0).toLocaleString()}원
+              </span>
+              {" "}중{" "}
               <span className="font-bold text-indigo-700">{selectedIds.length}명</span> 선택
             </span>
             <span className="text-sm text-slate-400">|</span>
