@@ -9815,7 +9815,7 @@ const StudentManagementModal = ({
               {renderCalendar("payment")}
               <div className="mt-4 border-t pt-4">
                 <h4 className="text-xs font-bold text-slate-500 mb-2">
-                  최근 결제 내역 (요약)
+                  전체 결제 내역
                 </h4>
                 <div className="space-y-2">
                   {(() => {
@@ -9842,7 +9842,7 @@ const StudentManagementModal = ({
                       }
                       return { ...h, payIdx: i, prevUnits };
                     });
-                    const recentPays = [...payWithIdx].reverse().slice(0, 3);
+                    const recentPays = [...payWithIdx].reverse();
                     return recentPays.map((h, idx) => {
                       // 누적 슬라이스: 이전 결제들의 총 회차 다음 구간을 이 결제가 커버
                       const payUnit = h.totalSessions > 0 ? h.totalSessions : sessionUnit;
