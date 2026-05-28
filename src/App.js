@@ -9337,11 +9337,13 @@ const StudentManagementModal = ({
       for (let i = 0; i < cnt; i++) corrAttSlots.push(h.date);
     });
     const sortedPayForCorr = [...payHistory].sort((a, b) => a.date.localeCompare(b.date));
-    // 선불 방식: 각 결제의 sessionStartDate부터 시작하는 첫 N회를 sessionDates로 저장
+    // 누적 슬라이스: k번째 결제는 출석 슬롯의 [이전결제총합, 이전총합+ps) 구간 커버
+    // 결제 간 sessionDates 중복 방지 (T vs P 누적 모델과 일치)
+    let cursorForCorr = 0;
     const correctedPayHistory = sortedPayForCorr.map((p) => {
       const ps = p.totalSessions > 0 ? p.totalSessions : newEffectiveSessions;
-      const startDate = p.sessionStartDate || p.date;
-      const recalcSessionDates = corrAttSlots.filter((d) => d >= startDate).slice(0, ps);
+      const recalcSessionDates = corrAttSlots.slice(cursorForCorr, cursorForCorr + ps);
+      cursorForCorr += ps;
       return { ...p, totalSessions: ps, sessionDates: recalcSessionDates };
     });
 
@@ -12160,10 +12162,16 @@ export default function App() {
         const cnt = h.status === "canceled" ? 1 : (h.count || 1);
         for (let i = 0; i < cnt; i++) attSlotsForPay.push(h.date);
       });
-      // sessionStartDate 이후의 수업 중 첫 N회를 이번 결제의 커버 세션으로 저장
-      const sessionDates = attSlotsForPay
-        .filter((d) => d >= realSessionStartDate)
-        .slice(0, paymentSessionUnit);
+      // 누적 슬라이스: 이전 결제들이 차지한 슬롯 다음부터 paymentSessionUnit개 커버
+      // sessionDates 중복 방지 (T vs P 누적 모델과 일치)
+      const previousUnits = (student.paymentHistory || []).reduce(
+        (s, p) => s + (p.totalSessions > 0 ? p.totalSessions : getEffectiveSessions(student)),
+        0
+      );
+      const sessionDates = attSlotsForPay.slice(
+        previousUnits,
+        previousUnits + paymentSessionUnit
+      );
 
       const newHistoryItem = {
         date,
