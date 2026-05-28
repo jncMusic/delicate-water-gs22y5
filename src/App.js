@@ -1849,12 +1849,15 @@ const PaymentManagementModal = ({ students, messageLogs, onClose, user, onNaviga
           ? lastPay.totalSessions
           : getEffectiveSessions(s);
       const lastPayStart = lastPay.sessionStartDate || lastPay.date;
+      const hasSessionDates =
+        lastPay.sessionDates && lastPay.sessionDates.length >= lastPaySessions;
       const attendedInCycle = (s.attendanceHistory || [])
-        .filter(
-          (h) =>
-            (h.status === "present" || h.status === "canceled") &&
-            h.date >= lastPayStart
-        )
+        .filter((h) => {
+          if (h.status !== "present" && h.status !== "canceled") return false;
+          return hasSessionDates
+            ? lastPay.sessionDates.includes(h.date)
+            : h.date >= lastPayStart;
+        })
         .reduce(
           (sum, h) => sum + (h.status === "canceled" ? 1 : (h.count || 1)),
           0
@@ -2048,8 +2051,15 @@ const DashboardView = ({
     const lastPay = sortedPays[sortedPays.length - 1];
     const lastPayStart = lastPay.sessionStartDate || lastPay.date;
     const lastPaySessions = lastPay.totalSessions > 0 ? lastPay.totalSessions : sessionUnit;
+    const hasSessionDates =
+      lastPay.sessionDates && lastPay.sessionDates.length >= lastPaySessions;
     const attended = (s.attendanceHistory || [])
-      .filter((h) => (h.status === "present" || h.status === "canceled") && h.date >= lastPayStart)
+      .filter((h) => {
+        if (h.status !== "present" && h.status !== "canceled") return false;
+        return hasSessionDates
+          ? lastPay.sessionDates.includes(h.date)
+          : h.date >= lastPayStart;
+      })
       .reduce((sum, h) => sum + (h.status === "canceled" ? 1 : (h.count || 1)), 0);
     return attended >= lastPaySessions;
   };
