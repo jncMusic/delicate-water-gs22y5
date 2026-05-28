@@ -392,8 +392,8 @@ const getPaymentDates = (payment, student) => {
 };
 
 // 학생 결제 상태 통합 계산 헬퍼
-// - 모든 결제의 sessionDates 합집합으로 "커버된 날짜" 결정
-// - 구버전 데이터(sessionDates 없음)는 getPaymentDates로 재계산해서 포함
+// - lastConsumed: 마지막 결제 sessionDates 범위 내 출석 수 (cap = lastPayUnit)
+// - unpaidCount: 마지막 결제 마지막 커버일 이후의 출석 (보강/일정변경은 미납 아님)
 const getStudentPaymentStatus = (student) => {
   const unit = getEffectiveSessions(student);
   const payments = [...(student.paymentHistory || [])].sort((a, b) =>
@@ -403,33 +403,40 @@ const getStudentPaymentStatus = (student) => {
     .filter((h) => h.status === "present" || h.status === "canceled")
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  // 모든 결제가 커버하는 날짜의 합집합
-  const allCoveredDates = new Set(
-    payments.flatMap((p) => getPaymentDates(p, student))
-  );
+  if (payments.length === 0) {
+    return {
+      lastConsumed: 0,
+      lastPayUnit: unit,
+      unpaidCount: 0,
+      unpaidDates: [],
+      isCycleComplete: false,
+      isPaymentDue: false,
+      isOverdue: false,
+      isExpired: false,
+    };
+  }
 
-  // 미납 출석 = 어떤 결제에도 커버되지 않은 출석
-  const unpaidAttendances = attendances.filter((h) => !allCoveredDates.has(h.date));
+  const lastPay = payments[payments.length - 1];
+  const lastPayUnit = lastPay.totalSessions > 0 ? lastPay.totalSessions : unit;
+  const lastPayDates = getPaymentDates(lastPay, student);
+  const firstCovered = lastPayDates[0] || lastPay.sessionStartDate || lastPay.date;
+  const lastCovered = lastPayDates[lastPayDates.length - 1] || firstCovered;
+
+  // 마지막 결제 주기 내 출석 (첫 커버일 ~ 마지막 커버일)
+  let lastConsumed = attendances
+    .filter((h) => h.date >= firstCovered && h.date <= lastCovered)
+    .reduce((s, h) => s + (h.status === "canceled" ? 1 : (h.count || 1)), 0);
+  if (lastConsumed > lastPayUnit) lastConsumed = lastPayUnit;
+
+  // 미납 = 마지막 커버일 이후의 출석
+  const unpaidAttendances = attendances.filter((h) => h.date > lastCovered);
   const unpaidCount = unpaidAttendances.reduce(
     (s, h) => s + (h.status === "canceled" ? 1 : (h.count || 1)),
     0
   );
 
-  // 마지막 결제 소진율
-  const lastPay = payments.length > 0 ? payments[payments.length - 1] : null;
-  const lastPayUnit = lastPay
-    ? lastPay.totalSessions > 0 ? lastPay.totalSessions : unit
-    : unit;
-
-  let lastConsumed = 0;
-  if (lastPay) {
-    const lastPayDates = getPaymentDates(lastPay, student);
-    lastConsumed = attendances
-      .filter((h) => lastPayDates.includes(h.date))
-      .reduce((s, h) => s + (h.status === "canceled" ? 1 : (h.count || 1)), 0);
-  }
-
   const isCycleComplete = lastConsumed >= lastPayUnit;
+  const isOverdue = unpaidCount > 0;
 
   return {
     lastConsumed,
@@ -437,9 +444,9 @@ const getStudentPaymentStatus = (student) => {
     unpaidCount,
     unpaidDates: unpaidAttendances.map((h) => h.date),
     isCycleComplete,
-    isPaymentDue: isCycleComplete || unpaidCount > 0,
-    isOverdue: unpaidCount > 0,
-    isExpired: isCycleComplete && unpaidCount === 0,
+    isPaymentDue: isCycleComplete || isOverdue,
+    isOverdue,
+    isExpired: isCycleComplete && !isOverdue,
   };
 };
 
