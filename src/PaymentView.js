@@ -130,7 +130,11 @@ const KyuljePreviewModal = ({ student, onConfirm, onClose, sending }) => {
   const isAdult = student.grade === "성인";
   const nameSuffix = isAdult ? "님" : " 학생";
   const formattedName = `[J&C]${student.subject || ""}-${student.name}${nameSuffix}`;
-  const note = student.lastPaymentDate ? `최종결제일: ${student.lastPaymentDate}` : "";
+  const computedLastPay = (() => {
+    const sorted = [...(student.paymentHistory || [])].sort((a, b) => a.date.localeCompare(b.date));
+    return sorted.length > 0 ? sorted[sorted.length - 1].date : (student.lastPaymentDate || "");
+  })();
+  const note = computedLastPay ? `최종결제일: ${computedLastPay}` : "";
 
   return (
     <div className="fixed inset-0 bg-black/70 z-[220] flex items-center justify-center p-4 backdrop-blur-sm">
@@ -141,7 +145,7 @@ const KyuljePreviewModal = ({ student, onConfirm, onClose, sending }) => {
             <p className="text-base font-bold text-slate-800">💳 결제선생 발송 확인</p>
             <p className="text-xs text-slate-400 mt-0.5">회차와 금액을 확인 후 발송하세요.</p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1">
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 active:bg-slate-100 p-2">
             <X size={18} />
           </button>
         </div>
@@ -194,7 +198,7 @@ const KyuljePreviewModal = ({ student, onConfirm, onClose, sending }) => {
         <div className="px-5 pb-5 pt-3 flex gap-2">
           <button
             onClick={onClose}
-            className="flex-1 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-600 font-bold hover:bg-slate-50 transition-colors"
+            className="flex-1 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-600 font-bold hover:bg-slate-50 active:bg-slate-100 transition-colors"
           >
             취소
           </button>
@@ -378,7 +382,7 @@ export const BulkMessageModal = ({
             </button>
             <button
               onClick={onClose}
-              className="text-slate-400 hover:text-slate-600 p-1"
+              className="text-slate-400 hover:text-slate-600 active:bg-slate-100 p-2"
             >
               <X size={24} />
             </button>
@@ -386,14 +390,14 @@ export const BulkMessageModal = ({
         </div>
 
         <div className="flex flex-1 overflow-hidden">
-          <div className="w-44 shrink-0 border-r overflow-y-auto bg-slate-50">
+          <div className="w-32 sm:w-44 shrink-0 border-r overflow-y-auto bg-slate-50">
             {students.map((s, idx) => {
               const lastNotif = getLastNotif(s.id);
               return (
                 <button
                   key={s.id}
                   onClick={() => setActiveIdx(idx)}
-                  className={`w-full text-left px-3 py-2.5 border-b text-sm transition-colors ${
+                  className={`w-full text-left px-2 py-2 sm:px-3 sm:py-2.5 border-b text-sm transition-colors ${
                     activeIdx === idx
                       ? "bg-indigo-100 border-l-4 border-l-indigo-600"
                       : "hover:bg-white"
@@ -625,17 +629,32 @@ export const PaymentView = ({
   // ── 결제확인(confirm) 탭 상태 ─────────────────────────────────
   const [paymentMethods, setPaymentMethods] = useState({});
   const [completedPeriod, setCompletedPeriod] = useState("today");
+  const [dueSortOrder, setDueSortOrder] = useState("desc"); // "asc" | "desc"
   const [processQuickPay, setProcessQuickPay] = useState(null);
   const [processPayDate, setProcessPayDate] = useState(toLocalDateStr());
   const [processPaySessions, setProcessPaySessions] = useState(4);
   const [processPayAmount, setProcessPayAmount] = useState("");
   const [isProcessSaving, setIsProcessSaving] = useState(false);
 
+  // 결제 예정자 선택 시 해당 학생의 회차로 초기화
+  React.useEffect(() => {
+    if (processQuickPay) {
+      setProcessPaySessions(getEffectiveSessions(processQuickPay));
+    }
+  }, [processQuickPay]);
+
   // ── 수납현황(today) 빠른 결제입력 상태 ───────────────────────
   const [quickPayStudent, setQuickPayStudent] = useState(null);
   const [quickPayDate, setQuickPayDate] = useState("");
   const [quickPaySessions, setQuickPaySessions] = useState(4);
   const [quickPayAmount, setQuickPayAmount] = useState("");
+
+  // 수납현황 학생 선택 시 해당 학생의 회차로 초기화
+  React.useEffect(() => {
+    if (quickPayStudent) {
+      setQuickPaySessions(getEffectiveSessions(quickPayStudent));
+    }
+  }, [quickPayStudent]);
 
   // ── 히스토리(history) 탭 상태 ────────────────────────────────
   const [historyPeriod, setHistoryPeriod] = useState("month"); // "day" | "week" | "month"
@@ -668,33 +687,29 @@ export const PaymentView = ({
 
   // ── 수강 진척도 헬퍼 ──────────────────────────────────────────
   const getStudentProgress = (s) => {
-    const totalAttended = (s.attendanceHistory || [])
-      .filter((h) => h.status === "present" || h.status === "canceled")
-      .reduce((sum, h) => sum + (h.status === "canceled" ? 1 : (h.count || 1)), 0);
     const sessionUnit = getEffectiveSessions(s);
     const sortedPayments = [...(s.paymentHistory || [])].sort((a, b) =>
       a.date.localeCompare(b.date)
     );
-    const scheduleBasedUnit =
-      Object.keys(s.schedules || {}).length >= 2 ? 8 : 4;
-    const legacyFallback =
-      sortedPayments.find((p) => p.totalSessions > 0)?.totalSessions ||
-      scheduleBasedUnit;
-    const totalPaidCapacity = sortedPayments.reduce(
-      (sum, p) => sum + (p.totalSessions || legacyFallback),
-      0
-    );
-    const remainingCapacity = totalPaidCapacity - totalAttended;
-    const lastPayUnit =
-      sortedPayments.length > 0
-        ? sortedPayments[sortedPayments.length - 1].totalSessions || legacyFallback
-        : sessionUnit;
-    const lastCycleStart = Math.max(0, totalPaidCapacity - lastPayUnit);
-    let currentUsage = Math.max(0, totalAttended - lastCycleStart);
-    if (currentUsage === 0 && totalAttended > 0 && remainingCapacity <= 0)
-      currentUsage = lastPayUnit;
-    const isOverdue = remainingCapacity < 0;
-    const isCompleted = remainingCapacity === 0 && totalPaidCapacity > 0;
+
+    let currentUsage = 0;
+    let lastPayUnit = sessionUnit;
+    let isOverdue = false;
+    let isCompleted = false;
+
+    if (sortedPayments.length > 0) {
+      // 선불: 마지막 결제의 sessionStartDate 이후 출석 횟수로 판단
+      const lastPay = sortedPayments[sortedPayments.length - 1];
+      const lastPayStart = lastPay.sessionStartDate || lastPay.date;
+      lastPayUnit = lastPay.totalSessions > 0 ? lastPay.totalSessions : sessionUnit;
+      currentUsage = (s.attendanceHistory || [])
+        .filter((h) => (h.status === "present" || h.status === "canceled") && h.date >= lastPayStart)
+        .reduce((sum, h) => sum + (h.status === "canceled" ? 1 : (h.count || 1)), 0);
+      const remainingCapacity = lastPayUnit - currentUsage;
+      isOverdue = remainingCapacity < 0;
+      isCompleted = remainingCapacity === 0;
+    }
+
     return {
       currentUsage,
       sessionUnit: lastPayUnit,
@@ -707,6 +722,31 @@ export const PaymentView = ({
         ? "bg-amber-100 text-amber-700 font-bold"
         : "bg-emerald-100 text-emerald-700",
     };
+  };
+
+  // paymentHistory 기반 최종결제일 (lastPaymentDate 필드는 stale할 수 있음)
+  const getComputedLastPayDate = (s) => {
+    const sorted = [...(s.paymentHistory || [])].sort((a, b) => a.date.localeCompare(b.date));
+    return sorted.length > 0 ? sorted[sorted.length - 1].date : (s.lastPaymentDate || "");
+  };
+
+  // 마지막 결제 사이클의 N회차 소진 날짜 계산 (선불: sessionStartDate 이후 N회)
+  const getPaymentDueDate = (s) => {
+    const sessionUnit = getEffectiveSessions(s);
+    const sortedPayments = [...(s.paymentHistory || [])].sort((a, b) => a.date.localeCompare(b.date));
+    if (sortedPayments.length === 0) return "";
+    const lastPay = sortedPayments[sortedPayments.length - 1];
+    const lastPayStart = lastPay.sessionStartDate || lastPay.date;
+    const lastPaySessions = lastPay.totalSessions > 0 ? lastPay.totalSessions : sessionUnit;
+    const sortedAtt = [...(s.attendanceHistory || [])]
+      .filter((h) => (h.status === "present" || h.status === "canceled") && h.date >= lastPayStart)
+      .sort((a, b) => a.date.localeCompare(b.date));
+    let count = 0;
+    for (const h of sortedAtt) {
+      count += h.status === "canceled" ? 1 : (h.count || 1);
+      if (count >= lastPaySessions) return h.date;
+    }
+    return sortedAtt.length > 0 ? sortedAtt[sortedAtt.length - 1].date : "";
   };
 
   // ── 강사 목록 (드롭다운) ──────────────────────────────────────
@@ -947,10 +987,23 @@ export const PaymentView = ({
     students
       .filter((s) => {
         const { isCompleted, isOverdue } = getStudentProgress(s);
-        return s.status === "재원" && (isCompleted || isOverdue);
+        if (s.status !== "재원" || (!isCompleted && !isOverdue)) return false;
+        if (!searchTerm) return true;
+        return (
+          s.name.includes(searchTerm) ||
+          (s.subject && s.subject.includes(searchTerm)) ||
+          (s.teacher && s.teacher.includes(searchTerm))
+        );
       })
-      .sort((a, b) => a.name.localeCompare(b.name, "ko")),
-    [students]
+      .sort((a, b) => {
+        const da = getPaymentDueDate(a);
+        const db = getPaymentDueDate(b);
+        if (!da && !db) return a.name.localeCompare(b.name, "ko");
+        if (!da) return 1;
+        if (!db) return -1;
+        return dueSortOrder === "asc" ? da.localeCompare(db) : db.localeCompare(da);
+      }),
+    [students, dueSortOrder, searchTerm]
   );
 
   const recentlyPaidList = useMemo(() => {
@@ -1193,7 +1246,7 @@ export const PaymentView = ({
               <h3 className="text-lg font-bold flex items-center text-indigo-900">
                 <MessageSquareText className="mr-2" size={20} /> 안내 문자 미리보기
               </h3>
-              <button onClick={() => setShowMsgPreview(false)} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => setShowMsgPreview(false)} className="text-slate-400 hover:text-slate-600 active:bg-slate-100 p-2">
                 <X size={24} />
               </button>
             </div>
@@ -1457,7 +1510,7 @@ export const PaymentView = ({
               {tab.icon}
               {tab.label}
               {tab.badge > 0 && (
-                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${
                   activeTab === tab.id ? "bg-indigo-100 text-indigo-700" : "bg-slate-200 text-slate-600"
                 }`}>{tab.badge}</span>
               )}
@@ -1546,9 +1599,7 @@ export const PaymentView = ({
                             {Number(s.tuitionFee || 0).toLocaleString()}원
                           </td>
                           <td className="py-3 px-4 text-xs text-slate-500">
-                            {s.lastPaymentDate
-                              ? `${parseInt(s.lastPaymentDate.slice(5, 7))}월 ${parseInt(s.lastPaymentDate.slice(8, 10))}일`
-                              : <span className="text-slate-300">없음</span>}
+                            {(() => { const d = getComputedLastPayDate(s); return d ? `${parseInt(d.slice(5, 7))}월 ${parseInt(d.slice(8, 10))}일` : <span className="text-slate-300">없음</span>; })()}
                           </td>
                           <td className="py-3 px-4 text-center">
                             <div className="flex items-center justify-center gap-1">
@@ -1567,7 +1618,7 @@ export const PaymentView = ({
                               </button>
                               <button
                                 onClick={(e) => { e.stopPropagation(); setKyuljePreviewStudent(s); }}
-                                className="px-2 py-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 font-medium"
+                                className="px-2 py-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 active:bg-emerald-200 font-medium"
                               >
                                 💳
                               </button>
@@ -1824,11 +1875,11 @@ export const PaymentView = ({
                       />
                     </th>
                     <th className="py-3 px-4 text-left">이름 / 과목</th>
-                    <th className="py-3 px-4 text-left">강사</th>
+                    <th className="py-3 px-4 text-left hidden sm:table-cell">강사</th>
                     <th className="py-3 px-4 text-right">원비</th>
                     <th className="py-3 px-4 text-left">상태</th>
                     <th className="py-3 px-4 text-left">최종결제일</th>
-                    <th className="py-3 px-4 text-left">마지막 안내</th>
+                    <th className="py-3 px-4 text-left hidden sm:table-cell">마지막 안내</th>
                     <th className="py-3 px-4 text-center">액션</th>
                   </tr>
                 </thead>
@@ -1858,7 +1909,7 @@ export const PaymentView = ({
                           {s.subject && <span className="text-xs text-slate-500 ml-1">({s.subject})</span>}
                           {s.phone && <div className="text-xs text-slate-400">{s.phone}</div>}
                         </td>
-                        <td className="py-3 px-4 text-slate-600">{s.teacher || "-"}</td>
+                        <td className="py-3 px-4 text-slate-600 hidden sm:table-cell">{s.teacher || "-"}</td>
                         <td className="py-3 px-4 text-right font-bold text-indigo-600">
                           {s.tuitionFee ? Number(s.tuitionFee).toLocaleString() : 0}
                         </td>
@@ -1866,11 +1917,9 @@ export const PaymentView = ({
                           <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColor}`}>{displayStatus}</span>
                         </td>
                         <td className="py-3 px-4 text-xs text-slate-500">
-                          {s.lastPaymentDate
-                            ? `${s.lastPaymentDate.slice(2,4)}/${s.lastPaymentDate.slice(5,7)}/${s.lastPaymentDate.slice(8,10)}`
-                            : <span className="text-slate-300">-</span>}
+                          {(() => { const d = getComputedLastPayDate(s); return d ? `${d.slice(2,4)}/${d.slice(5,7)}/${d.slice(8,10)}` : <span className="text-slate-300">-</span>; })()}
                         </td>
-                        <td className="py-3 px-4 text-xs">
+                        <td className="py-3 px-4 text-xs hidden sm:table-cell">
                           {isPaidAfterNotif(s, lastNotif) ? (
                             <span className="font-medium text-blue-600">✅ {lastNotif} 결제완료</span>
                           ) : notifSt === "done" ? (
@@ -1889,14 +1938,14 @@ export const PaymentView = ({
                           <div className="flex items-center justify-center gap-1">
                             <button
                               onClick={(e) => handleOpenMsgPreview(e, s)}
-                              className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                              className="p-1.5 text-indigo-600 hover:bg-indigo-50 active:bg-indigo-100 rounded-lg transition-colors"
                               title="안내 문자 미리보기"
                             >
                               <MessageSquareText size={16} />
                             </button>
                             <button
                               onClick={(e) => { e.stopPropagation(); setKyuljePreviewStudent(s); }}
-                              className="px-2 py-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 font-medium"
+                              className="px-2 py-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 active:bg-emerald-200 font-medium"
                               title="결제선생 발송"
                             >💳</button>
                           </div>
@@ -1923,6 +1972,18 @@ export const PaymentView = ({
                 <AlertCircle size={15} className="text-rose-600" />
                 <span className="font-bold text-rose-700 text-sm">결제 예정자</span>
                 <span className="bg-rose-200 text-rose-800 text-xs px-1.5 py-0.5 rounded-full">{processableStudents.length}명</span>
+                <div className="flex rounded border border-rose-200 overflow-hidden text-xs ml-1">
+                  <button
+                    onClick={() => setDueSortOrder("desc")}
+                    className={`px-2 py-1 font-medium transition-colors ${dueSortOrder === "desc" ? "bg-rose-600 text-white" : "bg-white text-rose-500 hover:bg-rose-50"}`}
+                    title="최근 도래순 (내림차순)"
+                  >최근순</button>
+                  <button
+                    onClick={() => setDueSortOrder("asc")}
+                    className={`px-2 py-1 font-medium transition-colors ${dueSortOrder === "asc" ? "bg-rose-600 text-white" : "bg-white text-rose-500 hover:bg-rose-50"}`}
+                    title="오래된 도래순 (오름차순)"
+                  >오래된순</button>
+                </div>
                 {processableStudents.length > 0 && (
                   <span className="ml-auto text-rose-700 font-bold text-sm">
                     총 {processableStudents.reduce((sum, s) => sum + Number(s.tuitionFee || 0), 0).toLocaleString()}원
@@ -1933,9 +1994,10 @@ export const PaymentView = ({
                 <thead className="bg-slate-50 border-b text-xs text-slate-400 uppercase">
                   <tr>
                     <th className="py-2.5 px-4 text-left">이름 / 과목</th>
-                    <th className="py-2.5 px-4 text-left">강사</th>
+                    <th className="py-2.5 px-4 text-left hidden sm:table-cell">강사</th>
                     <th className="py-2.5 px-4 text-right">원비</th>
                     <th className="py-2.5 px-4 text-left">최종결제일</th>
+                    <th className="py-2.5 px-4 text-left">도래일 {dueSortOrder === "asc" ? "↑" : "↓"}</th>
                     <th className="py-2.5 px-4 text-center">결제방법</th>
                     <th className="py-2.5 px-4 text-center w-32">액션</th>
                   </tr>
@@ -1949,13 +2011,26 @@ export const PaymentView = ({
                         <td className="py-3 px-4">
                           <div className="font-medium">{s.name}</div>
                           <div className="text-xs text-slate-400">{s.subject}</div>
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${statusColor}`}>{displayStatus}</span>
+                          <span className={`text-xs px-1.5 py-0.5 rounded ${statusColor}`}>{displayStatus}</span>
                         </td>
-                        <td className="py-3 px-4 text-slate-600">{s.teacher || "-"}</td>
+                        <td className="py-3 px-4 text-slate-600 hidden sm:table-cell">{s.teacher || "-"}</td>
                         <td className="py-3 px-4 text-right font-bold text-indigo-600">
                           {Number(s.tuitionFee || 0).toLocaleString()}원
                         </td>
-                        <td className="py-3 px-4 text-xs text-slate-500">{s.lastPaymentDate || "-"}</td>
+                        <td className="py-3 px-4 text-xs text-slate-500">{getComputedLastPayDate(s) || "-"}</td>
+                        <td className="py-3 px-4 text-xs">
+                          {(() => {
+                            const d = getPaymentDueDate(s);
+                            if (!d) return <span className="text-slate-300">-</span>;
+                            const days = Math.round((new Date() - new Date(d + "T00:00:00")) / 86400000);
+                            return (
+                              <span className={days >= 14 ? "font-bold text-rose-600" : days >= 7 ? "font-semibold text-amber-600" : "text-slate-500"}>
+                                {d.slice(5).replace("-", "/")}
+                                {days > 0 && <span className="ml-1 text-xs">({days}일 경과)</span>}
+                              </span>
+                            );
+                          })()}
+                        </td>
                         <td className="py-3 px-4">
                           <div className="flex flex-wrap gap-1 justify-center">
                             {["현장", "계좌이체", "기타", "결제선생"].map((m) => (
@@ -1977,14 +2052,14 @@ export const PaymentView = ({
                           {method === "결제선생" ? (
                             <button
                               onClick={(e) => handleOpenMsgPreview(e, s)}
-                              className="px-3 py-1.5 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 font-medium"
+                              className="px-3 py-1.5 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 active:bg-blue-200 font-medium"
                             >
                               📱 문자 발송
                             </button>
                           ) : method ? (
                             <button
                               onClick={() => { setProcessQuickPay({ student: s, method }); setProcessPayDate(toLocalDateStr()); }}
-                              className="px-3 py-1.5 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 font-medium"
+                              className="px-3 py-1.5 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 active:bg-emerald-200 font-medium"
                             >
                               ✅ 수납 완료
                             </button>
@@ -2031,7 +2106,7 @@ export const PaymentView = ({
                 <thead className="bg-slate-50 border-b text-xs text-slate-400 uppercase">
                   <tr>
                     <th className="py-2.5 px-4 text-left">이름 / 과목</th>
-                    <th className="py-2.5 px-4 text-left">강사</th>
+                    <th className="py-2.5 px-4 text-left hidden sm:table-cell">강사</th>
                     <th className="py-2.5 px-4 text-left">결제일</th>
                     <th className="py-2.5 px-4 text-right">금액</th>
                     <th className="py-2.5 px-4 text-center">결제방법</th>
@@ -2044,7 +2119,7 @@ export const PaymentView = ({
                         <div className="font-medium">{s.name}</div>
                         <div className="text-xs text-slate-400">{s.subject}</div>
                       </td>
-                      <td className="py-2.5 px-4 text-slate-600">{s.teacher || "-"}</td>
+                      <td className="py-2.5 px-4 text-slate-600 hidden sm:table-cell">{s.teacher || "-"}</td>
                       <td className="py-2.5 px-4 text-slate-600">{p.date}</td>
                       <td className="py-2.5 px-4 text-right font-bold text-indigo-600">
                         {Number(p.amount || 0).toLocaleString()}원
@@ -2114,9 +2189,9 @@ export const PaymentView = ({
               <thead className="sticky top-0 bg-slate-50 border-b">
                 <tr className="text-slate-400 text-xs uppercase">
                   <th className="py-3 px-4 text-left">이름 / 과목</th>
-                  <th className="py-3 px-4 text-left">강사</th>
+                  <th className="py-3 px-4 text-left hidden sm:table-cell">강사</th>
                   <th className="py-3 px-4 text-right">원비</th>
-                  <th className="py-3 px-4 text-center">진척도</th>
+                  <th className="py-3 px-4 text-center hidden sm:table-cell">진척도</th>
                   <th className="py-3 px-4 text-left">상태</th>
                   <th className="py-3 px-4 text-left">최종결제일</th>
                   <th className="py-3 px-4 text-center">안내</th>
@@ -2136,21 +2211,21 @@ export const PaymentView = ({
                         {s.subject && <span className="text-xs text-slate-500 ml-1">({s.subject})</span>}
                         {s.phone && <div className="text-xs text-slate-400">{s.phone}</div>}
                       </td>
-                      <td className="py-3 px-4 text-slate-600">{s.teacher || "-"}</td>
+                      <td className="py-3 px-4 text-slate-600 hidden sm:table-cell">{s.teacher || "-"}</td>
                       <td className="py-3 px-4 text-right font-bold text-indigo-600">
                         {s.tuitionFee ? Number(s.tuitionFee).toLocaleString() : 0}
                       </td>
-                      <td className="py-3 px-4 text-center font-mono font-bold text-slate-700">
+                      <td className="py-3 px-4 text-center font-mono font-bold text-slate-700 hidden sm:table-cell">
                         {currentUsage} / {sessionUnit}
                       </td>
                       <td className="py-3 px-4">
                         <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColor}`}>{displayStatus}</span>
                       </td>
-                      <td className="py-3 px-4 text-xs text-slate-500">{s.lastPaymentDate || "-"}</td>
+                      <td className="py-3 px-4 text-xs text-slate-500">{getComputedLastPayDate(s) || "-"}</td>
                       <td className="py-3 px-4 text-center" onClick={(e) => e.stopPropagation()}>
                         <button
                           onClick={(e) => handleOpenMsgPreview(e, s)}
-                          className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                          className="p-2 text-indigo-600 hover:bg-indigo-50 active:bg-indigo-100 rounded-lg transition-colors"
                           title="안내 문자 미리보기"
                         >
                           <MessageSquareText size={16} />

@@ -93,6 +93,7 @@ import {
   Send,
   Bell,
   Calculator,
+  Loader,
 } from "lucide-react";
 import html2canvas from "html2canvas"; // 🔥 이미지 저장 라이브러리 추가
 
@@ -309,7 +310,7 @@ const SidebarItem = ({ icon: Icon, label, active, onClick }) => (
     className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
       active
         ? "bg-indigo-600 text-white shadow-md"
-        : "text-slate-500 hover:bg-indigo-50 hover:text-indigo-600"
+        : "text-slate-500 hover:bg-indigo-50 active:bg-indigo-100 hover:text-indigo-600"
     }`}
   >
     {Icon && <Icon size={20} className="shrink-0" />}
@@ -371,6 +372,82 @@ const getEffectiveSessions = (student) => {
   return scheduleCount >= 2 ? 8 : 4;
 };
 
+// 결제 주기별 유효 세션 날짜 배열 (sessionDates 불완전 시 sessionStartDate 기반 재계산)
+const getPaymentDates = (payment, student) => {
+  const payUnit =
+    payment.totalSessions > 0
+      ? payment.totalSessions
+      : getEffectiveSessions(student);
+  if (payment.sessionDates && payment.sessionDates.length >= payUnit) {
+    return payment.sessionDates;
+  }
+  const startDate = payment.sessionStartDate || payment.date;
+  const attSlots = (student.attendanceHistory || [])
+    .filter((h) => h.status === "present" || h.status === "canceled")
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .flatMap((h) =>
+      Array(h.status === "canceled" ? 1 : (h.count || 1)).fill(h.date)
+    );
+  return attSlots.filter((d) => d >= startDate).slice(0, payUnit);
+};
+
+// 학생 결제 상태 통합 계산 헬퍼 (순수 누적 모델)
+// - T = 총 출석 슬롯 (당일취소=1, 연강=2)
+// - P = 총 결제 회차 (모든 결제의 totalSessions 합)
+// - T > P → 미납 (T-P회), T == P → 결제 대상, T < P → 진행 중
+// - 날짜·시작점·sessionDates와 완전 무관
+const getStudentPaymentStatus = (student) => {
+  const unit = getEffectiveSessions(student);
+  const payments = [...(student.paymentHistory || [])].sort((a, b) =>
+    a.date.localeCompare(b.date)
+  );
+
+  // 총 출석 슬롯 (날짜순으로 슬롯 분해)
+  const allSlots = [];
+  for (const h of (student.attendanceHistory || []).slice().sort((a, b) =>
+    a.date.localeCompare(b.date)
+  )) {
+    if (h.status !== "present" && h.status !== "canceled") continue;
+    const cnt = h.status === "canceled" ? 1 : (h.count || 1);
+    for (let i = 0; i < cnt; i++) allSlots.push({ date: h.date, status: h.status });
+  }
+  const T = allSlots.length;
+
+  // 총 결제 회차
+  const P = payments.reduce(
+    (s, p) => s + (p.totalSessions > 0 ? p.totalSessions : unit),
+    0
+  );
+
+  const lastPay = payments.length > 0 ? payments[payments.length - 1] : null;
+  const lastPayUnit = lastPay
+    ? lastPay.totalSessions > 0 ? lastPay.totalSessions : unit
+    : unit;
+  const previousCovered = P - lastPayUnit;
+
+  // 현재 사이클 진행도 (X/Y 표시용)
+  const lastConsumed = Math.max(0, Math.min(T - previousCovered, lastPayUnit));
+
+  // 미납 = 결제 회차를 초과한 출석
+  const unpaidSlots = allSlots.slice(P);
+  const unpaidCount = unpaidSlots.length;
+  const unpaidDates = [...new Set(unpaidSlots.map((s) => s.date))];
+
+  const isCycleComplete = payments.length > 0 && T >= P;
+  const isOverdue = T > P;
+
+  return {
+    lastConsumed,
+    lastPayUnit,
+    unpaidCount,
+    unpaidDates,
+    isCycleComplete,
+    isPaymentDue: isCycleComplete,
+    isOverdue,
+    isExpired: isCycleComplete && !isOverdue,
+  };
+};
+
 // =================================================================
 // 4-1. 결제 안내 메시지 생성 헬퍼 (PaymentView 및 안내 발송 기능에서 공용)
 // =================================================================
@@ -416,41 +493,67 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
     }
   });
 
-  // 결제별 totalSessions 합산
+  // 결제 이력 정렬
   const allPayments = (student.paymentHistory || []).sort((a, b) =>
     a.date.localeCompare(b.date)
-  );
-  const sortedAllPayments = [...allPayments].sort((a, b) => a.date.localeCompare(b.date));
-  const scheduleBasedUnit = Object.keys(student.schedules || {}).length >= 2 ? 8 : 4;
-  const legacyFallback = sortedAllPayments.find(p => p.totalSessions > 0)?.totalSessions || scheduleBasedUnit;
-  const totalPaidCapacity = sortedAllPayments.reduce(
-    (sum, p) => sum + (p.totalSessions || legacyFallback), 0
   );
   const lastPayment =
     allPayments.length > 0
       ? allPayments[allPayments.length - 1].date
       : "기록 없음";
 
-  // 누적 가중치로 paid/unpaid 구분
-  let cumulativeWeight = 0;
+  // 마지막 결제의 sessionDates(수납관리에 표시되는 그 데이터)를 직접 읽음
+  // sessionDates 없으면 sessionStartDate 기준 폴백 (UI와 동일)
   let lastCoveredDate = "없음";
   const unpaidItems = []; // { date, label }
-  const recentSlots = [];
-  for (const slot of sessionSlots) {
-    const nextWeight = cumulativeWeight + slot.weight;
-    if (nextWeight <= totalPaidCapacity) {
-      cumulativeWeight = nextWeight;
-      lastCoveredDate = slot.label.replace("(당일취소)", ""); // 취소는 완료일 제외
-      recentSlots.push(slot.label);
+  const lastPayCoveredSlots = []; // 마지막 결제가 커버한 수업
+  let lastPaySessions = sessionUnit;
+
+  if (allPayments.length > 0) {
+    const lastPay = allPayments[allPayments.length - 1];
+    lastPaySessions = lastPay.totalSessions > 0 ? lastPay.totalSessions : sessionUnit;
+
+    let lastPayDates;
+    // sessionDates가 완전한 경우(길이 >= totalSessions)만 사용
+    // 결제 후 추가된 수업이 sessionDates에 미반영된 경우를 방지
+    if (lastPay.sessionDates && lastPay.sessionDates.length >= lastPaySessions) {
+      lastPayDates = lastPay.sessionDates;
     } else {
+      // sessionDates 미저장 또는 불완전 → sessionStartDate 기준 재계산
+      const startDate = lastPay.sessionStartDate || lastPay.date;
+      lastPayDates = sessionSlots
+        .filter((s) => s.date >= startDate)
+        .slice(0, lastPaySessions)
+        .map((s) => s.date);
+    }
+    const lastPayDateSet = new Set(lastPayDates);
+
+    // sessionSlots에서 lastPayDates에 포함된 슬롯 = 마지막 결제 커버
+    // 마지막 커버 슬롯보다 뒤에 있는 슬롯 = 미납
+    const lastCoveredIdx = lastPayDates.length > 0
+      ? sessionSlots.map((s) => s.date).lastIndexOf(lastPayDates[lastPayDates.length - 1])
+      : -1;
+
+    for (let i = 0; i < sessionSlots.length; i++) {
+      const slot = sessionSlots[i];
+      if (lastPayDateSet.has(slot.date) && lastPayCoveredSlots.length < lastPayDates.length) {
+        lastPayCoveredSlots.push(slot.label);
+        lastCoveredDate = slot.label.replace("(당일취소)", "");
+      } else if (i > lastCoveredIdx) {
+        unpaidItems.push(slot);
+      }
+    }
+  } else {
+    // 결제 내역 없음 → 전체 미납
+    for (const slot of sessionSlots) {
       unpaidItems.push(slot);
     }
   }
   const unpaidSlots = unpaidItems.map((s) => s.label);
 
-  const recentStart = Math.max(0, recentSlots.length - sessionUnit);
+  // 수업일자: 마지막 결제 커버 세션 + 미납분
   const recentSessions =
-    [...recentSlots.slice(recentStart), ...unpaidSlots].join(", ") ||
+    [...lastPayCoveredSlots, ...unpaidSlots].join(", ") ||
     "(출석 기록 없음)";
 
   const unpaidDatesStr = unpaidSlots.length > 0 ? unpaidSlots.join(", ") : "없음";
@@ -532,7 +635,7 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
   if (style === "simple") {
     return `안녕하세요, J&C 음악학원입니다. ${getSeasonalGreeting()}
 
-${lastPaymentMD} 결제하신 ${nameLabel}의 ${subject} ${sessionUnit}회차가 ${lastCoveredMD}에 완료되어 ${nextDateMD} 새로운 ${subject} 1회차가 시작되어 안내드립니다.${additionalUnpaidStr}
+${lastPaymentMD} 결제하신 ${nameLabel}의 ${subject} ${lastPaySessions}회차가 ${lastCoveredMD}에 완료되어 ${nextDateMD} 새로운 ${subject} 1회차가 시작되어 안내드립니다.${additionalUnpaidStr}
 
 아직 결제 전으로 확인되어 안내드리오니 이미 결제하신 경우 알려주시면 감사하겠습니다. 제로페이/서울페이 등은 결제 후 알려주셔야 확인이 되는 점 양해부탁말씀 드립니다.
 
@@ -839,7 +942,7 @@ const LoginModal = ({
         <div className="p-6 space-y-6 overflow-y-auto">
           <button
             onClick={() => setIsAdminLoginMode(true)}
-            className="w-full p-4 bg-slate-50 hover:bg-indigo-50 border rounded-xl flex items-center group transition-colors"
+            className="w-full p-4 bg-slate-50 hover:bg-indigo-50 active:bg-indigo-100 border rounded-xl flex items-center group transition-colors"
           >
             <div className="w-10 h-10 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold mr-3">
               M
@@ -1307,7 +1410,7 @@ const StudentEditModal = ({ student, teachers, onClose, onUpdate, user, onUpdate
               <button
                 type="button"
                 onClick={() => setIsAttModalOpen(true)}
-                className="flex-1 py-3 rounded-xl border border-indigo-200 text-indigo-600 font-bold hover:bg-indigo-50 flex items-center justify-center gap-1.5 text-sm"
+                className="flex-1 py-3 rounded-xl border border-indigo-200 text-indigo-600 font-bold hover:bg-indigo-50 active:bg-indigo-100 flex items-center justify-center gap-1.5 text-sm"
               >
                 <CalendarDays size={15} /> 출석 기록 편집
               </button>
@@ -1579,7 +1682,7 @@ const PaymentDetailModal = ({
                               : "bg-slate-50 border-slate-200 text-slate-600"
                           }`}
                         >
-                          <span className="text-[10px] font-bold mb-0.5 opacity-70">
+                          <span className="text-xs font-bold mb-0.5 opacity-70">
                             {isUnpaid ? "미납" : isDouble ? "연강" : "결제됨"}
                           </span>
                           <span className="font-bold font-mono text-sm">
@@ -1669,7 +1772,7 @@ const PaymentDetailModal = ({
                 <tbody className="divide-y divide-slate-100">
                   {historyRows.length > 0 ? (
                     historyRows.map((row, index) => (
-                      <tr key={index} className="hover:bg-slate-50">
+                      <tr key={index} className="hover:bg-slate-50 active:bg-slate-100">
                         <td className="px-4 py-3 font-mono text-slate-600 align-top">
                           {editingHistoryId === row.payment ? (
                             <input
@@ -1704,7 +1807,7 @@ const PaymentDetailModal = ({
                                   (sum, c) => sum + (c.count || 1), 0
                                 );
                                 return usedSessions < row.payUnit && index === 0 ? (
-                                  <span className="text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 ml-1">
+                                  <span className="text-xs text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 ml-1">
                                     +{row.payUnit - usedSessions}회 잔여
                                   </span>
                                 ) : null;
@@ -1791,20 +1894,10 @@ const PaymentManagementModal = ({ students, messageLogs, onClose, user, onNaviga
     const expired = [];
     const overdue = [];
     for (const s of filtered) {
-      const attended = (s.attendanceHistory || [])
-        .filter((h) => h.status === "present" || h.status === "canceled")
-        .reduce((sum, h) => sum + (h.status === "canceled" ? 1 : (h.count || 1)), 0);
-      const sessionUnit = getEffectiveSessions(s);
-      const sortedPays = [...(s.paymentHistory || [])].sort((a, b) => a.date.localeCompare(b.date));
-      const scheduleBasedUnit = Object.keys(s.schedules || {}).length >= 2 ? 8 : 4;
-      const legacyFallback = sortedPays.find(p => p.totalSessions > 0)?.totalSessions || scheduleBasedUnit;
-      const capacity = sortedPays.reduce(
-        (sum, p) => sum + (p.totalSessions || legacyFallback),
-        0
-      );
-      const remaining = capacity - attended;
-      if (remaining < 0) overdue.push(s);
-      else if (remaining === 0 && capacity > 0) expired.push(s);
+      if ((s.paymentHistory || []).length === 0) continue;
+      const { isCycleComplete, isOverdue } = getStudentPaymentStatus(s);
+      if (isOverdue) overdue.push(s);
+      if (isCycleComplete) expired.push(s);
     }
     return { expiredStudents: expired, overdueStudents: overdue };
   }, [students, user]);
@@ -1835,7 +1928,7 @@ const PaymentManagementModal = ({ students, messageLogs, onClose, user, onNaviga
           </h2>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100"
+            className="text-slate-400 hover:text-slate-600 p-2 rounded-lg hover:bg-slate-100"
           >
             <X size={20} />
           </button>
@@ -1915,21 +2008,21 @@ const PaymentManagementModal = ({ students, messageLogs, onClose, user, onNaviga
                             showToast?.(`${s.name} 결제안내 문자 복사됨`);
                           });
                         }}
-                        className="text-[10px] bg-indigo-50 text-indigo-600 border border-indigo-200 px-2 py-1 rounded-full font-bold hover:bg-indigo-100"
+                        className="text-xs bg-indigo-50 text-indigo-600 border border-indigo-200 px-2 py-1 rounded-full font-bold hover:bg-indigo-100"
                       >
                         문자 복사
                       </button>
                     )}
                     {isSentToday ? (
-                      <span className="text-[10px] bg-emerald-50 text-emerald-600 border border-emerald-200 px-2 py-1 rounded-full font-bold">
+                      <span className="text-xs bg-emerald-50 text-emerald-600 border border-emerald-200 px-2 py-1 rounded-full font-bold">
                         오늘 발송
                       </span>
                     ) : lastSent ? (
-                      <span className="text-[10px] bg-slate-100 text-slate-500 border border-slate-200 px-2 py-1 rounded-full">
+                      <span className="text-xs bg-slate-100 text-slate-500 border border-slate-200 px-2 py-1 rounded-full">
                         {lastSent} 발송
                       </span>
                     ) : (
-                      <span className="text-[10px] bg-rose-50 text-rose-500 border border-rose-200 px-2 py-1 rounded-full font-bold">
+                      <span className="text-xs bg-rose-50 text-rose-500 border border-rose-200 px-2 py-1 rounded-full font-bold">
                         미발송
                       </span>
                     )}
@@ -1985,22 +2078,8 @@ const DashboardView = ({
 
   // 2. 수납 상태 계산
   const isPaymentDue = (s) => {
-    const totalAttended = (s.attendanceHistory || [])
-      .filter((h) => h.status === "present" || h.status === "canceled")
-      .reduce((sum, h) => sum + (h.status === "canceled" ? 1 : (h.count || 1)), 0);
-    const sessionUnit = getEffectiveSessions(s);
-    const sortedPays = [...(s.paymentHistory || [])].sort((a, b) => a.date.localeCompare(b.date));
-    const scheduleBasedUnit = Object.keys(s.schedules || {}).length >= 2 ? 8 : 4;
-    const legacyFallback = sortedPays.find(p => p.totalSessions > 0)?.totalSessions || scheduleBasedUnit;
-    const totalPaidCapacity = sortedPays.reduce(
-      (sum, p) => sum + (p.totalSessions || legacyFallback), 0
-    );
-    const remainingCapacity = totalPaidCapacity - totalAttended;
-
-    const isOverdue = remainingCapacity < 0;
-    const isCompleted = remainingCapacity === 0 && totalPaidCapacity > 0;
-
-    return isOverdue || isCompleted;
+    if ((s.paymentHistory || []).length === 0) return false;
+    return getStudentPaymentStatus(s).isPaymentDue;
   };
 
   // 3. 주요 지표 계산
@@ -2080,16 +2159,7 @@ const DashboardView = ({
       );
       if (!hasTodayRecord) return false;
 
-      const totalAttended = history
-        .filter((h) => h.status === "present" || h.status === "canceled")
-        .reduce((sum, h) => sum + (h.status === "canceled" ? 1 : (h.count || 1)), 0);
-      const sortedPays = [...(s.paymentHistory || [])].sort((a, b) => a.date.localeCompare(b.date));
-      const scheduleBasedUnit = Object.keys(s.schedules || {}).length >= 2 ? 8 : 4;
-      const legacyFallback = sortedPays.find((p) => p.totalSessions > 0)?.totalSessions || scheduleBasedUnit;
-      const totalPaidCapacity = sortedPays.reduce(
-        (sum, p) => sum + (p.totalSessions || legacyFallback), 0
-      );
-      return totalPaidCapacity - totalAttended <= 0;
+      return isPaymentDue(s);
     });
   }, [students, user]);
 
@@ -2394,7 +2464,7 @@ const DashboardView = ({
             </h3>
             <button
               onClick={() => onNavigate("consultations")}
-              className="text-xs font-bold text-indigo-500 hover:bg-indigo-50 px-2.5 py-1 rounded-lg transition-colors"
+              className="text-xs font-bold text-indigo-500 hover:bg-indigo-50 active:bg-indigo-100 px-2.5 py-1 rounded-lg transition-colors"
             >
               전체 보기
             </button>
@@ -2415,7 +2485,7 @@ const DashboardView = ({
                       onNavigateToConsultation &&
                       onNavigateToConsultation(consult)
                     }
-                    className="flex items-center gap-3 py-2.5 hover:bg-slate-50 cursor-pointer rounded-lg px-1 -mx-1 transition-colors group"
+                    className="flex items-center gap-3 py-2.5 hover:bg-slate-50 active:bg-slate-100 cursor-pointer rounded-lg px-1 -mx-1 transition-colors group"
                   >
                     <div className="flex-1 min-w-0">
                       <span className="font-bold text-slate-800 text-sm group-hover:text-indigo-600 transition-colors">
@@ -2433,7 +2503,7 @@ const DashboardView = ({
                         return (
                           <span
                             key={actionId}
-                            className={`text-[10px] px-1.5 py-0.5 rounded border hidden md:inline ${
+                            className={`text-xs px-1.5 py-0.5 rounded border hidden md:inline ${
                               colorMap[opt.color] || colorMap.blue
                             }`}
                           >
@@ -2441,7 +2511,7 @@ const DashboardView = ({
                           </span>
                         );
                       })}
-                      <span className="text-[10px] text-slate-400 font-mono">
+                      <span className="text-xs text-slate-400 font-mono">
                         {consult.date}
                       </span>
                     </div>
@@ -2520,7 +2590,7 @@ const DashboardView = ({
               </thead>
               <tbody>
                 {trendData.map((d) => (
-                  <tr key={d.month} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
+                  <tr key={d.month} className="border-b border-slate-50 hover:bg-slate-50 active:bg-slate-100 transition-colors">
                     <td className="py-2 pr-4 font-bold text-slate-700">
                       {d.month.replace("-", "년 ")}월
                     </td>
@@ -2532,7 +2602,7 @@ const DashboardView = ({
                 ))}
               </tbody>
             </table>
-            <p className="text-[10px] text-slate-400 mt-2">
+            <p className="text-xs text-slate-400 mt-2">
               * 재원생 수는 현재 재원 중인 학생 기준으로, 이미 퇴원한 학생은 반영되지 않습니다.
             </p>
           </div>
@@ -3043,7 +3113,7 @@ const ReportView = ({
                           return (
                             <div
                               key={s.id}
-                              className="p-4 hover:bg-slate-50 transition-colors"
+                              className="p-4 hover:bg-slate-50 active:bg-slate-100 transition-colors"
                             >
                               <div className="flex justify-between items-start mb-2">
                                 <div className="flex items-center gap-2 flex-wrap">
@@ -3059,7 +3129,7 @@ const ReportView = ({
                                     {s.name}
                                   </span>
                                   <span
-                                    className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                                    className={`text-xs px-2 py-0.5 rounded-full border ${
                                       sData.feedbackSent
                                         ? "bg-emerald-50 text-emerald-600 border-emerald-100"
                                         : "bg-amber-50 text-amber-600 border-amber-100"
@@ -3075,7 +3145,7 @@ const ReportView = ({
                                       setStudentModalTab("attendance");
                                       setIsStudentModalOpen(true);
                                     }}
-                                    className="text-[10px] px-2 py-0.5 rounded-full border bg-blue-50 text-blue-600 border-blue-100 hover:bg-blue-100 transition-colors"
+                                    className="text-xs px-2 py-0.5 rounded-full border bg-blue-50 text-blue-600 border-blue-100 hover:bg-blue-100 transition-colors"
                                   >
                                     출석콕콕
                                   </button>
@@ -3086,7 +3156,7 @@ const ReportView = ({
                                         setStudentModalTab("payment");
                                         setIsStudentModalOpen(true);
                                       }}
-                                      className="text-[10px] px-2 py-0.5 rounded-full border bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-100 transition-colors"
+                                      className="text-xs px-2 py-0.5 rounded-full border bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-100 transition-colors"
                                     >
                                       수납콕콕
                                     </button>
@@ -3157,6 +3227,7 @@ const ConsultationView = ({
   consultations: allConsultations,
   targetConsultation,
   onClearTargetConsultation,
+  students: allStudents = [],
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -3309,7 +3380,40 @@ const ConsultationView = ({
       return `안녕하세요, J&C 음악학원입니다.\n\n문의주신 ${subject} 수업 가능 시간 안내드립니다.\n\n- 요일/시간: (예: 월요일 오후 4시, 수요일 오후 5시)\n\n편하신 시간에 방문하시거나 연락 주시면 자세히 안내드리겠습니다.\n\nJ&C 음악학원 (☎ 010-4028-9803)`;
     }
     if (type === "new_lesson") {
-      return `안녕하세요, J&C 음악학원입니다.\n\n${nameLabel}의 첫 수업 안내드립니다.\n\n* 첫 수업: (날짜/요일/시간 입력)\n* 과목: ${subject}\n\n* 원비 안내\n월 원비: (금액)원 / (횟수)회 수업\n하나은행 125-91025-766307 강열혁(제이앤씨음악학원)\n방문(카드/현금), 계좌이체·제로페이, 온라인 카드결제 모두 가능합니다.\n\n* 취소/노쇼 안내\n당일 취소 및 노쇼는 수업 1회 차감됩니다.\n변경 사항은 수업 전날까지 연락 부탁드립니다.\n\n항상 감사드립니다 :)\nJ&C 음악학원장 드림.`;
+      // 이름 또는 전화번호로 등록 학생 조회 → 원비·회차·등록일·시간 자동 채움
+      const matched = allStudents.find(
+        (s) => s.name === consult.name || (consult.phone && s.phone === consult.phone)
+      );
+      const DAYS_KO = ["일", "월", "화", "수", "목", "금", "토"];
+      const rawRegDate = matched
+        ? (matched.registrationDate || matched.createdAt?.slice(0, 10))
+        : null;
+      let firstLesson = "(날짜/요일/시간 입력)";
+      let lessonDayKo = "";
+      if (rawRegDate) {
+        const d = new Date(rawRegDate + "T00:00:00");
+        lessonDayKo = DAYS_KO[d.getDay()];
+        const lessonTime = matched ? getStudentScheduleTime(matched, lessonDayKo) : "";
+        firstLesson = lessonTime
+          ? `${rawRegDate} (${lessonDayKo}) ${lessonTime}`
+          : `${rawRegDate} (${lessonDayKo}) (시간 입력)`;
+      }
+      const rawSubject = consult.subject || "음악";
+      const fullSubject = rawSubject.includes("1:1") ? rawSubject : `${rawSubject} 1:1 개인레슨`;
+      const fee = matched && matched.tuitionFee
+        ? `${Number(matched.tuitionFee).toLocaleString()}원`
+        : "(금액)원";
+      const sessions = matched
+        ? (() => {
+            const saved = parseInt(matched.totalSessions);
+            if (!isNaN(saved) && saved > 0) return saved;
+            return Object.keys(matched.schedules || {}).length >= 2 ? 8 : 4;
+          })()
+        : "(횟수)";
+      const closingDay = lessonDayKo
+        ? `다음주 ${lessonDayKo}요일에 뵙겠습니다.`
+        : "(요일)에 뵙겠습니다.";
+      return `안녕하세요, J&C 음악학원입니다.\n\n${nameLabel}의 첫 수업 안내드립니다.\n\n* 첫 수업: ${firstLesson}\n* 과목: ${fullSubject}\n\n* 원비 안내\n월 원비: ${fee} / ${sessions}회 수업\n하나은행 125-91025-766307 강열혁(제이앤씨음악학원)\n방문(카드/현금), 계좌이체·제로페이, 온라인 카드결제 모두 가능합니다.\n\n* 취소/노쇼 안내\n당일 취소 및 노쇼는 수업 1회 차감됩니다.\n변경 사항은 수업 전날까지 연락 부탁드립니다.\n\n항상 감사드립니다. ${closingDay}\nJ&C 음악학원장 드림.`;
     }
     if (type === "consult_confirm") {
       return `안녕하세요, J&C 음악학원입니다.\n\n${nameLabel}, 상담 예약이 확인되었습니다.\n\n* 상담 일시: (날짜/요일/시간 입력)\n* 장소: J&C 음악학원 (목동)\n\n문의사항이 있으시면 언제든지 연락 주세요.\n연락처: 010-4028-9803\n\n감사합니다 :)\nJ&C 음악학원장 드림.`;
@@ -3346,7 +3450,7 @@ const ConsultationView = ({
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">{msgTargetConsult.name} · {msgTargetConsult.phone}</p>
               </div>
-              <button onClick={() => setShowMsgModal(false)} className="p-1 hover:bg-slate-100 rounded-full transition-colors">
+              <button onClick={() => setShowMsgModal(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
                 <X size={22} className="text-slate-400" />
               </button>
             </div>
@@ -3368,7 +3472,7 @@ const ConsultationView = ({
                     className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
                       msgTemplateType === t.id
                         ? "bg-indigo-600 text-white border-indigo-600"
-                        : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
+                        : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50 active:bg-slate-100"
                     }`}
                   >
                     {t.label}
@@ -3442,7 +3546,7 @@ const ConsultationView = ({
               </h2>
               <button
                 onClick={() => setIsModalOpen(false)}
-                className="p-1 hover:bg-slate-100 rounded-full transition-colors"
+                className="p-2 hover:bg-slate-100 rounded-full transition-colors"
               >
                 <X size={24} className="text-slate-400" />
               </button>
@@ -3654,7 +3758,7 @@ const ConsultationView = ({
                             : status === "dropped"
                             ? "bg-rose-500 border-rose-600 text-white shadow-md"
                             : "bg-slate-600 border-slate-700 text-white shadow-md"
-                          : "bg-white border-slate-200 text-slate-400 hover:bg-slate-50"
+                          : "bg-white border-slate-200 text-slate-400 hover:bg-slate-50 active:bg-slate-100"
                       }`}
                     >
                       {status === "pending"
@@ -3749,12 +3853,12 @@ const ConsultationView = ({
               <tr
                 key={c.id}
                 onClick={() => openModal(c)}
-                className="hover:bg-indigo-50/20 cursor-pointer transition-all"
+                className="hover:bg-indigo-50 active:bg-indigo-100/20 cursor-pointer transition-all"
               >
                 <td className="px-6 py-4">
                   <div className="text-xs text-slate-500 mb-1">{c.date}</div>
                   <span
-                    className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                    className={`text-xs px-2 py-0.5 rounded-full font-bold ${
                       c.type === "adult"
                         ? "bg-slate-100 text-slate-600"
                         : "bg-indigo-50 text-indigo-600"
@@ -4078,8 +4182,8 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
   };
 
   const getSessionCount = (student, targetDate) => {
-    // totalSessions 단위(4 or 8)로 순환하는 회차를 반환 (1·2·3·4·1·2·3·4…)
-    // 당일취소도 1회 점유하므로 포함
+    // 누적 출석 기반 순환 회차 반환 (1·2·3·4·1·2·3·4…)
+    // 수납관리와 별개 — 수업일지/캘린더 표시 전용
     const total = getEffectiveSessions(student);
     const sessions = (student.attendanceHistory || [])
       .filter((h) => h.status === "present" || h.status === "canceled")
@@ -4103,7 +4207,6 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
     for (const h of sessions) {
       if (h.date === targetDate) {
         const cnt = h.status === "canceled" ? 1 : (h.count || 1);
-        // 마지막 회차에 도달하면 true (4회 단위면 4번째, 8회면 8번째)
         return (cumulative + cnt) % total === 0;
       }
       if (h.date > targetDate) break;
@@ -4168,7 +4271,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
               <div
                 key={i}
                 onClick={() => { setCurrentDate(new Date(date)); setViewType("day"); }}
-                className={`p-2 text-center border-r last:border-r-0 cursor-pointer hover:bg-indigo-50 transition-colors ${isToday ? "bg-indigo-50" : ""}`}
+                className={`p-2 text-center border-r last:border-r-0 cursor-pointer hover:bg-indigo-50 active:bg-indigo-100 transition-colors ${isToday ? "bg-indigo-50" : ""}`}
               >
                 <div className={`text-xs font-bold ${i === 6 ? "text-rose-500" : i === 5 ? "text-blue-500" : "text-slate-700"}`}>
                   {DAYS_OF_WEEK.find((d) => d.id === (i + 1) % 7)?.label}
@@ -4271,11 +4374,11 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                             <span className="truncate">{s.name}</span>
                             {sessionNum > 0 && <span className="shrink-0 text-[9px] opacity-60 font-normal">({sessionNum})</span>}
                             {isDoubleLesson && <span className="shrink-0 text-[8px] bg-indigo-700 text-white px-1 rounded leading-tight">×2</span>}
-                            {isLast && <span className="shrink-0 text-[10px]">💳</span>}
+                            {isLast && <span className="shrink-0 text-xs">💳</span>}
                             {isUnprocessed && <span className="shrink-0 text-amber-500 font-bold">!</span>}
                             {isMakeup && <span className="shrink-0 text-[9px] bg-sky-500 text-white px-1 rounded leading-tight">보강</span>}
                           </div>
-                          <div className="text-[10px] text-slate-500 truncate">{s.teacher} · {s.subject}</div>
+                          <div className="text-xs text-slate-500 truncate">{s.teacher} · {s.subject}</div>
                           {status === "present" && !isDoubleLesson && <div className="text-[9px] text-emerald-600 font-medium">✓ 출석</div>}
                           {isDoubleLesson && <div className="text-[9px] text-indigo-600 font-medium">✓ 연강 출석</div>}
                           {isAbsent && <div className="text-[9px] text-rose-500">✗ 결석</div>}
@@ -4365,7 +4468,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                     return (
                       <div
                         key={hour}
-                        className={`h-20 border-b p-1 transition-colors ${emptySlot ? "bg-emerald-50/40" : "hover:bg-slate-50"}`}
+                        className={`h-20 border-b p-1 transition-colors ${emptySlot ? "bg-emerald-50/40" : "hover:bg-slate-50 active:bg-slate-100"}`}
                       >
                         {emptySlot && (
                           <div className="text-[9px] text-emerald-400 text-center mt-1 font-medium">빈 슬롯</div>
@@ -4398,7 +4501,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                                   date: dateStr,
                                 });
                               }}
-                              className={`text-[10px] p-1 rounded border mb-1 cursor-pointer shadow-sm flex items-center gap-0.5 ${bgClass}`}
+                              className={`text-xs p-1 rounded border mb-1 cursor-pointer shadow-sm flex items-center gap-0.5 ${bgClass}`}
                             >
                               <span className="truncate">{s.name} {sessionNum ? `(${sessionNum})` : ""}{isDoubleLesson ? "×2" : ""}</span>
                               {isLast && <span className="shrink-0">💳</span>}
@@ -4465,7 +4568,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
           return (
             <div
               key={idx}
-              className={`bg-white p-2 min-h-[80px] hover:bg-indigo-50 transition-colors relative group border-t border-slate-50 cursor-pointer`}
+              className={`bg-white p-2 min-h-[80px] hover:bg-indigo-50 active:bg-indigo-100 transition-colors relative group border-t border-slate-50 cursor-pointer`}
               onClick={() => {
                 const details = getDetailModalData(dateStr, dayOfWeek);
                 if (
@@ -4489,7 +4592,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                   {day}
                 </span>
                 {isHoliday && (
-                  <span className="text-[10px] font-bold text-rose-500 bg-rose-50 px-1 rounded">
+                  <span className="text-xs font-bold text-rose-500 bg-rose-50 px-1 rounded">
                     {isHoliday}
                   </span>
                 )}
@@ -4505,7 +4608,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                       return (
                         <span
                           key={i}
-                          className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded truncate"
+                          className="text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded truncate"
                         >
                           {item.name}
                         </span>
@@ -4520,7 +4623,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                       const isLast = status === "present" && isLastSessionOfCycle(s, dateStr);
                       const isUnprocessed = isUnprocessedPast(s, dateStr);
                       let bgClass =
-                        "bg-slate-100 text-slate-600 border-slate-200 hover:border-indigo-300 hover:bg-indigo-50";
+                        "bg-slate-100 text-slate-600 border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 active:bg-indigo-100";
                       if (isUnprocessed)
                         bgClass = "bg-amber-50 text-amber-700 border-amber-400 hover:bg-amber-100";
                       else if (status === "present")
@@ -4539,7 +4642,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                             e.stopPropagation();
                             setAttendanceMenu({ student: s, date: dateStr });
                           }}
-                          className={`text-[10px] px-1.5 py-1 rounded border ${bgClass} font-medium flex justify-between items-center gap-0.5 transition-all shadow-sm`}
+                          className={`text-xs px-1.5 py-1 rounded border ${bgClass} font-medium flex justify-between items-center gap-0.5 transition-all shadow-sm`}
                         >
                           <span className="truncate">
                             {s.name} {sessionNum ? `(${sessionNum})` : ""}
@@ -4556,7 +4659,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
                     }
                   })}
                   {overflowCount > 0 && (
-                    <div className="text-[10px] text-slate-400 font-medium text-center mt-1">
+                    <div className="text-xs text-slate-400 font-medium text-center mt-1">
                       + {overflowCount}명 더보기
                     </div>
                   )}
@@ -4699,7 +4802,7 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
         </div>
       </div>
       {/* 범례 */}
-      <div className="flex items-center gap-3 text-[10px] text-slate-500 mb-2 flex-wrap">
+      <div className="flex items-center gap-3 text-xs text-slate-500 mb-2 flex-wrap">
         <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-emerald-100 border border-emerald-200 inline-block"></span>출석 완료</span>
         <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-amber-50 border border-amber-400 inline-block"></span>미처리 과거 수업 <b className="text-amber-500">!</b></span>
         <span className="flex items-center gap-1"><span>💳</span>이번 수업 후 결제 필요</span>
@@ -4725,9 +4828,7 @@ const ClassLogView = ({ students, teachers, user, showToast }) => {
   for (let i = 0; i < firstDay; i++) days.push(null);
   for (let i = 1; i <= daysInMonth; i++) days.push(i);
   const getSessionNumbers = (student, targetDate) => {
-    // 전체 출석 이력 누적 기준으로 해당 날짜 수업의 회차 배열을 반환한다.
-    // 월 관계없이 totalSessions 단위로 순환: 주1회(4회), 주2회(8회)
-    // 연강(count=2)이면 [n, n+1] 두 회차를 반환, 일반은 [n] 한 개
+    // 누적 출석 순환 방식 (결제와 무관하게 1→2→3→4→1... 반복)
     const total = getEffectiveSessions(student);
     const sessions = (student.attendanceHistory || [])
       .filter((h) => h.status === "present" || h.status === "canceled")
@@ -4895,7 +4996,7 @@ const ClassLogView = ({ students, teachers, user, showToast }) => {
             return (
               <div
                 key={i}
-                className="min-h-[100px] p-1 relative hover:bg-slate-50 transition-colors"
+                className="min-h-[100px] p-1 relative hover:bg-slate-50 active:bg-slate-100 transition-colors"
               >
                 <div className="flex justify-between px-1">
                   <span
@@ -4910,7 +5011,7 @@ const ClassLogView = ({ students, teachers, user, showToast }) => {
                     {day}
                   </span>
                   {isHoliday && (
-                    <span className="text-[10px] text-rose-500 font-bold">
+                    <span className="text-xs text-rose-500 font-bold">
                       {isHoliday}
                     </span>
                   )}
@@ -4920,7 +5021,7 @@ const ClassLogView = ({ students, teachers, user, showToast }) => {
                     <div
                       key={idx}
                       onClick={() => handleItemClick(item.id, dateStr)}
-                      className={`text-[10px] px-1 py-0.5 rounded truncate cursor-pointer transition-colors ${
+                      className={`text-xs px-1 py-0.5 rounded truncate cursor-pointer transition-colors ${
                         item.status === "present"
                           ? "text-slate-700 hover:bg-emerald-100"
                           : "text-slate-400 line-through hover:bg-slate-100"
@@ -5087,8 +5188,8 @@ const SettingsView = ({ teachers, students, showToast, seedData, adminPassword, 
 
   // 2. 강사 정보 수정 (Update) - 비밀번호 포함
   const handleUpdateTeacher = async (id, data) => {
-    // data 안에 name, password, part, days가 모두 들어있음
-    const { name, password, part, days, oldName } = data;
+    // data 안에 name, password, part, days, residentId, bankName, bankAccount가 모두 들어있음
+    const { name, password, part, days, oldName, residentId, bankName, bankAccount } = data;
 
     try {
       const teacherRef = doc(
@@ -5104,9 +5205,12 @@ const SettingsView = ({ teachers, students, showToast, seedData, adminPassword, 
       // Firebase 업데이트 (비밀번호, 파트, 요일 등 모두 갱신)
       await updateDoc(teacherRef, {
         name,
-        password, // 🔥 중요: 수정된 비밀번호 반영
+        password,
         part,
         days,
+        residentId: residentId || "",
+        bankName: bankName || "",
+        bankAccount: bankAccount || "",
       });
 
       // 강사 이름이 바뀌었다면, 원생 데이터의 담당 강사명도 변경
@@ -5453,7 +5557,7 @@ const SettingsView = ({ teachers, students, showToast, seedData, adminPassword, 
             >
               <Download size={16} className="mr-2" /> 백업(저장)
             </button>
-            <label className="flex-1 inline-flex justify-center items-center px-4 py-2 bg-white border border-indigo-300 text-indigo-700 rounded-lg cursor-pointer hover:bg-indigo-50 font-bold shadow-sm transition-colors text-sm">
+            <label className="flex-1 inline-flex justify-center items-center px-4 py-2 bg-white border border-indigo-300 text-indigo-700 rounded-lg cursor-pointer hover:bg-indigo-50 active:bg-indigo-100 font-bold shadow-sm transition-colors text-sm">
               <RefreshCcw size={16} className="mr-2" /> 복구(로드)
               <input
                 type="file"
@@ -5592,7 +5696,7 @@ const SettingsView = ({ teachers, students, showToast, seedData, adminPassword, 
                       setIsDirectInput(false);
                       setNewTeacherPart("피아노");
                     }}
-                    className="ml-2 text-[10px] text-indigo-500 hover:underline cursor-pointer"
+                    className="ml-2 text-xs text-indigo-500 hover:underline cursor-pointer"
                   >
                     (목록 선택)
                   </span>
@@ -5670,7 +5774,7 @@ const SettingsView = ({ teachers, students, showToast, seedData, adminPassword, 
               className="bg-white p-4 border rounded-xl flex flex-col justify-between shadow-sm cursor-pointer hover:border-indigo-500 hover:shadow-md transition-all group relative overflow-hidden"
             >
               {/* 파트 뱃지 */}
-              <div className="absolute top-0 right-0 px-3 py-1 rounded-bl-xl text-[10px] font-bold bg-slate-100 text-slate-600 border-l border-b border-slate-200">
+              <div className="absolute top-0 right-0 px-3 py-1 rounded-bl-xl text-xs font-bold bg-slate-100 text-slate-600 border-l border-b border-slate-200">
                 {t.part || "미지정"}
               </div>
 
@@ -5682,7 +5786,7 @@ const SettingsView = ({ teachers, students, showToast, seedData, adminPassword, 
                 </div>
                 {/* 비밀번호 표시 박스 */}
                 <div className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1.5 flex items-center justify-between">
-                  <span className="text-[10px] font-bold text-slate-500">
+                  <span className="text-xs font-bold text-slate-500">
                     🔑 비밀번호
                   </span>
                   <span className="text-sm font-mono font-bold text-indigo-600">
@@ -5700,20 +5804,20 @@ const SettingsView = ({ teachers, students, showToast, seedData, adminPassword, 
                   t.days.map((d) => (
                     <span
                       key={d}
-                      className="text-[10px] bg-white border border-slate-200 text-slate-500 px-1.5 py-0.5 rounded shadow-sm"
+                      className="text-xs bg-white border border-slate-200 text-slate-500 px-1.5 py-0.5 rounded shadow-sm"
                     >
                       {DAYS_OF_WEEK.find((day) => day.id === d)?.label}
                     </span>
                   ))
                 ) : (
-                  <span className="text-[10px] text-slate-300">요일 미정</span>
+                  <span className="text-xs text-slate-300">요일 미정</span>
                 )}
               </div>
 
               <div className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button
                   onClick={(e) => handleDeleteTeacher(t.id, e)}
-                  className="text-rose-400 hover:text-rose-600 p-1 hover:bg-rose-50 rounded"
+                  className="text-rose-400 hover:text-rose-600 p-2 hover:bg-rose-50 rounded"
                 >
                   <Trash2 size={16} />
                 </button>
@@ -5833,7 +5937,10 @@ const EditTeacherModal = ({
   onSave,
 }) => {
   const [name, setName] = useState(teacher.name);
-  const [password, setPassword] = useState(teacher.password || ""); // 기존 비밀번호 불러오기
+  const [password, setPassword] = useState(teacher.password || "");
+  const [residentId, setResidentId] = useState(teacher.residentId || "");
+  const [bankName, setBankName] = useState(teacher.bankName || "");
+  const [bankAccount, setBankAccount] = useState(teacher.bankAccount || "");
 
   const isPredefined = teacherParts.some((p) => p.id === teacher.part);
   const [part, setPart] = useState(teacher.part || "피아노");
@@ -5905,7 +6012,7 @@ const EditTeacherModal = ({
                     setIsDirectInput(false);
                     setPart("피아노");
                   }}
-                  className="ml-2 text-[10px] text-indigo-500 hover:underline cursor-pointer"
+                  className="ml-2 text-xs text-indigo-500 hover:underline cursor-pointer"
                 >
                   (목록 선택)
                 </span>
@@ -5962,6 +6069,41 @@ const EditTeacherModal = ({
               ))}
             </div>
           </div>
+
+          {/* 주민번호 */}
+          <div>
+            <label className="block text-xs font-bold text-slate-500 mb-1">
+              주민등록번호 <span className="font-normal text-slate-400">(세무 자료용)</span>
+            </label>
+            <input
+              className="w-full p-3 border rounded-xl bg-slate-50 focus:outline-indigo-600 font-mono tracking-widest"
+              value={residentId}
+              onChange={(e) => setResidentId(e.target.value)}
+              placeholder="000000-0000000"
+              maxLength={14}
+            />
+          </div>
+
+          {/* 계좌번호 */}
+          <div>
+            <label className="block text-xs font-bold text-slate-500 mb-1">
+              계좌번호 <span className="font-normal text-slate-400">(급여 이체용)</span>
+            </label>
+            <div className="flex gap-2">
+              <input
+                className="w-24 p-3 border rounded-xl bg-slate-50 focus:outline-indigo-600 text-sm"
+                value={bankName}
+                onChange={(e) => setBankName(e.target.value)}
+                placeholder="은행명"
+              />
+              <input
+                className="flex-1 p-3 border rounded-xl bg-slate-50 focus:outline-indigo-600 font-mono"
+                value={bankAccount}
+                onChange={(e) => setBankAccount(e.target.value)}
+                placeholder="계좌번호"
+              />
+            </div>
+          </div>
         </div>
 
         <div className="flex justify-end gap-2 mt-8">
@@ -5980,6 +6122,9 @@ const EditTeacherModal = ({
                 part,
                 days,
                 oldName: teacher.name,
+                residentId,
+                bankName,
+                bankAccount,
               });
               onClose();
             }}
@@ -6340,7 +6485,7 @@ const DateDetailModal = ({ date, students, onClose, onStudentClick }) => (
                 onClick={() => {
                   onStudentClick(s, date);
                 }}
-                className="flex justify-between items-center p-3 border rounded-lg hover:bg-slate-50 cursor-pointer"
+                className="flex justify-between items-center p-3 border rounded-lg hover:bg-slate-50 active:bg-slate-100 cursor-pointer"
               >
                 <div>
                   <span className="font-bold">{s.name}</span>{" "}
@@ -6412,7 +6557,7 @@ const FastAttendanceModal = ({ student, onClose, onSave }) => {
         </div>
         <div className="grid grid-cols-7 gap-1 text-center">
           {["일", "월", "화", "수", "목", "금", "토"].map((d) => (
-            <div key={d} className="text-[10px] text-slate-400">
+            <div key={d} className="text-xs text-slate-400">
               {d}
             </div>
           ))}
@@ -6521,7 +6666,7 @@ const FastAttendanceModal = ({ student, onClose, onSave }) => {
               onClick={() => {
                 setBaseDate(new Date(baseDate.getFullYear(), baseDate.getMonth() - 1, 1));
               }}
-              className="px-4 py-2 bg-white border rounded-lg hover:bg-slate-50 text-sm font-bold shadow-sm"
+              className="px-4 py-2 bg-white border rounded-lg hover:bg-slate-50 active:bg-slate-100 text-sm font-bold shadow-sm"
             >
               ◀ 이전 달
             </button>
@@ -6529,7 +6674,7 @@ const FastAttendanceModal = ({ student, onClose, onSave }) => {
               onClick={() => {
                 setBaseDate(new Date(baseDate.getFullYear(), baseDate.getMonth() + 1, 1));
               }}
-              className="px-4 py-2 bg-white border rounded-lg hover:bg-slate-50 text-sm font-bold shadow-sm"
+              className="px-4 py-2 bg-white border rounded-lg hover:bg-slate-50 active:bg-slate-100 text-sm font-bold shadow-sm"
             >
               다음 달 ▶
             </button>
@@ -6585,7 +6730,7 @@ const FastPaymentModal = ({ student, onClose, onSave }) => {
         </div>
         <div className="grid grid-cols-7 gap-1 text-center">
           {["일", "월", "화", "수", "목", "금", "토"].map((d) => (
-            <div key={d} className="text-[10px] text-slate-400">
+            <div key={d} className="text-xs text-slate-400">
               {d}
             </div>
           ))}
@@ -6609,7 +6754,7 @@ const FastPaymentModal = ({ student, onClose, onSave }) => {
                   ${
                     isPaid
                       ? "bg-indigo-600 text-white font-bold border-indigo-700 shadow-md transform scale-105"
-                      : "bg-white text-slate-500 border-slate-100 hover:border-indigo-300 hover:bg-indigo-50"
+                      : "bg-white text-slate-500 border-slate-100 hover:border-indigo-300 hover:bg-indigo-50 active:bg-indigo-100"
                   }
                 `}
               >
@@ -6711,7 +6856,7 @@ const FastPaymentModal = ({ student, onClose, onSave }) => {
               onClick={() => {
                 setBaseDate(new Date(baseDate.getFullYear(), baseDate.getMonth() - 1, 1));
               }}
-              className="px-4 py-2 bg-white border rounded-lg hover:bg-slate-50 text-sm font-bold shadow-sm"
+              className="px-4 py-2 bg-white border rounded-lg hover:bg-slate-50 active:bg-slate-100 text-sm font-bold shadow-sm"
             >
               ◀ 이전 달
             </button>
@@ -6719,7 +6864,7 @@ const FastPaymentModal = ({ student, onClose, onSave }) => {
               onClick={() => {
                 setBaseDate(new Date(baseDate.getFullYear(), baseDate.getMonth() + 1, 1));
               }}
-              className="px-4 py-2 bg-white border rounded-lg hover:bg-slate-50 text-sm font-bold shadow-sm"
+              className="px-4 py-2 bg-white border rounded-lg hover:bg-slate-50 active:bg-slate-100 text-sm font-bold shadow-sm"
             >
               다음 달 ▶
             </button>
@@ -6891,7 +7036,7 @@ const StudentModal = ({
           </div>
           <div className="grid grid-cols-7 gap-1 text-center">
             {["일", "월", "화", "수", "목", "금", "토"].map((day) => (
-              <div key={day} className="text-[10px] text-slate-400">
+              <div key={day} className="text-xs text-slate-400">
                 {day}
               </div>
             ))}
@@ -7196,7 +7341,7 @@ const StudentModal = ({
                   {schedule[day] && (
                     <button
                       onClick={() => handleScheduleChange(day, "")}
-                      className="text-[10px] text-red-400 hover:text-red-600 underline text-center"
+                      className="text-xs text-red-400 hover:text-red-600 underline text-center"
                     >
                       지우기
                     </button>
@@ -7737,7 +7882,7 @@ const KioskView = ({ students, onExitKiosk }) => {
                 key={n}
                 onClick={() => handleKeypad(String(n))}
                 disabled={phoneInput.length >= 4}
-                className="w-full py-4 bg-white border-2 border-slate-200 rounded-2xl text-2xl font-bold text-slate-700 hover:bg-indigo-50 hover:border-indigo-300 active:bg-indigo-100 disabled:opacity-40 transition-all shadow-sm"
+                className="w-full py-4 bg-white border-2 border-slate-200 rounded-2xl text-2xl font-bold text-slate-700 hover:bg-indigo-50 active:bg-indigo-100 hover:border-indigo-300 active:bg-indigo-100 disabled:opacity-40 transition-all shadow-sm"
               >
                 {n}
               </button>
@@ -7751,7 +7896,7 @@ const KioskView = ({ students, onExitKiosk }) => {
             <button
               onClick={() => handleKeypad("0")}
               disabled={phoneInput.length >= 4}
-              className="w-full py-4 bg-white border-2 border-slate-200 rounded-2xl text-2xl font-bold text-slate-700 hover:bg-indigo-50 hover:border-indigo-300 active:bg-indigo-100 disabled:opacity-40 transition-all shadow-sm"
+              className="w-full py-4 bg-white border-2 border-slate-200 rounded-2xl text-2xl font-bold text-slate-700 hover:bg-indigo-50 active:bg-indigo-100 hover:border-indigo-300 active:bg-indigo-100 disabled:opacity-40 transition-all shadow-sm"
             >
               0
             </button>
@@ -8203,7 +8348,7 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
                   {status && status !== "reschedule" && (
                     <div className="text-right">
                       <span
-                        className={`text-[10px] font-bold px-2 py-1 rounded-lg block w-fit ml-auto mb-1 ${
+                        className={`text-xs font-bold px-2 py-1 rounded-lg block w-fit ml-auto mb-1 ${
                           status === "present"
                             ? "bg-emerald-500 text-white"
                             : status === "canceled"
@@ -8218,14 +8363,14 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
                           : "결석"}
                       </span>
                       {detailInfo && (
-                        <span className="text-[10px] text-slate-500 font-medium">
+                        <span className="text-xs text-slate-500 font-medium">
                           ({detailInfo})
                         </span>
                       )}
                     </div>
                   )}
                   {status === "reschedule" && (
-                    <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-blue-500 text-white">보강등록</span>
+                    <span className="text-xs font-bold px-2 py-1 rounded-lg bg-blue-500 text-white">보강등록</span>
                   )}
                 </div>
 
@@ -8343,7 +8488,7 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
                   ) : (
                     <button
                       onClick={() => { setMemoEditId(s.id); setMemoInput(""); }}
-                      className="w-full text-[10px] text-slate-300 hover:text-amber-400 flex items-center justify-center gap-1 py-0.5"
+                      className="w-full text-xs text-slate-300 hover:text-amber-400 flex items-center justify-center gap-1 py-0.5"
                     >
                       + 메모 추가
                     </button>
@@ -8355,7 +8500,7 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
                       e.stopPropagation();
                       onActionClick(s, "delete");
                     }}
-                    className="w-full mt-1 text-[10px] text-slate-300 hover:text-rose-400 flex items-center justify-center gap-1 py-1"
+                    className="w-full mt-1 text-xs text-slate-300 hover:text-rose-400 flex items-center justify-center gap-1 py-1"
                   >
                     <Trash2 size={10} /> 기록 삭제/초기화
                   </button>
@@ -8416,7 +8561,7 @@ const AttendanceDetailModal = ({ config, onClose, onConfirm }) => {
                   className={`py-2 rounded-lg text-sm font-bold border transition-all ${
                     cancelType === type
                       ? "bg-indigo-600 text-white border-indigo-600"
-                      : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
+                      : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50 active:bg-slate-100"
                   }`}
                 >
                   {type}
@@ -8630,7 +8775,7 @@ const StudentView = ({
               }`}
             >
               재원
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${filterStatus === "재원" ? "bg-white/25 text-white" : "bg-slate-200 text-slate-500"}`}>
+              <span className={`text-xs px-1.5 py-0.5 rounded-full ${filterStatus === "재원" ? "bg-white/25 text-white" : "bg-slate-200 text-slate-500"}`}>
                 {stats.재원}
               </span>
             </button>
@@ -8645,7 +8790,7 @@ const StudentView = ({
               }`}
             >
               휴원
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${filterStatus === "휴원" ? "bg-white/25 text-white" : "bg-slate-200 text-slate-500"}`}>
+              <span className={`text-xs px-1.5 py-0.5 rounded-full ${filterStatus === "휴원" ? "bg-white/25 text-white" : "bg-slate-200 text-slate-500"}`}>
                 {stats.휴원}
               </span>
             </button>
@@ -8660,7 +8805,7 @@ const StudentView = ({
               }`}
             >
               퇴원
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${filterStatus === "퇴원" ? "bg-white/25 text-white" : "bg-slate-200 text-slate-500"}`}>
+              <span className={`text-xs px-1.5 py-0.5 rounded-full ${filterStatus === "퇴원" ? "bg-white/25 text-white" : "bg-slate-200 text-slate-500"}`}>
                 {stats.퇴원}
               </span>
             </button>
@@ -8748,7 +8893,7 @@ const StudentView = ({
                     <div className="flex flex-col gap-1">
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-slate-700 cursor-pointer hover:text-indigo-600 hover:underline" onClick={() => openWithTab(s, "info")}>{s.name}</span>
-                        <span className="text-[10px] px-2 py-0.5 bg-rose-50 text-rose-500 rounded-full font-bold border border-rose-100">{s.subject}</span>
+                        <span className="text-xs px-2 py-0.5 bg-rose-50 text-rose-500 rounded-full font-bold border border-rose-100">{s.subject}</span>
                       </div>
                       <span className="text-xs text-slate-400">{s.teacher}</span>
                     </div>
@@ -8824,9 +8969,9 @@ const StudentView = ({
               filteredStudents.map((s) => (
                 <tr
                   key={s.id}
-                  className="hover:bg-slate-50/50 transition-colors group"
+                  className="hover:bg-slate-50 active:bg-slate-100/50 transition-colors group"
                 >
-                  <td className="p-4 sticky left-0 bg-white group-hover:bg-slate-50 z-10 border-r border-slate-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                  <td className="p-4 sticky left-0 bg-white group-hover:bg-slate-50 active:bg-slate-100 z-10 border-r border-slate-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
                     <div className="flex flex-col gap-1.5">
                       <div className="flex items-center gap-2">
                         <span
@@ -8835,11 +8980,11 @@ const StudentView = ({
                         >
                           {s.name}
                         </span>
-                        <span className="text-[10px] px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-full font-bold border border-indigo-100">
+                        <span className="text-xs px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-full font-bold border border-indigo-100">
                           {s.subject}
                         </span>
                         <span
-                          className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
+                          className={`text-xs px-2 py-0.5 rounded-full font-bold border ${
                             getWeeklyFrequency(s) === 2
                               ? "bg-violet-50 text-violet-600 border-violet-100"
                               : "bg-slate-50 text-slate-500 border-slate-200"
@@ -8896,7 +9041,7 @@ const StudentView = ({
                           ([day, time]) => (
                             <span
                               key={day}
-                              className="px-2.5 py-1 bg-slate-100 text-slate-700 rounded-lg text-[10px] font-bold border border-slate-200"
+                              className="px-2.5 py-1 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold border border-slate-200"
                             >
                               {day} {time}
                             </span>
@@ -9177,13 +9322,30 @@ const StudentManagementModal = ({
       return sum;
     }, 0);
 
-    // 결제 이력 totalSessions 보존:
-    // totalSessions 없이 저장된 기존 결제 항목은 변경 전 원생의 수강 단위로 채워 보존
-    const originalEffectiveSessions = student ? getEffectiveSessions(student) : 4;
-    const correctedPayHistory = payHistory.map((p) => ({
-      ...p,
-      totalSessions: p.totalSessions || originalEffectiveSessions,
-    }));
+    // 결제 이력 totalSessions 보존 + sessionDates 재계산:
+    // totalSessions 없이 저장된 기존 결제 항목은 변경 후 수강 단위로 채워 보존
+    // sessionDates는 출석 이력 기반으로 순서대로 재할당 (변경 시 히스토리 보존)
+    const newEffectiveSessions = parseInt(formData.totalSessions) > 0
+      ? parseInt(formData.totalSessions)
+      : (Object.keys(formData.schedules || {}).length >= 2 ? 8 : 4);
+    const sortedAttForCorr = [...attHistory]
+      .filter((h) => h.status === "present" || h.status === "canceled")
+      .sort((a, b) => a.date.localeCompare(b.date));
+    const corrAttSlots = [];
+    sortedAttForCorr.forEach((h) => {
+      const cnt = h.status === "canceled" ? 1 : (h.count || 1);
+      for (let i = 0; i < cnt; i++) corrAttSlots.push(h.date);
+    });
+    const sortedPayForCorr = [...payHistory].sort((a, b) => a.date.localeCompare(b.date));
+    // 누적 슬라이스: k번째 결제는 출석 슬롯의 [이전결제총합, 이전총합+ps) 구간 커버
+    // 결제 간 sessionDates 중복 방지 (T vs P 누적 모델과 일치)
+    let cursorForCorr = 0;
+    const correctedPayHistory = sortedPayForCorr.map((p) => {
+      const ps = p.totalSessions > 0 ? p.totalSessions : newEffectiveSessions;
+      const recalcSessionDates = corrAttSlots.slice(cursorForCorr, cursorForCorr + ps);
+      cursorForCorr += ps;
+      return { ...p, totalSessions: ps, sessionDates: recalcSessionDates };
+    });
 
     const updatedData = {
       ...formData,
@@ -9223,7 +9385,7 @@ const StudentManagementModal = ({
             {["일", "월", "화", "수", "목", "금", "토"].map((day, idx) => (
               <div
                 key={day}
-                className={`text-[10px] font-bold ${
+                className={`text-xs font-bold ${
                   idx === 0
                     ? "text-rose-400"
                     : idx === 6
@@ -9326,7 +9488,7 @@ const StudentManagementModal = ({
                     : tab === "payment"
                     ? "bg-indigo-50 text-indigo-700 shadow-inner ring-1 ring-indigo-100"
                     : "bg-slate-100 text-slate-800 shadow-inner"
-                  : "text-slate-400 hover:bg-slate-50"
+                  : "text-slate-400 hover:bg-slate-50 active:bg-slate-100"
               }`}
             >
               {tab === "info" && <User size={16} />}
@@ -9546,7 +9708,7 @@ const StudentManagementModal = ({
                 <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
                   {DAYS.map((day) => (
                     <div key={day} className="space-y-1">
-                      <div className="text-[10px] text-center font-bold text-slate-400">
+                      <div className="text-xs text-center font-bold text-slate-400">
                         {day}
                       </div>
                       <input
@@ -9594,13 +9756,13 @@ const StudentManagementModal = ({
                 <div className="flex gap-2">
                   <button
                     onClick={() => moveMonth(-1)}
-                    className="px-3 py-1 bg-white border rounded text-xs hover:bg-slate-50 font-medium"
+                    className="px-3 py-1 bg-white border rounded text-xs hover:bg-slate-50 active:bg-slate-100 font-medium"
                   >
                     ◀ 이전
                   </button>
                   <button
                     onClick={() => moveMonth(1)}
-                    className="px-3 py-1 bg-white border rounded text-xs hover:bg-slate-50 font-medium"
+                    className="px-3 py-1 bg-white border rounded text-xs hover:bg-slate-50 active:bg-slate-100 font-medium"
                   >
                     다음 ▶
                   </button>
@@ -9633,13 +9795,13 @@ const StudentManagementModal = ({
                   <div className="flex gap-2">
                     <button
                       onClick={() => moveMonth(-1)}
-                      className="px-3 py-1 bg-white border rounded text-xs hover:bg-slate-50 font-medium"
+                      className="px-3 py-1 bg-white border rounded text-xs hover:bg-slate-50 active:bg-slate-100 font-medium"
                     >
                       ◀ 이전
                     </button>
                     <button
                       onClick={() => moveMonth(1)}
-                      className="px-3 py-1 bg-white border rounded text-xs hover:bg-slate-50 font-medium"
+                      className="px-3 py-1 bg-white border rounded text-xs hover:bg-slate-50 active:bg-slate-100 font-medium"
                     >
                       다음 ▶
                     </button>
@@ -9653,7 +9815,7 @@ const StudentManagementModal = ({
               {renderCalendar("payment")}
               <div className="mt-4 border-t pt-4">
                 <h4 className="text-xs font-bold text-slate-500 mb-2">
-                  최근 결제 내역 (요약)
+                  전체 결제 내역
                 </h4>
                 <div className="space-y-2">
                   {(() => {
@@ -9670,13 +9832,23 @@ const StudentManagementModal = ({
                       const cnt = h.status === "canceled" ? 1 : (h.count || 1);
                       for (let i = 0; i < cnt; i++) sessionSlots.push(h.date);
                     });
-                    const payWithIdx = sortedPay.map((h, i) => ({ ...h, payIdx: i }));
-                    const recentPays = [...payWithIdx].reverse().slice(0, 3);
+                    const payWithIdx = sortedPay.map((h, i) => {
+                      let prevUnits = 0;
+                      for (let j = 0; j < i; j++) {
+                        prevUnits +=
+                          sortedPay[j].totalSessions > 0
+                            ? sortedPay[j].totalSessions
+                            : sessionUnit;
+                      }
+                      return { ...h, payIdx: i, prevUnits };
+                    });
+                    const recentPays = [...payWithIdx].reverse();
                     return recentPays.map((h, idx) => {
-                      const startSession = h.payIdx * sessionUnit;
-                      const slots = sessionSlots.slice(startSession, startSession + sessionUnit);
-                      const startNum = startSession + 1;
-                      const endNum = startSession + slots.length;
+                      // 누적 슬라이스: 이전 결제들의 총 회차 다음 구간을 이 결제가 커버
+                      const payUnit = h.totalSessions > 0 ? h.totalSessions : sessionUnit;
+                      const slots = sessionSlots.slice(h.prevUnits, h.prevUnits + payUnit);
+                      const startNum = h.prevUnits + 1;
+                      const endNum = h.prevUnits + payUnit;
                       // 날짜별로 그룹화 (연강 여부 확인)
                       const dateGroups = [];
                       slots.forEach((date) => {
@@ -9981,12 +10153,38 @@ J&C 음악학원 발표회에 소중한 여러분을 초대합니다 🎵
 항상 감사드립니다. {{시즌인사2}}
 J&C 음악학원장 드림.`,
   },
+
+  // ── 첫 수업 안내 ──────────────────────────────────────
+  {
+    id: "new_lesson",
+    label: "첫 수업 안내",
+    text:
+`안녕하세요, J&C 음악학원입니다.
+
+[이름]의 첫 수업 안내드립니다.
+
+* 첫 수업: (날짜/요일/시간 입력)
+* 과목: [과목]
+
+* 원비 안내
+월 원비: (금액)원 / (횟수)회 수업
+하나은행 125-91025-766307 강열혁(제이앤씨음악학원)
+방문(카드/현금), 계좌이체·제로페이, 온라인 카드결제 모두 가능합니다.
+
+* 취소/노쇼 안내
+당일 취소 및 노쇼는 수업 1회 차감됩니다.
+변경 사항은 수업 전날까지 연락 부탁드립니다.
+
+항상 감사드립니다. 다음주 (요일)에 뵙겠습니다.
+J&C 음악학원장 드림.`,
+  },
 ];
 
 const BulkSmsView = ({ students, teachers, showToast }) => {
   const [selectedIds, setSelectedIds] = useState([]);
   const [filterTeacher, setFilterTeacher] = useState("");
   const [filterPart, setFilterPart] = useState("");
+  const [searchName, setSearchName] = useState("");
   const [templateId, setTemplateId] = useState("custom");
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
@@ -9998,9 +10196,10 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
     return students.filter((s) => {
       if (filterTeacher && s.teacher !== filterTeacher) return false;
       if (filterPart && s.part !== filterPart) return false;
+      if (searchName && !s.name.includes(searchName)) return false;
       return true;
     });
-  }, [students, filterTeacher, filterPart]);
+  }, [students, filterTeacher, filterPart, searchName]);
 
   const toggleAll = () => {
     if (selectedIds.length === filteredStudents.length) {
@@ -10010,17 +10209,76 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
     }
   };
 
+  const DAYS_KO_BULK = ["일", "월", "화", "수", "목", "금", "토"];
+
+  // 1명 선택 시 new_lesson 템플릿에 학생 정보 자동 채움
+  const buildNewLessonMsg = (ids) => {
+    const base = BULK_SMS_TEMPLATES.find((t) => t.id === "new_lesson")?.text || "";
+    if (ids.length !== 1) return base;
+    const s = students.find((st) => st.id === ids[0]);
+    if (!s) return base;
+
+    // 성인: "이름님", 학생: "이름 학생"
+    const nameSuffix = s.grade === "성인" ? "님" : " 학생";
+
+    // 첫 수업 날짜 + 요일 + 시간
+    const regDateStr = s.registrationDate || (s.createdAt ? s.createdAt.slice(0, 10) : "");
+    let firstLesson = "(날짜/요일/시간 입력)";
+    let lessonDayKo = "";
+    if (regDateStr) {
+      const d = new Date(regDateStr + "T00:00:00");
+      lessonDayKo = DAYS_KO_BULK[d.getDay()];
+      const lessonTime = getStudentScheduleTime(s, lessonDayKo);
+      firstLesson = lessonTime
+        ? `${regDateStr} (${lessonDayKo}) ${lessonTime}`
+        : `${regDateStr} (${lessonDayKo}) (시간 입력)`;
+    }
+
+    // 과목 + "1:1 개인레슨" 접미
+    const rawSubject = s.subject || "(과목)";
+    const subject = rawSubject.includes("1:1") ? rawSubject : `${rawSubject} 1:1 개인레슨`;
+
+    // 마무리 인사 요일
+    const closingDay = lessonDayKo ? `다음주 ${lessonDayKo}요일에 뵙겠습니다.` : "다음주 (요일)에 뵙겠습니다.";
+
+    const fee = s.tuitionFee ? `${Number(s.tuitionFee).toLocaleString()}원` : "(금액)원";
+    const sessions = (() => {
+      const saved = parseInt(s.totalSessions);
+      if (!isNaN(saved) && saved > 0) return saved;
+      return Object.keys(s.schedules || {}).length >= 2 ? 8 : 4;
+    })();
+
+    return base
+      .replace("[이름]", s.name + nameSuffix)
+      .replace("[과목]", subject)
+      .replace("(날짜/요일/시간 입력)", firstLesson)
+      .replace("(금액)원", fee)
+      .replace("(횟수)회", `${sessions}회`)
+      .replace("다음주 (요일)에 뵙겠습니다.", closingDay);
+  };
+
   const toggleOne = (id) => {
     setSelectedIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
   };
 
+  // new_lesson 템플릿 활성화 중 선택 변경 시 자동 갱신
+  useEffect(() => {
+    if (templateId === "new_lesson") {
+      setMessage(buildNewLessonMsg(selectedIds));
+    }
+  }, [selectedIds, templateId]); // eslint-disable-line
+
   const handleTemplateChange = (tid) => {
     setTemplateId(tid);
-    const t = BULK_SMS_TEMPLATES.find((t) => t.id === tid);
-    if (t && t.text) setMessage(applyTemplateGreetings(t.text));
-    else setMessage("");
+    if (tid === "new_lesson") {
+      setMessage(buildNewLessonMsg(selectedIds));
+    } else {
+      const t = BULK_SMS_TEMPLATES.find((t) => t.id === tid);
+      if (t && t.text) setMessage(applyTemplateGreetings(t.text));
+      else setMessage("");
+    }
   };
 
   const handleSend = async () => {
@@ -10072,6 +10330,15 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
         {/* 왼쪽: 원생 선택 */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
           <div className="p-4 border-b bg-slate-50 flex flex-wrap gap-2 items-center">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+              <input
+                placeholder="이름 검색"
+                value={searchName}
+                onChange={(e) => setSearchName(e.target.value)}
+                className="pl-8 pr-3 py-1.5 text-sm border rounded-lg bg-white focus:outline-indigo-500 w-28"
+              />
+            </div>
             <select
               value={filterTeacher}
               onChange={(e) => setFilterTeacher(e.target.value)}
@@ -10107,7 +10374,7 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
               filteredStudents.map((s) => (
                 <label
                   key={s.id}
-                  className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 cursor-pointer border-b border-slate-50"
+                  className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 active:bg-slate-100 cursor-pointer border-b border-slate-50"
                 >
                   <input
                     type="checkbox"
@@ -10271,49 +10538,22 @@ const PaymentView = ({
 
   // 수강 현황 계산 헬퍼
   const getStudentProgress = (s) => {
-    const totalAttended = (s.attendanceHistory || [])
-      .filter((h) => h.status === "present" || h.status === "canceled")
-      .reduce((sum, h) => sum + (h.status === "canceled" ? 1 : (h.count || 1)), 0);
-    const sessionUnit = getEffectiveSessions(s);
-    const sortedPayments = [...(s.paymentHistory || [])].sort((a, b) =>
-      a.date.localeCompare(b.date)
-    );
-    // totalSessions 없는 구버전 기록 fallback: 가장 오래된 저장값 → 스케줄 수 기반 (현재 설정값과 독립)
-    const scheduleBasedUnit = Object.keys(s.schedules || {}).length >= 2 ? 8 : 4;
-    const legacyFallback = sortedPayments.find(p => p.totalSessions > 0)?.totalSessions || scheduleBasedUnit;
-    const totalPaidCapacity = sortedPayments.reduce(
-      (sum, p) => sum + (p.totalSessions || legacyFallback),
-      0
-    );
-
-    const remainingCapacity = totalPaidCapacity - totalAttended;
-
-    // 마지막 결제 사이클 단위 (표시용) — legacyFallback 통일 적용
-    const lastPayUnit =
-      sortedPayments.length > 0
-        ? sortedPayments[sortedPayments.length - 1].totalSessions || legacyFallback
-        : sessionUnit;
-    const lastCycleStart = Math.max(0, totalPaidCapacity - lastPayUnit);
-    let currentUsage = Math.max(0, totalAttended - lastCycleStart);
-    // 사이클 경계: 용량 소진 상태에서 나머지=0이면 마지막 사이클 완료로 표시
-    if (currentUsage === 0 && totalAttended > 0 && remainingCapacity <= 0)
-      currentUsage = lastPayUnit;
-    const isOverdue = remainingCapacity < 0;
-    const isCompleted = remainingCapacity === 0 && totalPaidCapacity > 0;
-
+    const { lastConsumed, lastPayUnit, isOverdue, isCycleComplete } =
+      getStudentPaymentStatus(s);
+    const isCompleted = isCycleComplete && !isOverdue;
     return {
-      currentUsage,
+      currentUsage: lastConsumed,
       sessionUnit: lastPayUnit,
       isOverdue,
-      isCompleted,
+      isCompleted: isCycleComplete,
       displayStatus: isOverdue
         ? "미납 (초과)"
-        : isCompleted
+        : isCycleComplete
         ? "수강권 만료"
         : "수강 중",
       statusColor: isOverdue
         ? "bg-rose-100 text-rose-700 font-bold"
-        : isCompleted
+        : isCycleComplete
         ? "bg-amber-100 text-amber-700 font-bold"
         : "bg-emerald-100 text-emerald-700",
     };
@@ -10553,11 +10793,11 @@ const PaymentView = ({
                 <div className="flex rounded-lg border border-slate-200 overflow-hidden text-xs font-bold">
                   <button
                     onClick={() => { setMsgStyle("detailed"); setMsgContent(generatePaymentMessage(msgStudent, paymentUrl, "detailed")); }}
-                    className={`px-3 py-1 transition-colors ${msgStyle === "detailed" ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+                    className={`px-3 py-1 transition-colors ${msgStyle === "detailed" ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50 active:bg-slate-100"}`}
                   >상세</button>
                   <button
                     onClick={() => { setMsgStyle("simple"); setMsgContent(generatePaymentMessage(msgStudent, paymentUrl, "simple")); }}
-                    className={`px-3 py-1 transition-colors ${msgStyle === "simple" ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+                    className={`px-3 py-1 transition-colors ${msgStyle === "simple" ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50 active:bg-slate-100"}`}
                   >간결</button>
                 </div>
               </div>
@@ -10676,7 +10916,7 @@ const PaymentView = ({
                 <label className="block text-xs font-bold text-slate-500 mb-1">
                   결제방법
                   {quickPayStudent.lastPaymentMethod && (
-                    <span className="ml-2 text-[10px] text-slate-400 font-normal">
+                    <span className="ml-2 text-xs text-slate-400 font-normal">
                       (이전: {quickPayStudent.lastPaymentMethod})
                     </span>
                   )}
@@ -10691,7 +10931,7 @@ const PaymentView = ({
                           ? m === "결제선생"
                             ? "bg-blue-600 text-white border-blue-600"
                             : "bg-indigo-600 text-white border-indigo-600"
-                          : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
+                          : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50 active:bg-slate-100"
                       }`}
                     >
                       {m}
@@ -10842,19 +11082,19 @@ const PaymentView = ({
           <div className="flex rounded-lg overflow-hidden border text-sm">
             <button
               onClick={() => { setNotifMode(false); setProcessMode(false); setSelectedIds([]); }}
-              className={`px-3 py-1.5 font-medium transition-colors ${!notifMode && !processMode ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+              className={`px-3 py-1.5 font-medium transition-colors ${!notifMode && !processMode ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50 active:bg-slate-100"}`}
             >
               명단 관리
             </button>
             <button
               onClick={() => { setNotifMode(true); setProcessMode(false); setSelectedIds([]); }}
-              className={`px-3 py-1.5 font-medium transition-colors flex items-center gap-1 ${notifMode ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+              className={`px-3 py-1.5 font-medium transition-colors flex items-center gap-1 ${notifMode ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50 active:bg-slate-100"}`}
             >
               <MessageSquareText size={14} /> 안내 발송
             </button>
             <button
               onClick={() => { setNotifMode(false); setProcessMode(true); setSelectedIds([]); }}
-              className={`px-3 py-1.5 font-medium transition-colors flex items-center gap-1 ${processMode ? "bg-emerald-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+              className={`px-3 py-1.5 font-medium transition-colors flex items-center gap-1 ${processMode ? "bg-emerald-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50 active:bg-slate-100"}`}
             >
               <CreditCard size={14} /> 결제 처리
             </button>
@@ -10881,14 +11121,14 @@ const PaymentView = ({
           {!notifMode && (
             <button
               onClick={() => setFilterDue(!filterDue)}
-              className={`px-3 py-1.5 rounded text-sm border flex items-center transition-colors ${filterDue ? "bg-rose-50 border-rose-200 text-rose-600" : "bg-white hover:bg-slate-50"}`}
+              className={`px-3 py-1.5 rounded text-sm border flex items-center transition-colors ${filterDue ? "bg-rose-50 border-rose-200 text-rose-600" : "bg-white hover:bg-slate-50 active:bg-slate-100"}`}
             >
               <AlertCircle size={14} className="mr-1" /> {filterDue ? "전체 보기" : "미납/만료만"}
             </button>
           )}
           <button
             onClick={() => setFilterWeek(!filterWeek)}
-            className={`px-3 py-1.5 rounded text-sm border flex items-center transition-colors ${filterWeek ? "bg-violet-50 border-violet-300 text-violet-700 font-bold" : "bg-white hover:bg-slate-50"}`}
+            className={`px-3 py-1.5 rounded text-sm border flex items-center transition-colors ${filterWeek ? "bg-violet-50 border-violet-300 text-violet-700 font-bold" : "bg-white hover:bg-slate-50 active:bg-slate-100"}`}
           >
             <AlertCircle size={14} className="mr-1" /> {filterWeek ? "주간 해제" : "주간 미발송"}
           </button>
@@ -10905,7 +11145,7 @@ const PaymentView = ({
                 ? "bg-amber-50 border-amber-300 text-amber-700 font-bold"
                 : sentFilter === "done"
                 ? "bg-emerald-50 border-emerald-300 text-emerald-700 font-bold"
-                : "bg-white hover:bg-slate-50"
+                : "bg-white hover:bg-slate-50 active:bg-slate-100"
             }`}
           >
             <MessageSquareText size={14} className="mr-1" />
@@ -10940,7 +11180,7 @@ const PaymentView = ({
                 >
                   {student.name}
                   {payment.method && (
-                    <span className="text-[10px] text-slate-400 ml-1">
+                    <span className="text-xs text-slate-400 ml-1">
                       · {payment.method}
                     </span>
                   )}
@@ -10962,7 +11202,12 @@ const PaymentView = ({
               {selectedIds.length === list.length ? "전체 해제" : "전체 선택"}
             </button>
             <span className="text-sm text-slate-500">
-              미납/만료 <span className="font-bold text-rose-600">{list.length}명</span> 중{" "}
+              미납/만료 <span className="font-bold text-rose-600">{list.length}명</span>
+              <span className="text-slate-400 mx-1">/</span>
+              <span className="font-bold text-rose-600">
+                {list.reduce((sum, s) => sum + (Number(s.tuitionFee) || 0), 0).toLocaleString()}원
+              </span>
+              {" "}중{" "}
               <span className="font-bold text-indigo-700">{selectedIds.length}명</span> 선택
             </span>
             <span className="text-sm text-slate-400">|</span>
@@ -10997,13 +11242,14 @@ const PaymentView = ({
               <span className="font-bold text-rose-700 text-sm">결제 예정자</span>
               <span className="bg-rose-200 text-rose-800 text-xs px-1.5 py-0.5 rounded-full">{processableStudents.length}명</span>
             </div>
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b text-xs text-slate-400 uppercase">
                 <tr>
                   <th className="py-2.5 px-4 text-left">이름/과목</th>
-                  <th className="py-2.5 px-4 text-left">강사</th>
+                  <th className="py-2.5 px-4 text-left hidden sm:table-cell">강사</th>
                   <th className="py-2.5 px-4 text-right">원비</th>
-                  <th className="py-2.5 px-4 text-left">최종결제일</th>
+                  <th className="py-2.5 px-4 text-left hidden sm:table-cell">최종결제일</th>
                   <th className="py-2.5 px-4 text-center">결제방법</th>
                   <th className="py-2.5 px-4 text-center w-32">액션</th>
                 </tr>
@@ -11013,17 +11259,17 @@ const PaymentView = ({
                   const method = getMethodForStudent(s);
                   const { displayStatus, statusColor } = getStudentProgress(s);
                   return (
-                    <tr key={s.id} className="hover:bg-slate-50">
+                    <tr key={s.id} className="hover:bg-slate-50 active:bg-slate-100">
                       <td className="py-3 px-4">
                         <div className="font-medium">{s.name}</div>
                         <div className="text-xs text-slate-400">{s.subject}</div>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded ${statusColor}`}>{displayStatus}</span>
+                        <span className={`text-xs px-1.5 py-0.5 rounded ${statusColor}`}>{displayStatus}</span>
                       </td>
-                      <td className="py-3 px-4 text-slate-600">{s.teacher || "-"}</td>
+                      <td className="py-3 px-4 text-slate-600 hidden sm:table-cell">{s.teacher || "-"}</td>
                       <td className="py-3 px-4 text-right font-bold text-indigo-600">
                         {Number(s.tuitionFee || 0).toLocaleString()}원
                       </td>
-                      <td className="py-3 px-4 text-xs text-slate-500">{getComputedLastPayDate(s) || "-"}</td>
+                      <td className="py-3 px-4 text-xs text-slate-500 hidden sm:table-cell">{getComputedLastPayDate(s) || "-"}</td>
                       <td className="py-3 px-4">
                         <div className="flex flex-wrap gap-1 justify-center">
                           {["현장", "계좌이체", "기타", "결제선생"].map((m) => (
@@ -11035,7 +11281,7 @@ const PaymentView = ({
                                   ? m === "결제선생"
                                     ? "bg-blue-600 text-white border-blue-600"
                                     : "bg-indigo-600 text-white border-indigo-600"
-                                  : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
+                                  : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50 active:bg-slate-100"
                               }`}
                             >
                               {m}
@@ -11070,6 +11316,7 @@ const PaymentView = ({
                 )}
               </tbody>
             </table>
+            </div>
           </div>
 
           {/* 결제 완료자 */}
@@ -11092,25 +11339,26 @@ const PaymentView = ({
                 ))}
               </div>
             </div>
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b text-xs text-slate-400 uppercase">
                 <tr>
                   <th className="py-2.5 px-4 text-left">이름/과목</th>
-                  <th className="py-2.5 px-4 text-left">강사</th>
-                  <th className="py-2.5 px-4 text-left">결제일</th>
+                  <th className="py-2.5 px-4 text-left hidden sm:table-cell">강사</th>
+                  <th className="py-2.5 px-4 text-left hidden sm:table-cell">결제일</th>
                   <th className="py-2.5 px-4 text-right">금액</th>
                   <th className="py-2.5 px-4 text-center">결제방법</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 bg-white">
                 {recentlyPaidList.map(({ student: s, payment: p }, i) => (
-                  <tr key={`${s.id}-${i}`} className="hover:bg-slate-50">
+                  <tr key={`${s.id}-${i}`} className="hover:bg-slate-50 active:bg-slate-100">
                     <td className="py-2.5 px-4">
                       <div className="font-medium">{s.name}</div>
                       <div className="text-xs text-slate-400">{s.subject}</div>
                     </td>
-                    <td className="py-2.5 px-4 text-slate-600">{s.teacher || "-"}</td>
-                    <td className="py-2.5 px-4 text-slate-600">{p.date}</td>
+                    <td className="py-2.5 px-4 text-slate-600 hidden sm:table-cell">{s.teacher || "-"}</td>
+                    <td className="py-2.5 px-4 text-slate-600 hidden sm:table-cell">{p.date}</td>
                     <td className="py-2.5 px-4 text-right font-bold text-indigo-600">
                       {Number(p.amount || 0).toLocaleString()}원
                     </td>
@@ -11133,6 +11381,7 @@ const PaymentView = ({
                 )}
               </tbody>
             </table>
+            </div>
           </div>
 
           {/* 결제선생 청구서 현황 */}
@@ -11165,7 +11414,7 @@ const PaymentView = ({
                       const stateLabel = stInfo?.state ? (STATE_LABEL[stInfo.state] || { text: stInfo.state, cls: "bg-slate-100 text-slate-600" }) : null;
                       const student = students.find((s) => s.id === log.studentId);
                       return (
-                        <tr key={log.billId} className={`${stInfo?.state === "D" ? "bg-rose-50" : "hover:bg-slate-50"}`}>
+                        <tr key={log.billId} className={`${stInfo?.state === "D" ? "bg-rose-50" : "hover:bg-slate-50 active:bg-slate-100"}`}>
                           <td className="py-2.5 px-4 font-medium">{log.studentName || "-"}</td>
                           <td className="py-2.5 px-4 text-xs text-slate-500">{log.sentAt}</td>
                           <td className="py-2.5 px-4">
@@ -11228,9 +11477,9 @@ const PaymentView = ({
                 </th>
               )}
               <th className="py-3 px-4">이름/과목</th>
-              <th className="py-3 px-4">강사</th>
+              <th className="py-3 px-4 hidden sm:table-cell">강사</th>
               <th className="py-3 px-4">원비</th>
-              <th className="py-3 px-4">진척도</th>
+              <th className="py-3 px-4 hidden sm:table-cell">진척도</th>
               <th className="py-3 px-4">상태</th>
               {notifMode ? (
                 <>
@@ -11250,7 +11499,7 @@ const PaymentView = ({
               return (
                 <tr
                   key={s.id}
-                  className={`border-b transition-colors ${notifMode ? (selectedIds.includes(s.id) ? "bg-indigo-50" : "hover:bg-slate-50") : "hover:bg-slate-50 cursor-pointer"}`}
+                  className={`border-b transition-colors ${notifMode ? (selectedIds.includes(s.id) ? "bg-indigo-50" : "hover:bg-slate-50 active:bg-slate-100") : "hover:bg-slate-50 active:bg-slate-100 cursor-pointer"}`}
                   onClick={() => { if (!notifMode) setSelectedStudentId(s.id); else toggleSelect(s.id); }}
                 >
                   {notifMode && (
@@ -11268,13 +11517,13 @@ const PaymentView = ({
                     {s.subject && <span className="text-xs text-slate-500 ml-1">({s.subject})</span>}
                     {s.phone && <div className="text-xs text-slate-400">{s.phone}</div>}
                   </td>
-                  <td className="py-3 px-4 text-sm text-slate-600">
+                  <td className="py-3 px-4 text-sm text-slate-600 hidden sm:table-cell">
                     {s.teacher || <span className="text-slate-300">-</span>}
                   </td>
                   <td className="py-3 px-4 font-bold text-indigo-600">
                     {s.tuitionFee ? Number(s.tuitionFee).toLocaleString() : 0}
                   </td>
-                  <td className="py-3 px-4 font-mono font-bold text-slate-700">
+                  <td className="py-3 px-4 font-mono font-bold text-slate-700 hidden sm:table-cell">
                     {currentUsage} / {sessionUnit}
                   </td>
                   <td className="py-3 px-4">
@@ -11308,7 +11557,7 @@ const PaymentView = ({
                                   href={kyLog.shortURL}
                                   target="_blank"
                                   rel="noreferrer"
-                                  className="text-blue-500 underline text-[10px] hover:text-blue-700"
+                                  className="text-blue-500 underline text-xs hover:text-blue-700"
                                 >
                                   💳 청구서
                                 </a>
@@ -11323,7 +11572,7 @@ const PaymentView = ({
                                     showToast("파기 실패: " + e.message, "error");
                                   }
                                 }}
-                                className="text-rose-400 text-[10px] hover:text-rose-600 hover:underline"
+                                className="text-rose-400 text-xs hover:text-rose-600 hover:underline"
                               >
                                 파기
                               </button>
@@ -11354,7 +11603,7 @@ const PaymentView = ({
                     <td className="py-3 px-4 text-center">
                       <button
                         onClick={(e) => handleOpenMsgPreview(e, s)}
-                        className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                        className="p-2 text-indigo-600 hover:bg-indigo-50 active:bg-indigo-100 rounded-lg transition-colors"
                         title="안내 문자 미리보기"
                       >
                         <MessageSquareText size={18} />
@@ -11494,20 +11743,20 @@ const BulkMessageModal = ({ students, messageLogs, paymentUrl, onSaveLog, onClos
             <div className="flex rounded-lg border border-slate-200 overflow-hidden text-xs font-bold">
               <button
                 onClick={() => handleStyleChange("detailed")}
-                className={`px-3 py-1.5 transition-colors ${msgStyle === "detailed" ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+                className={`px-3 py-1.5 transition-colors ${msgStyle === "detailed" ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50 active:bg-slate-100"}`}
               >상세</button>
               <button
                 onClick={() => handleStyleChange("simple")}
-                className={`px-3 py-1.5 transition-colors ${msgStyle === "simple" ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+                className={`px-3 py-1.5 transition-colors ${msgStyle === "simple" ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50 active:bg-slate-100"}`}
               >간결</button>
             </div>
             <button
               onClick={handleCopyAll}
-              className="px-3 py-1.5 text-xs border border-indigo-300 text-indigo-700 rounded-lg font-bold hover:bg-indigo-50 flex items-center gap-1"
+              className="px-3 py-1.5 text-xs border border-indigo-300 text-indigo-700 rounded-lg font-bold hover:bg-indigo-50 active:bg-indigo-100 flex items-center gap-1"
             >
               <Copy size={13} /> 전체 복사
             </button>
-            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1">
+            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-2">
               <X size={24} />
             </button>
           </div>
@@ -11568,7 +11817,7 @@ const BulkMessageModal = ({ students, messageLogs, paymentUrl, onSaveLog, onClos
                   </div>
                   <button
                     onClick={() => handleCopySingle(activeStudent.id)}
-                    className="px-3 py-1.5 text-xs border rounded-lg font-bold flex items-center gap-1 hover:bg-slate-50"
+                    className="px-3 py-1.5 text-xs border rounded-lg font-bold flex items-center gap-1 hover:bg-slate-50 active:bg-slate-100"
                   >
                     <Copy size={13} /> 복사
                   </button>
@@ -11903,12 +12152,34 @@ export default function App() {
         );
         if (!ok) return;
       }
+      const paymentSessionUnit = totalSessionsOverride ?? getEffectiveSessions(student);
+      // 선불 방식: sessionStartDate(=realSessionStartDate)부터 시작하는 수업 날짜 저장
+      const sortedAttForPay = [...(student.attendanceHistory || [])]
+        .filter((h) => h.status === "present" || h.status === "canceled")
+        .sort((a, b) => a.date.localeCompare(b.date));
+      const attSlotsForPay = [];
+      sortedAttForPay.forEach((h) => {
+        const cnt = h.status === "canceled" ? 1 : (h.count || 1);
+        for (let i = 0; i < cnt; i++) attSlotsForPay.push(h.date);
+      });
+      // 누적 슬라이스: 이전 결제들이 차지한 슬롯 다음부터 paymentSessionUnit개 커버
+      // sessionDates 중복 방지 (T vs P 누적 모델과 일치)
+      const previousUnits = (student.paymentHistory || []).reduce(
+        (s, p) => s + (p.totalSessions > 0 ? p.totalSessions : getEffectiveSessions(student)),
+        0
+      );
+      const sessionDates = attSlotsForPay.slice(
+        previousUnits,
+        previousUnits + paymentSessionUnit
+      );
+
       const newHistoryItem = {
         date,
         amount,
         type: "tuition",
         sessionStartDate: realSessionStartDate,
-        totalSessions: totalSessionsOverride ?? getEffectiveSessions(student),
+        totalSessions: paymentSessionUnit,
+        sessionDates,
         createdAt: new Date().toISOString(),
         ...(method && { method }),
       };
@@ -12420,7 +12691,7 @@ export default function App() {
               <p className="text-sm font-bold text-slate-800 truncate">
                 {currentUser.name} 님
               </p>
-              <p className="text-[10px] text-slate-500 bg-white border px-1.5 py-0.5 rounded-full inline-block mt-0.5">
+              <p className="text-xs text-slate-500 bg-white border px-1.5 py-0.5 rounded-full inline-block mt-0.5">
                 {currentUser.role === "admin" ? "원장님" : "강사님"}
               </p>
             </div>
@@ -12481,7 +12752,7 @@ export default function App() {
           <h1 className="font-bold text-lg">JnC Music</h1>
           <button
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className="p-1 rounded-lg hover:bg-slate-100 transition-colors"
+            className="p-2 rounded-lg hover:bg-slate-100 active:bg-slate-200 transition-colors"
           >
             {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
           </button>
@@ -12601,6 +12872,7 @@ export default function App() {
               onRegisterStudent={handleRegisterFromConsultation} // 👈 이 연결이 핵심입니다!
               targetConsultation={targetConsultation}
               onClearTargetConsultation={() => setTargetConsultation(null)}
+              students={students}
             />
           )}
           {activeTab === "bulkSms" && currentUser.role === "admin" && (
@@ -12648,6 +12920,15 @@ const resolveFeeTeacher = (student, date, record) => {
   return entry ? entry.teacher : student.teacher || "";
 };
 
+const calcDefaultPeriod = (year, month) => {
+  let py = year, pm = month - 1;
+  if (pm === 0) { pm = 12; py = year - 1; }
+  return {
+    start: `${py}-${String(pm).padStart(2, "0")}-24`,
+    end: `${year}-${String(month).padStart(2, "0")}-23`,
+  };
+};
+
 const InstructorFeeView = ({ teachers, students, showToast }) => {
   const [subTab, setSubTab] = useState("calc");
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -12658,6 +12939,10 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
   const [savingId, setSavingId] = useState(null);
   const [editFeeData, setEditFeeData] = useState({});
   const slipRef = useRef(null);
+
+  const defaultPeriod = calcDefaultPeriod(selectedYear, selectedMonth);
+  const [periodStart, setPeriodStart] = useState(defaultPeriod.start);
+  const [periodEnd, setPeriodEnd] = useState(defaultPeriod.end);
 
   const teacherList = teachers.filter((t) => t.name && t.name.trim());
 
@@ -12692,14 +12977,11 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
     });
   }, [teachers]);
 
-  // 정산 기간: 전월 24일 ~ 당월 23일
-  const period = useMemo(() => {
-    let py = selectedYear, pm = selectedMonth - 1;
-    if (pm === 0) { pm = 12; py = selectedYear - 1; }
-    return {
-      start: `${py}-${String(pm).padStart(2, "0")}-24`,
-      end: `${selectedYear}-${String(selectedMonth).padStart(2, "0")}-23`,
-    };
+  // 연/월 변경 시 기간 기본값으로 리셋
+  useEffect(() => {
+    const p = calcDefaultPeriod(selectedYear, selectedMonth);
+    setPeriodStart(p.start);
+    setPeriodEnd(p.end);
   }, [selectedYear, selectedMonth]);
 
   // 강사별 학생 수업 횟수 집계
@@ -12709,8 +12991,8 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
         .map((s) => {
           const allRecs = (s.attendanceHistory || []).filter(
             (h) =>
-              h.date >= period.start &&
-              h.date <= period.end &&
+              h.date >= periodStart &&
+              h.date <= periodEnd &&
               (h.status === "present" || h.status === "canceled")
           );
           const recs = allRecs.filter(
@@ -12731,7 +13013,7 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
         })
         .filter(Boolean)
         .sort((a, b) => b.sessions - a.sessions),
-    [students, period]
+    [students, periodStart, periodEnd]
   );
 
   // 학생 1명에 대한 강사료 계산 (override → revenueShare → 기본 단가)
@@ -12773,6 +13055,48 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
   const totalSessions = sessionRows.reduce((s, r) => s + r.sessions, 0);
   const grossFee = calcFee(currentTeacher, sessionRows);
   const tax = Math.round(grossFee * 0.033);
+
+  // 일괄 다운로드 상태
+  const [bulkDownloadIdx, setBulkDownloadIdx] = useState(-1);
+  const [bulkDownloadDone, setBulkDownloadDone] = useState(0);
+  const bulkSlipRef = useRef(null);
+
+  // 단가 설정된 강사만 일괄 대상
+  const bulkTeachers = useMemo(
+    () => teacherList.filter((t) => {
+      const rows = calcSessions(t.name);
+      const sess = rows.reduce((s, r) => s + r.sessions, 0);
+      return sess > 0 && calcFee(t, rows) > 0;
+    }),
+    [teacherList, calcSessions]
+  );
+
+  // 일괄 다운로드: bulkDownloadIdx 변경 시 캡처 실행
+  useEffect(() => {
+    if (bulkDownloadIdx < 0 || bulkDownloadIdx >= bulkTeachers.length) {
+      if (bulkDownloadIdx >= bulkTeachers.length) {
+        setBulkDownloadIdx(-1);
+        setBulkDownloadDone(0);
+        showToast(`${bulkTeachers.length}명 명세서 다운로드 완료`, "success");
+      }
+      return;
+    }
+    const timer = setTimeout(async () => {
+      if (!bulkSlipRef.current) return;
+      try {
+        const canvas = await html2canvas(bulkSlipRef.current, { scale: 2.5, backgroundColor: "#ffffff", useCORS: true });
+        const link = document.createElement("a");
+        link.download = `급여명세서_${bulkTeachers[bulkDownloadIdx].name}_${selectedYear}년${selectedMonth}월.png`;
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+        setBulkDownloadDone((d) => d + 1);
+        setBulkDownloadIdx((i) => i + 1);
+      } catch {
+        setBulkDownloadIdx((i) => i + 1);
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [bulkDownloadIdx]); // eslint-disable-line
   const netFee = grossFee - tax;
 
   const yearOptions = [
@@ -12837,7 +13161,7 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
     const wb = window.XLSX.utils.book_new();
     const rows = [
       [`${selectedYear}년 ${selectedMonth}월 강사료 계산서 — ${selectedTeacherName}`],
-      [`정산 기간: ${period.start} ~ ${period.end}`],
+      [`정산 기간: ${periodStart} ~ ${periodEnd}`],
       [],
       ["학생명", "회차", "강사료(원)"],
       ...sessionRows.map((r) => [
@@ -12867,9 +13191,9 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
     const wb = window.XLSX.utils.book_new();
     const header = [
       [`${selectedYear}년 ${selectedMonth}월 강사료 세무 자료`],
-      [`정산 기간: ${period.start} ~ ${period.end}`],
+      [`정산 기간: ${periodStart} ~ ${periodEnd}`],
       [],
-      ["연번", "강사명", "파트", "귀속월", "지급액(강사료)", "소득세(3%)", "지방소득세(0.3%)", "합계세액", "실지급액"],
+      ["연번", "강사명", "주민등록번호", "은행", "계좌번호", "파트", "귀속월", "지급액(강사료)", "소득세(3%)", "지방소득세(0.3%)", "합계세액", "실지급액"],
     ];
     let seq = 0;
     const dataRows = teacherList
@@ -12885,6 +13209,9 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
         return [
           seq,
           t.name,
+          t.residentId || "",
+          t.bankName || "",
+          t.bankAccount || "",
           t.part || "",
           `${selectedYear}-${String(selectedMonth).padStart(2, "0")}`,
           gross,
@@ -12941,30 +13268,52 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
               </select>
             </div>
             <div>
-              <label className="text-xs font-bold text-slate-500 block mb-1">연도</label>
-              <select
-                value={selectedYear}
-                onChange={(e) => setSelectedYear(Number(e.target.value))}
-                className="border rounded-lg px-3 py-2 text-sm"
-              >
-                {yearOptions.map((y) => <option key={y} value={y}>{y}년</option>)}
-              </select>
+              <label className="text-xs font-bold text-slate-500 block mb-1">귀속 연/월</label>
+              <div className="flex gap-1 items-center">
+                <select
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(Number(e.target.value))}
+                  className="border rounded-lg px-3 py-2 text-sm"
+                >
+                  {yearOptions.map((y) => <option key={y} value={y}>{y}년</option>)}
+                </select>
+                <select
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                  className="border rounded-lg px-3 py-2 text-sm"
+                >
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                    <option key={m} value={m}>{m}월</option>
+                  ))}
+                </select>
+              </div>
             </div>
             <div>
-              <label className="text-xs font-bold text-slate-500 block mb-1">월</label>
-              <select
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(Number(e.target.value))}
+              <label className="text-xs font-bold text-slate-500 block mb-1">집계 시작일</label>
+              <input
+                type="date"
+                value={periodStart}
+                onChange={(e) => setPeriodStart(e.target.value)}
                 className="border rounded-lg px-3 py-2 text-sm"
-              >
-                {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                  <option key={m} value={m}>{m}월</option>
-                ))}
-              </select>
+              />
             </div>
-            <p className="text-xs text-slate-400 self-end pb-2">
-              집계 기간: {period.start} ~ {period.end}
-            </p>
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">집계 종료일</label>
+              <input
+                type="date"
+                value={periodEnd}
+                onChange={(e) => setPeriodEnd(e.target.value)}
+                className="border rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            {(periodStart !== defaultPeriod.start || periodEnd !== defaultPeriod.end) && (
+              <button
+                onClick={() => { setPeriodStart(defaultPeriod.start); setPeriodEnd(defaultPeriod.end); }}
+                className="self-end pb-0.5 text-xs text-indigo-500 hover:text-indigo-700 underline"
+              >
+                기본값으로
+              </button>
+            )}
           </div>
 
           {/* 단가 미설정 경고 */}
@@ -13007,6 +13356,19 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
                 >
                   <File size={13} /> 명세서
                 </button>
+                {bulkDownloadIdx >= 0 ? (
+                  <span className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold bg-violet-50 text-violet-700 border border-violet-200 rounded-lg">
+                    <Loader size={13} className="animate-spin" />
+                    {bulkDownloadDone}/{bulkTeachers.length}
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => { setBulkDownloadDone(0); setBulkDownloadIdx(0); }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-violet-50 text-violet-700 border border-violet-200 rounded-lg hover:bg-violet-100 transition-colors"
+                  >
+                    <Download size={13} /> 일괄 다운
+                  </button>
+                )}
               </div>
             </div>
             {sessionRows.length === 0 ? (
@@ -13028,7 +13390,7 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
                     const rowFee = isMonthly ? null : calcStudentFee(currentTeacher, row);
                     const hasOverride = currentTeacher && (currentTeacher.studentFeeOverrides || {})[row.studentId] != null;
                     return (
-                      <tr key={i} className="border-t hover:bg-slate-50 transition-colors">
+                      <tr key={i} className="border-t hover:bg-slate-50 active:bg-slate-100 transition-colors">
                         <td className="px-5 py-3 font-medium">
                           {row.name}
                           {hasOverride && (
@@ -13118,7 +13480,7 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
                           [t.id]: { ...prev[t.id], showOverrides: !prev[t.id]?.showOverrides },
                         }))
                       }
-                      className="px-3 py-2 text-xs font-bold border rounded-lg text-slate-600 hover:bg-slate-50 transition-colors"
+                      className="px-3 py-2 text-xs font-bold border rounded-lg text-slate-600 hover:bg-slate-50 active:bg-slate-100 transition-colors"
                     >
                       학생별 단가 {ed.showOverrides ? "▲ 닫기" : "▼ 설정"}
                     </button>
@@ -13232,7 +13594,7 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
               <Download size={15} /> 엑셀 다운로드
             </button>
           </div>
-          <p className="text-xs text-slate-400">집계 기간: {period.start} ~ {period.end}</p>
+          <p className="text-xs text-slate-400">집계 기간: {periodStart} ~ {periodEnd}</p>
 
           <div className="bg-white rounded-2xl border overflow-x-auto">
             <table className="w-full text-sm">
@@ -13257,7 +13619,7 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
                     const it = Math.round(gross * 0.03);
                     const lt = Math.round(gross * 0.003);
                     return (
-                      <tr key={t.id} className="border-t hover:bg-slate-50 transition-colors">
+                      <tr key={t.id} className="border-t hover:bg-slate-50 active:bg-slate-100 transition-colors">
                         <td className="px-4 py-3 font-medium">{t.name}</td>
                         <td className="px-4 py-3 text-slate-500">{t.part || "—"}</td>
                         <td className="px-4 py-3 text-right">{gross.toLocaleString()}</td>
@@ -13289,89 +13651,175 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
       )}
 
       {/* ── 급여 명세서 모달 ── */}
-      {showSlip && (
-        <div
-          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
-          onClick={(e) => { if (e.target === e.currentTarget) setShowSlip(false); }}
-        >
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
-            <div className="flex items-center justify-between px-5 py-4 border-b">
-              <h3 className="font-bold text-slate-800">급여 명세서</h3>
-              <button
-                onClick={() => setShowSlip(false)}
-                className="p-1 rounded-lg hover:bg-slate-100 transition-colors"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            {/* 지급일 입력 */}
-            <div className="px-5 pt-4 pb-2 flex items-center gap-3">
-              <label className="text-xs font-bold text-slate-500 whitespace-nowrap">지급일</label>
-              <input
-                type="date"
-                value={payDate}
-                onChange={(e) => setPayDate(e.target.value)}
-                className="border rounded-lg px-3 py-1.5 text-sm flex-1"
-              />
-            </div>
-            {/* 캡처 대상 영역 */}
-            <div ref={slipRef} className="mx-5 mb-2 mt-3 border-2 border-slate-200 rounded-xl p-6 bg-white">
-              <h2 className="text-center text-lg font-bold text-slate-800 mb-1">
-                {selectedYear}년 {selectedMonth}월 급여 명세서
-              </h2>
-              <p className="text-center text-xs text-slate-400 mb-5">
-                {period.start} ~ {period.end}
-              </p>
-              <div className="space-y-2.5 text-sm">
-                {[
-                  ["강사명", selectedTeacherName],
-                  ["파트", currentTeacher?.part || "—"],
-                  ["지급일", payDate],
-                ].map(([k, v]) => (
-                  <div key={k} className="flex justify-between items-center border-b pb-2">
-                    <span className="text-slate-500">{k}</span>
-                    <span className="font-bold">{v}</span>
+      {showSlip && (() => {
+        const isMonthly = (currentTeacher?.feeType || "perSession") === "monthly";
+        return (
+          <div
+            className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4 overflow-y-auto"
+            onClick={(e) => { if (e.target === e.currentTarget) setShowSlip(false); }}
+          >
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md my-4">
+              <div className="flex items-center justify-between px-5 py-4 border-b">
+                <h3 className="font-bold text-slate-800">급여 명세서 미리보기</h3>
+                <button onClick={() => setShowSlip(false)} className="p-2 rounded-lg hover:bg-slate-100 active:bg-slate-200 transition-colors"><X size={20} /></button>
+              </div>
+              <div className="px-5 pt-4 pb-2 flex items-center gap-3">
+                <label className="text-xs font-bold text-slate-500 whitespace-nowrap">지급일</label>
+                <input type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} className="border rounded-lg px-3 py-1.5 text-sm flex-1" />
+              </div>
+              {/* 캡처 대상 */}
+              <div ref={slipRef} className="mx-4 mb-2 mt-3 bg-white rounded-xl overflow-hidden" style={{ fontFamily: "sans-serif" }}>
+                {/* 헤더 */}
+                <div style={{ background: "linear-gradient(135deg,#4f46e5,#7c3aed)", padding: "24px 28px 20px" }}>
+                  <div style={{ color: "#c7d2fe", fontSize: "11px", letterSpacing: "2px", marginBottom: "4px" }}>SALARY STATEMENT</div>
+                  <div style={{ color: "#fff", fontSize: "20px", fontWeight: 800, marginBottom: "2px" }}>J&C 음악학원</div>
+                  <div style={{ color: "#e0e7ff", fontSize: "13px", fontWeight: 600 }}>{selectedYear}년 {selectedMonth}월 급여 명세서</div>
+                  <div style={{ color: "#a5b4fc", fontSize: "11px", marginTop: "6px" }}>집계 기간: {periodStart} ~ {periodEnd}</div>
+                </div>
+                {/* 강사 정보 */}
+                <div style={{ background: "#f8fafc", padding: "16px 28px", borderBottom: "1px solid #e2e8f0" }}>
+                  <div style={{ display: "flex", gap: "32px", flexWrap: "wrap" }}>
+                    {[
+                      ["강사명", currentTeacher?.name || selectedTeacherName],
+                      ["파트", currentTeacher?.part || "—"],
+                      ["지급일", payDate],
+                    ].map(([k, v]) => (
+                      <div key={k}>
+                        <div style={{ fontSize: "10px", color: "#94a3b8", marginBottom: "2px" }}>{k}</div>
+                        <div style={{ fontSize: "14px", fontWeight: 700, color: "#1e293b" }}>{v}</div>
+                      </div>
+                    ))}
+                    {currentTeacher?.bankName && (
+                      <div>
+                        <div style={{ fontSize: "10px", color: "#94a3b8", marginBottom: "2px" }}>계좌번호</div>
+                        <div style={{ fontSize: "13px", fontWeight: 600, color: "#1e293b" }}>{currentTeacher.bankName} {currentTeacher.bankAccount}</div>
+                      </div>
+                    )}
                   </div>
-                ))}
-                <div className="flex justify-between items-center border-b pb-2">
-                  <span className="text-slate-500">담당 학생 수</span>
-                  <span className="font-bold">{sessionRows.length}명</span>
                 </div>
-                <div className="flex justify-between items-center border-b pb-2">
-                  <span className="text-slate-500">총 수업 횟수</span>
-                  <span className="font-bold">{totalSessions}회</span>
+                {/* 수업 내역 테이블 */}
+                {!isMonthly && sessionRows.length > 0 && (
+                  <div style={{ padding: "16px 28px" }}>
+                    <div style={{ fontSize: "11px", fontWeight: 700, color: "#6366f1", marginBottom: "8px", letterSpacing: "1px" }}>수업 내역</div>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                      <thead>
+                        <tr style={{ borderBottom: "2px solid #e2e8f0" }}>
+                          {["학생명", "회차", "강사료"].map((h) => (
+                            <th key={h} style={{ padding: "6px 4px", textAlign: h === "강사료" ? "right" : "left", color: "#64748b", fontWeight: 600, fontSize: "11px" }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sessionRows.map((row, i) => {
+                          const rowFee = calcStudentFee(currentTeacher, row);
+                          return (
+                            <tr key={i} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                              <td style={{ padding: "5px 4px", color: "#334155" }}>{row.name}</td>
+                              <td style={{ padding: "5px 4px", color: "#64748b" }}>{row.sessions}회</td>
+                              <td style={{ padding: "5px 4px", textAlign: "right", color: "#334155" }}>{rowFee.toLocaleString()}원</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {/* 급여 계산 */}
+                <div style={{ background: "#f8fafc", padding: "16px 28px", borderTop: "1px solid #e2e8f0" }}>
+                  <div style={{ fontSize: "11px", fontWeight: 700, color: "#6366f1", marginBottom: "10px", letterSpacing: "1px" }}>급여 계산</div>
+                  {[
+                    ["담당 학생 수", `${sessionRows.length}명`, "#334155", false],
+                    ["총 수업 횟수", `${totalSessions}회`, "#334155", false],
+                    ["강사료", `${grossFee.toLocaleString()}원`, "#1e293b", true],
+                    ["소득세 (3%)", `-${Math.round(grossFee * 0.03).toLocaleString()}원`, "#dc2626", false],
+                    ["지방소득세 (0.3%)", `-${Math.round(grossFee * 0.003).toLocaleString()}원`, "#dc2626", false],
+                  ].map(([k, v, color, bold]) => (
+                    <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid #e2e8f0" }}>
+                      <span style={{ color: "#64748b", fontSize: "13px" }}>{k}</span>
+                      <span style={{ color, fontWeight: bold ? 700 : 500, fontSize: "13px" }}>{v}</span>
+                    </div>
+                  ))}
+                  <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0 4px", marginTop: "4px", borderTop: "2px solid #6366f1" }}>
+                    <span style={{ fontSize: "16px", fontWeight: 800, color: "#1e293b" }}>실지급액</span>
+                    <span style={{ fontSize: "18px", fontWeight: 800, color: "#059669" }}>{netFee.toLocaleString()}원</span>
+                  </div>
                 </div>
-                <div className="h-1" />
-                <div className="flex justify-between items-center border-b pb-2">
-                  <span className="text-slate-500">강사료</span>
-                  <span className="font-bold">{grossFee.toLocaleString()}원</span>
-                </div>
-                <div className="flex justify-between items-center border-b pb-2">
-                  <span className="text-slate-500">세금 (3.3%)</span>
-                  <span className="font-bold text-rose-600">-{tax.toLocaleString()}원</span>
-                </div>
-                <div className="flex justify-between items-center pt-1">
-                  <span className="text-base font-bold">지급액</span>
-                  <span className="text-base font-bold text-emerald-700">{netFee.toLocaleString()}원</span>
+                {/* 하단 서명 */}
+                <div style={{ padding: "14px 28px", display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "12px", borderTop: "1px solid #e2e8f0" }}>
+                  <span style={{ fontSize: "12px", color: "#64748b" }}>{payDate} &nbsp; J&C 음악학원장 강열혁</span>
+                  <div style={{ width: "44px", height: "44px", borderRadius: "50%", border: "2px solid #6366f1", display: "flex", alignItems: "center", justifyContent: "center", color: "#6366f1", fontSize: "11px", fontWeight: 700 }}>인</div>
                 </div>
               </div>
-              <div className="mt-6 pt-4 border-t text-right">
-                <p className="text-sm text-slate-600">
-                  {payDate}&nbsp;&nbsp;J&amp;C 음악학원장 강열혁 (인)
-                </p>
+              <div className="px-5 pb-5 pt-3">
+                <button onClick={handleSaveSlipImage} className="w-full flex items-center justify-center gap-2 py-3 text-sm font-bold bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 active:bg-indigo-800 transition-colors">
+                  <Download size={16} /> 이미지 저장
+                </button>
               </div>
-            </div>
-            <div className="px-5 pb-5 pt-3">
-              <button
-                onClick={handleSaveSlipImage}
-                className="w-full flex items-center justify-center gap-2 py-3 text-sm font-bold bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors"
-              >
-                <Download size={16} /> 이미지 저장
-              </button>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
+
+      {/* ── 일괄 다운로드용 화면 밖 렌더링 ── */}
+      {bulkDownloadIdx >= 0 && bulkDownloadIdx < bulkTeachers.length && (() => {
+        const t = bulkTeachers[bulkDownloadIdx];
+        const rows = calcSessions(t.name);
+        const gross = calcFee(t, rows);
+        const taxAmt = Math.round(gross * 0.033);
+        const net = gross - taxAmt;
+        const totalSess = rows.reduce((s, r) => s + r.sessions, 0);
+        const isMonthly = (t.feeType || "perSession") === "monthly";
+        return (
+          <div style={{ position: "fixed", left: "-9999px", top: 0, zIndex: -1 }}>
+            <div ref={bulkSlipRef} style={{ width: "480px", background: "#fff", fontFamily: "sans-serif", borderRadius: "12px", overflow: "hidden" }}>
+              <div style={{ background: "linear-gradient(135deg,#4f46e5,#7c3aed)", padding: "24px 28px 20px" }}>
+                <div style={{ color: "#c7d2fe", fontSize: "11px", letterSpacing: "2px", marginBottom: "4px" }}>SALARY STATEMENT</div>
+                <div style={{ color: "#fff", fontSize: "20px", fontWeight: 800, marginBottom: "2px" }}>J&C 음악학원</div>
+                <div style={{ color: "#e0e7ff", fontSize: "13px", fontWeight: 600 }}>{selectedYear}년 {selectedMonth}월 급여 명세서</div>
+                <div style={{ color: "#a5b4fc", fontSize: "11px", marginTop: "6px" }}>집계 기간: {periodStart} ~ {periodEnd}</div>
+              </div>
+              <div style={{ background: "#f8fafc", padding: "16px 28px", borderBottom: "1px solid #e2e8f0" }}>
+                <div style={{ display: "flex", gap: "32px", flexWrap: "wrap" }}>
+                  {[["강사명", t.name], ["파트", t.part || "—"], ["지급일", payDate]].map(([k, v]) => (
+                    <div key={k}>
+                      <div style={{ fontSize: "10px", color: "#94a3b8", marginBottom: "2px" }}>{k}</div>
+                      <div style={{ fontSize: "14px", fontWeight: 700, color: "#1e293b" }}>{v}</div>
+                    </div>
+                  ))}
+                  {t.bankName && (
+                    <div>
+                      <div style={{ fontSize: "10px", color: "#94a3b8", marginBottom: "2px" }}>계좌번호</div>
+                      <div style={{ fontSize: "13px", fontWeight: 600, color: "#1e293b" }}>{t.bankName} {t.bankAccount}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div style={{ background: "#f8fafc", padding: "16px 28px", borderTop: "1px solid #e2e8f0" }}>
+                {[
+                  ["담당 학생 수", `${rows.length}명`, "#334155", false],
+                  ["총 수업 횟수", `${totalSess}회`, "#334155", false],
+                  ["강사료", `${gross.toLocaleString()}원`, "#1e293b", true],
+                  ["소득세 (3%)", `-${Math.round(gross * 0.03).toLocaleString()}원`, "#dc2626", false],
+                  ["지방소득세 (0.3%)", `-${Math.round(gross * 0.003).toLocaleString()}원`, "#dc2626", false],
+                ].map(([k, v, color, bold]) => (
+                  <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid #e2e8f0" }}>
+                    <span style={{ color: "#64748b", fontSize: "13px" }}>{k}</span>
+                    <span style={{ color, fontWeight: bold ? 700 : 500, fontSize: "13px" }}>{v}</span>
+                  </div>
+                ))}
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0 4px", marginTop: "4px", borderTop: "2px solid #6366f1" }}>
+                  <span style={{ fontSize: "16px", fontWeight: 800, color: "#1e293b" }}>실지급액</span>
+                  <span style={{ fontSize: "18px", fontWeight: 800, color: "#059669" }}>{net.toLocaleString()}원</span>
+                </div>
+              </div>
+              <div style={{ padding: "14px 28px", display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "12px", borderTop: "1px solid #e2e8f0" }}>
+                <span style={{ fontSize: "12px", color: "#64748b" }}>{payDate} &nbsp; J&C 음악학원장 강열혁</span>
+                <div style={{ width: "44px", height: "44px", borderRadius: "50%", border: "2px solid #6366f1", display: "flex", alignItems: "center", justifyContent: "center", color: "#6366f1", fontSize: "11px", fontWeight: 700 }}>인</div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };
@@ -13602,14 +14050,14 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
           <div className="flex gap-2">
             <button
               onClick={handleDownloadImage}
-              className="p-2 rounded-lg border hover:bg-slate-50 text-slate-500 shadow-sm"
+              className="p-2 rounded-lg border hover:bg-slate-50 active:bg-slate-100 text-slate-500 shadow-sm"
               title="이미지 저장"
             >
               <Download size={18} />
             </button>
             <button
               onClick={handlePrint}
-              className="p-2 rounded-lg border hover:bg-slate-50 text-slate-500 shadow-sm"
+              className="p-2 rounded-lg border hover:bg-slate-50 active:bg-slate-100 text-slate-500 shadow-sm"
               title="출력하기"
             >
               <Printer size={18} />
@@ -13685,7 +14133,7 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
         <div className="inline-block min-w-full pb-20 print:pb-0">
           {/* 헤더 */}
           <div className="flex border-b bg-white sticky top-0 z-10 shadow-sm print:static print:shadow-none print:border-slate-300">
-            <div className="w-[50px] md:w-[80px] p-2 md:p-4 text-center text-[10px] md:text-xs font-bold text-slate-400 border-r bg-slate-50 sticky left-0 z-20 shrink-0 flex items-center justify-center print:bg-white print:border-slate-300">
+            <div className="w-[50px] md:w-[80px] p-2 md:p-4 text-center text-xs md:text-xs font-bold text-slate-400 border-r bg-slate-50 sticky left-0 z-20 shrink-0 flex items-center justify-center print:bg-white print:border-slate-300">
               TIME
             </div>
 
@@ -13777,7 +14225,7 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
                       {consultStart !== null && (
                         <div style={{ position: "absolute", top: consultStart * PX_PER_MIN, height: (consultEnd - consultStart) * PX_PER_MIN, left: 1, right: 1, zIndex: 1 }} className="bg-amber-50 border border-amber-200 rounded print:bg-transparent">
                           <div className="px-1.5 pt-1 leading-tight">
-                            <div className="text-[9px] md:text-[10px] font-extrabold text-amber-600">상담가능</div>
+                            <div className="text-[9px] md:text-xs font-extrabold text-amber-600">상담가능</div>
                             <div className="text-[8px] md:text-[9px] font-bold text-amber-500">10:00 ~ 12:00</div>
                           </div>
                         </div>
@@ -13798,7 +14246,7 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
                         return (
                           <div key={wi} style={{ position: "absolute", top: (startMin - TL_START * 60) * PX_PER_MIN, height: (endMin - startMin) * PX_PER_MIN, left: 1, right: 1, zIndex: 1 }} className="bg-emerald-50 border border-emerald-200 rounded print:bg-transparent">
                             <div className="px-1.5 pt-1 leading-tight">
-                              <div className="text-[9px] md:text-[10px] font-extrabold text-emerald-600">수강 가능</div>
+                              <div className="text-[9px] md:text-xs font-extrabold text-emerald-600">수강 가능</div>
                               <div className="text-[8px] md:text-[9px] font-bold text-emerald-500">{sH}:{String(sM).padStart(2,"0")} ~ {eH}:{String(eM).padStart(2,"0")}</div>
                             </div>
                           </div>
@@ -13809,7 +14257,7 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
                         <div
                           key={li}
                           style={{ position: "absolute", top: (l.hour * 60 + l.minute - TL_START * 60) * PX_PER_MIN, height: LESSON_HEIGHT - 2, left: 2, right: 2, zIndex: 2 }}
-                          className={`rounded-lg border text-[9px] md:text-[10px] shadow-sm overflow-hidden px-1.5 py-0.5 print:border-slate-400 ${getSubjectColor(l.student.subject)}`}
+                          className={`rounded-lg border text-[9px] md:text-xs shadow-sm overflow-hidden px-1.5 py-0.5 print:border-slate-400 ${getSubjectColor(l.student.subject)}`}
                         >
                           <div className="font-semibold truncate">{l.student.subject || l.student.name}</div>
                           <div className="font-bold">{l.timeStr} ~ {getEndTimeStr(l.timeStr)}</div>
@@ -13847,7 +14295,7 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
                           <div style={{ position: "absolute", top: consultStart * PX_PER_MIN, height: (consultEnd - consultStart) * PX_PER_MIN, left: 1, right: 1, zIndex: 1 }} className="bg-amber-50 border border-amber-200 rounded print:bg-transparent">
                             <div className="px-1.5 pt-1 leading-tight">
                               <div className="text-[9px] md:text-[11px] font-extrabold text-amber-600">상담가능</div>
-                              <div className="text-[8px] md:text-[10px] font-bold text-amber-500">10:00 ~ 12:00</div>
+                              <div className="text-[8px] md:text-xs font-bold text-amber-500">10:00 ~ 12:00</div>
                             </div>
                           </div>
                         )}
@@ -13868,7 +14316,7 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
                           <div key={wi} style={{ position: "absolute", top: (startMin - TL_START * 60) * PX_PER_MIN, height: (endMin - startMin) * PX_PER_MIN, left: 1, right: 1, zIndex: 1 }} className="bg-emerald-50 border border-emerald-200 rounded print:bg-transparent">
                             <div className="px-1.5 pt-1 leading-tight">
                               <div className="text-[9px] md:text-[11px] font-extrabold text-emerald-600">수강 가능</div>
-                              <div className="text-[8px] md:text-[10px] font-bold text-emerald-500">{sH}:{String(sM).padStart(2,"0")} ~ {eH}:{String(eM).padStart(2,"0")}</div>
+                              <div className="text-[8px] md:text-xs font-bold text-emerald-500">{sH}:{String(sM).padStart(2,"0")} ~ {eH}:{String(eM).padStart(2,"0")}</div>
                             </div>
                           </div>
                           );
@@ -13878,11 +14326,11 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
                           <div
                             key={li}
                             style={{ position: "absolute", top: (l.hour * 60 + l.minute - TL_START * 60) * PX_PER_MIN, height: LESSON_HEIGHT - 2, left: 2, right: 2, zIndex: 2 }}
-                            className={`rounded-lg border shadow-sm text-[10px] md:text-xs overflow-hidden print:border-slate-400 print:shadow-none ${getSubjectColor(l.student.subject)}`}
+                            className={`rounded-lg border shadow-sm text-xs md:text-xs overflow-hidden print:border-slate-400 print:shadow-none ${getSubjectColor(l.student.subject)}`}
                           >
                             <div className="px-1.5 py-1">
                               <div className="font-semibold truncate">{l.student.subject || l.student.name}</div>
-                              <div className="font-bold text-[10px]">{l.timeStr} ~ {getEndTimeStr(l.timeStr)}</div>
+                              <div className="font-bold text-xs">{l.timeStr} ~ {getEndTimeStr(l.timeStr)}</div>
                             </div>
                           </div>
                         ))}
@@ -13980,7 +14428,7 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
                         }
                         items.push(
                           <div key={i} className="flex items-baseline gap-1 py-0.5 whitespace-nowrap">
-                            <span className="text-slate-400 tabular-nums text-[10px]">
+                            <span className="text-slate-400 tabular-nums text-xs">
                               {String(Math.floor(l.min / 60)).padStart(2, "0")}:{String(l.min % 60).padStart(2, "0")}
                             </span>
                             <span className="font-medium text-slate-800">{l.name}</span>
@@ -14120,7 +14568,7 @@ const SubjectTimetableView = ({ students, showToast }) => {
           <div ref={printRef} className="bg-white p-3 min-w-[600px]">
             <div className="text-center mb-4">
               <p className="text-base font-bold text-slate-800">J&C 음악학원 수업 시간표</p>
-              <p className="text-[10px] text-slate-400 mt-0.5">상담 문의: 010-4028-9803</p>
+              <p className="text-xs text-slate-400 mt-0.5">상담 문의: 010-4028-9803</p>
             </div>
 
             <div className="border border-slate-200 rounded-xl overflow-hidden">
@@ -14165,7 +14613,7 @@ const SubjectTimetableView = ({ students, showToast }) => {
                             {lessonBlocks.map((lb) => (
                               <span
                                 key={lb.s}
-                                className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${colors.light} ${colors.text} border ${colors.border}`}
+                                className={`inline-block px-1.5 py-0.5 rounded text-xs font-bold ${colors.light} ${colors.text} border ${colors.border}`}
                               >
                                 {toStr(lb.s)}~{toStr(lb.e)}
                               </span>
@@ -14198,11 +14646,11 @@ const SubjectTimetableView = ({ students, showToast }) => {
             <div className="flex items-center gap-4 mt-3 justify-center">
               <div className="flex items-center gap-1.5">
                 <div className="w-3 h-3 rounded bg-indigo-50 border border-indigo-200" />
-                <span className="text-[10px] text-slate-500">수업 시간</span>
+                <span className="text-xs text-slate-500">수업 시간</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="w-3 h-3 rounded bg-emerald-50 border border-emerald-200" />
-                <span className="text-[10px] text-slate-500">수강신청 가능 시간</span>
+                <span className="text-xs text-slate-500">수강신청 가능 시간</span>
               </div>
             </div>
           </div>
