@@ -229,6 +229,9 @@ const INITIAL_TEACHERS_LIST = [
   "강열혁",
 ];
 
+// 원장 본인 (강사료 정산 대상에서 제외)
+const OWNER_NAME = "강열혁";
+
 const HOLIDAYS = {
   "2025-01-01": "신정",
   "2025-01-29": "설날",
@@ -402,12 +405,14 @@ const getStudentPaymentStatus = (student) => {
     a.date.localeCompare(b.date)
   );
 
-  // 총 출석 슬롯 (날짜순으로 슬롯 분해)
+  // 총 출석 슬롯 (날짜순, 오늘 이하만 — 미래 예약 출석은 결제 판정 제외)
+  const todayStr = toLocalDateStr();
   const allSlots = [];
   for (const h of (student.attendanceHistory || []).slice().sort((a, b) =>
     a.date.localeCompare(b.date)
   )) {
     if (h.status !== "present" && h.status !== "canceled") continue;
+    if (h.date > todayStr) continue;
     const cnt = h.status === "canceled" ? 1 : (h.count || 1);
     for (let i = 0; i < cnt; i++) allSlots.push({ date: h.date, status: h.status });
   }
@@ -474,9 +479,10 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
   const sessionUnit = getEffectiveSessions(student);
   const tuition = parseInt(student.tuitionFee || 0).toLocaleString();
 
-  // 출석(present) + 당일취소(canceled) 모두 세션으로 포함
+  // 출석(present) + 당일취소(canceled) 모두 세션으로 포함 (오늘 이하만)
+  const todayForMsg = toLocalDateStr();
   const allSessions = (student.attendanceHistory || [])
-    .filter((h) => h.status === "present" || h.status === "canceled")
+    .filter((h) => (h.status === "present" || h.status === "canceled") && h.date <= todayForMsg)
     .sort((a, b) => a.date.localeCompare(b.date));
 
   // 누적 세션: present=count(1 or 2), canceled=0.5
@@ -502,44 +508,30 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
       ? allPayments[allPayments.length - 1].date
       : "기록 없음";
 
-  // 마지막 결제의 sessionDates(수납관리에 표시되는 그 데이터)를 직접 읽음
-  // sessionDates 없으면 sessionStartDate 기준 폴백 (UI와 동일)
+  // 누적 슬라이스 방식 (T vs P 모델과 동일)
+  // 각 결제는 sessionSlots[prevUnits, prevUnits+payUnit)를 커버
+  // 마지막 결제 커버 = slots[P-lastPayUnit, P), P 이후 = 미납
   let lastCoveredDate = "없음";
+  let lastPaySessions = sessionUnit; // 마지막 결제가 커버한 회차 수
   const unpaidItems = []; // { date, label }
   const lastPayCoveredSlots = []; // 마지막 결제가 커버한 수업
-  let lastPaySessions = sessionUnit;
 
   if (allPayments.length > 0) {
+    const P = allPayments.reduce(
+      (sum, p) => sum + (p.totalSessions > 0 ? p.totalSessions : sessionUnit),
+      0
+    );
     const lastPay = allPayments[allPayments.length - 1];
-    lastPaySessions = lastPay.totalSessions > 0 ? lastPay.totalSessions : sessionUnit;
-
-    let lastPayDates;
-    // sessionDates가 완전한 경우(길이 >= totalSessions)만 사용
-    // 결제 후 추가된 수업이 sessionDates에 미반영된 경우를 방지
-    if (lastPay.sessionDates && lastPay.sessionDates.length >= lastPaySessions) {
-      lastPayDates = lastPay.sessionDates;
-    } else {
-      // sessionDates 미저장 또는 불완전 → sessionStartDate 기준 재계산
-      const startDate = lastPay.sessionStartDate || lastPay.date;
-      lastPayDates = sessionSlots
-        .filter((s) => s.date >= startDate)
-        .slice(0, lastPaySessions)
-        .map((s) => s.date);
-    }
-    const lastPayDateSet = new Set(lastPayDates);
-
-    // sessionSlots에서 lastPayDates에 포함된 슬롯 = 마지막 결제 커버
-    // 마지막 커버 슬롯보다 뒤에 있는 슬롯 = 미납
-    const lastCoveredIdx = lastPayDates.length > 0
-      ? sessionSlots.map((s) => s.date).lastIndexOf(lastPayDates[lastPayDates.length - 1])
-      : -1;
+    const lastPayUnit = lastPay.totalSessions > 0 ? lastPay.totalSessions : sessionUnit;
+    lastPaySessions = lastPayUnit;
+    const prevCovered = P - lastPayUnit;
 
     for (let i = 0; i < sessionSlots.length; i++) {
       const slot = sessionSlots[i];
-      if (lastPayDateSet.has(slot.date) && lastPayCoveredSlots.length < lastPayDates.length) {
+      if (i >= prevCovered && i < P) {
         lastPayCoveredSlots.push(slot.label);
         lastCoveredDate = slot.label.replace("(당일취소)", "");
-      } else if (i > lastCoveredIdx) {
+      } else if (i >= P) {
         unpaidItems.push(slot);
       }
     }
@@ -12660,6 +12652,15 @@ export default function App() {
                 }}
               />
               <SidebarItem
+                icon={TrendingUp}
+                label="월마감 자료"
+                active={activeTab === "monthlyClosing"}
+                onClick={() => {
+                  setActiveTab("monthlyClosing");
+                  setIsSidebarOpen(false);
+                }}
+              />
+              <SidebarItem
                 icon={Send}
                 label="공지 발송"
                 active={activeTab === "bulkSms"}
@@ -12741,6 +12742,8 @@ export default function App() {
               ? "환경 설정"
               : activeTab === "instructorFee"
               ? "강사료 계산 센터"
+              : activeTab === "monthlyClosing"
+              ? "월마감 자료"
               : "JnC Music"}
           </h2>
           <div className="text-sm font-bold text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
@@ -12899,11 +12902,396 @@ export default function App() {
               showToast={showToast}
             />
           )}
+          {activeTab === "monthlyClosing" && currentUser.role === "admin" && (
+            <MonthlyClosingView
+              teachers={teachers}
+              students={students}
+              showToast={showToast}
+            />
+          )}
         </main>
       </div>
     </div>
   );
 }
+
+// =================================================================
+// [MonthlyClosingView] - 월마감 자료 (관리자 전용)
+// =================================================================
+const MonthlyClosingView = ({ teachers, students, showToast }) => {
+  const today = new Date();
+  const [selYear, setSelYear] = useState(today.getFullYear());
+  const [selMonth, setSelMonth] = useState(today.getMonth() + 1);
+
+  const periodStart = `${selYear}-${String(selMonth).padStart(2, "0")}-01`;
+  const lastDay = new Date(selYear, selMonth, 0).getDate();
+  const periodEnd = `${selYear}-${String(selMonth).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+
+  // ── 수납 기준 매출 ────────────────────────────────────────────
+  // 해당 월에 결제된 paymentHistory 항목의 amount(또는 tuitionFee) 합산
+  const collectionRows = useMemo(() => {
+    const rows = [];
+    students.filter((s) => s.status === "재원" || (s.paymentHistory || []).some((p) => p.date >= periodStart && p.date <= periodEnd)).forEach((s) => {
+      (s.paymentHistory || []).forEach((p) => {
+        if (p.date >= periodStart && p.date <= periodEnd) {
+          rows.push({
+            studentId: s.id,
+            name: s.name,
+            subject: s.subject || "",
+            teacher: s.teacher || "",
+            date: p.date,
+            amount: Number(p.amount || s.tuitionFee || 0),
+            sessions: Number(p.totalSessions || 0),
+          });
+        }
+      });
+    });
+    return rows.sort((a, b) => a.date.localeCompare(b.date));
+  }, [students, periodStart, periodEnd]);
+  const collectionTotal = collectionRows.reduce((s, r) => s + r.amount, 0);
+
+  // ── 수업 기준 매출 ────────────────────────────────────────────
+  // 해당 월 출석(present/canceled) 회차 × 회당 단가 합산
+  const lessonRows = useMemo(() => {
+    const rows = [];
+    students.filter((s) => s.status === "재원" || (s.attendanceHistory || []).some((h) => h.date >= periodStart && h.date <= periodEnd)).forEach((s) => {
+      const hists = (s.attendanceHistory || []).filter(
+        (h) => h.date >= periodStart && h.date <= periodEnd && (h.status === "present" || h.status === "canceled")
+      );
+      if (!hists.length) return;
+      const unit = getEffectiveSessions(s);
+      const fee = Number(s.tuitionFee || 0);
+      const perSession = unit > 0 ? Math.round(fee / unit) : 0;
+      const sessions = hists.reduce((sum, h) => sum + (h.status === "present" ? (h.count || 1) : 0.5), 0);
+      rows.push({
+        studentId: s.id,
+        name: s.name,
+        subject: s.subject || "",
+        teacher: s.teacher || "",
+        sessions,
+        perSession,
+        amount: Math.round(sessions * perSession),
+      });
+    });
+    return rows.sort((a, b) => b.amount - a.amount);
+  }, [students, periodStart, periodEnd]);
+  const lessonTotal = lessonRows.reduce((s, r) => s + r.amount, 0);
+
+  // ── 강사료 ────────────────────────────────────────────────────
+  const resolveFeeTeacher = useCallback((s, date, h) => {
+    if (h && h.teacherOverride) return h.teacherOverride;
+    return s.teacher || "";
+  }, []);
+
+  const calcSessions = useCallback((teacherName) =>
+    students.map((s) => {
+      const recs = (s.attendanceHistory || []).filter(
+        (h) => h.date >= periodStart && h.date <= periodEnd &&
+          (h.status === "present" || h.status === "canceled") &&
+          resolveFeeTeacher(s, h.date, h) === teacherName
+      );
+      if (!recs.length) return null;
+      const sessions = recs.reduce((sum, h) => sum + (h.status === "present" ? (h.count || 1) : 0.5), 0);
+      return { name: s.name, studentId: s.id, sessions, tuitionFee: Number(s.tuitionFee || 0) };
+    }).filter(Boolean),
+  [students, periodStart, periodEnd, resolveFeeTeacher]);
+
+  const calcStudentFee = (teacher, row) => {
+    if (!teacher) return 0;
+    const override = (teacher.studentFeeOverrides || {})[row.studentId];
+    if (override != null && override !== "") {
+      if (typeof override === "number" || typeof override === "string") return row.sessions * Number(override);
+      const { type, value } = override;
+      if (value !== "" && value != null && Number(value) >= 0) {
+        if (type === "percent") return Math.round(row.tuitionFee * Number(value) / 100);
+        return row.sessions * Number(value);
+      }
+    }
+    if (teacher.feeType === "revenueShare") return Math.round(row.tuitionFee * Number(teacher.feeRate || 0) / 100);
+    return row.sessions * Number(teacher.feeRate || 0);
+  };
+
+  const teacherFeeRows = useMemo(() => {
+    // 원장(강열혁) 본인은 강사료를 지급받지 않으므로 제외
+    return teachers.filter((t) => t.name !== OWNER_NAME).map((t) => {
+      const rows = calcSessions(t.name);
+      const totalSessions = rows.reduce((s, r) => s + r.sessions, 0);
+      let gross = 0;
+      if (t.feeType === "monthly") {
+        gross = Number(t.feeRate || 0);
+      } else {
+        gross = rows.reduce((s, r) => s + calcStudentFee(t, r), 0);
+      }
+      return { teacher: t, rows, totalSessions, gross };
+    }).filter((r) => r.totalSessions > 0 || r.teacher.feeType === "monthly");
+  }, [teachers, calcSessions]);
+
+  const totalFee = teacherFeeRows.reduce((s, r) => s + r.gross, 0);
+
+  // ── 탭 ───────────────────────────────────────────────────────
+  const [tab, setTab] = useState("summary");
+
+  const prevMonth = () => {
+    if (selMonth === 1) { setSelYear(y => y - 1); setSelMonth(12); }
+    else setSelMonth(m => m - 1);
+  };
+  const nextMonth = () => {
+    if (selMonth === 12) { setSelYear(y => y + 1); setSelMonth(1); }
+    else setSelMonth(m => m + 1);
+  };
+
+  // ── 엑셀 내보내기 ─────────────────────────────────────────────
+  const handleExport = () => {
+    if (!window.XLSX) { showToast("XLSX 라이브러리를 불러오는 중입니다.", "error"); return; }
+    const wb = window.XLSX.utils.book_new();
+    const title = `${selYear}년 ${selMonth}월 월마감`;
+
+    // 요약 시트
+    const summaryData = [
+      [title],
+      [],
+      ["구분", "금액"],
+      ["수납 기준 매출", collectionTotal],
+      ["수업 기준 매출", lessonTotal],
+      ["강사료 합계", totalFee],
+      ["수납 기준 순수익", collectionTotal - totalFee],
+      ["수업 기준 순수익", lessonTotal - totalFee],
+    ];
+    window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(summaryData), "요약");
+
+    // 수납 내역 시트
+    const colData = [
+      [`${title} — 수납 내역`], [],
+      ["결제일", "학생명", "과목", "담당강사", "금액", "회차"],
+      ...collectionRows.map(r => [r.date, r.name, r.subject, r.teacher, r.amount, r.sessions]),
+      [], ["합계", "", "", "", collectionTotal, ""],
+    ];
+    window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(colData), "수납내역");
+
+    // 수업 내역 시트
+    const lesData = [
+      [`${title} — 수업 기준 매출`], [],
+      ["학생명", "과목", "담당강사", "수업회차", "회당단가", "금액"],
+      ...lessonRows.map(r => [r.name, r.subject, r.teacher, r.sessions, r.perSession, r.amount]),
+      [], ["합계", "", "", "", "", lessonTotal],
+    ];
+    window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(lesData), "수업매출");
+
+    // 강사료 시트
+    const feeData = [
+      [`${title} — 강사료`], [],
+      ["강사명", "수업회차", "강사료", "소득세(3%)", "지방세(0.3%)", "실지급액"],
+      ...teacherFeeRows.map(r => {
+        const tax = Math.round(r.gross * 0.033);
+        return [r.teacher.name, r.totalSessions, r.gross, Math.round(r.gross * 0.03), Math.round(r.gross * 0.003), r.gross - tax];
+      }),
+      [], ["합계", teacherFeeRows.reduce((s, r) => s + r.totalSessions, 0), totalFee, "", "", ""],
+    ];
+    window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(feeData), "강사료");
+
+    window.XLSX.writeFile(wb, `월마감_${selYear}${String(selMonth).padStart(2, "0")}.xlsx`);
+    showToast("월마감 엑셀 파일이 저장되었습니다.", "success");
+  };
+
+  const SummaryCard = ({ label, value, sub, color = "text-slate-800" }) => (
+    <div className="bg-white rounded-xl border border-slate-200 p-5 flex flex-col gap-1 shadow-sm">
+      <div className="text-xs text-slate-500 font-medium">{label}</div>
+      <div className={`text-2xl font-bold ${color}`}>{Number(value).toLocaleString()}원</div>
+      {sub && <div className="text-xs text-slate-400">{sub}</div>}
+    </div>
+  );
+
+  return (
+    <div className="p-4 sm:p-6 max-w-5xl mx-auto">
+      {/* 헤더 */}
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+            <TrendingUp size={20} className="text-indigo-600" /> 월마감 자료
+          </h1>
+          <p className="text-xs text-slate-400 mt-0.5">매출 · 강사료 · 순수익 종합</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={prevMonth} className="p-2 rounded-lg hover:bg-slate-100 active:bg-slate-200 text-slate-500"><ChevronLeft size={18} /></button>
+          <div className="flex items-center gap-1">
+            <select value={selYear} onChange={(e) => setSelYear(Number(e.target.value))}
+              className="text-base font-bold text-slate-700 bg-transparent border-none outline-none cursor-pointer hover:text-indigo-600 pr-1">
+              {Array.from({ length: 5 }, (_, i) => today.getFullYear() - 2 + i).map(y => (
+                <option key={y} value={y}>{y}년</option>
+              ))}
+            </select>
+            <select value={selMonth} onChange={(e) => setSelMonth(Number(e.target.value))}
+              className="text-base font-bold text-slate-700 bg-transparent border-none outline-none cursor-pointer hover:text-indigo-600">
+              {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
+                <option key={m} value={m}>{m}월</option>
+              ))}
+            </select>
+          </div>
+          <button onClick={nextMonth} className="p-2 rounded-lg hover:bg-slate-100 active:bg-slate-200 text-slate-500"><ChevronRight size={18} /></button>
+          <button
+            onClick={handleExport}
+            className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 active:bg-indigo-800 shadow-sm"
+          >
+            <Download size={15} /> 엑셀
+          </button>
+        </div>
+      </div>
+
+      {/* 요약 카드 */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+        <SummaryCard label="수납 기준 매출" value={collectionTotal} sub={`${collectionRows.length}건`} color="text-indigo-700" />
+        <SummaryCard label="수업 기준 매출" value={lessonTotal} sub={`${lessonRows.length}명`} color="text-indigo-700" />
+        <SummaryCard label="강사료 합계" value={totalFee} sub={`${teacherFeeRows.length}명`} color="text-rose-600" />
+        <div className="bg-indigo-50 rounded-xl border border-indigo-200 p-5 flex flex-col gap-1 shadow-sm col-span-2 sm:col-span-1">
+          <div className="text-xs text-indigo-500 font-bold">수납 기준 순수익</div>
+          <div className={`text-2xl font-bold ${collectionTotal - totalFee >= 0 ? "text-emerald-700" : "text-rose-600"}`}>
+            {(collectionTotal - totalFee).toLocaleString()}원
+          </div>
+          <div className="text-xs text-slate-400">수업 기준: {(lessonTotal - totalFee).toLocaleString()}원</div>
+        </div>
+      </div>
+
+      {/* 탭 */}
+      <div className="flex gap-1 mb-4 bg-slate-100 rounded-lg p-1 w-fit">
+        {[["summary", "강사료 내역"], ["collection", "수납 내역"], ["lesson", "수업 매출"]].map(([id, label]) => (
+          <button key={id} onClick={() => setTab(id)}
+            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab === id ? "bg-white shadow text-indigo-700 font-bold" : "text-slate-500 hover:text-slate-700"}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* 강사료 내역 탭 */}
+      {tab === "summary" && (
+        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 border-b">
+              <tr>
+                <th className="px-5 py-3 text-left font-bold text-slate-600">강사명</th>
+                <th className="px-5 py-3 text-right font-bold text-slate-600">수업회차</th>
+                <th className="px-5 py-3 text-right font-bold text-slate-600">강사료</th>
+                <th className="px-5 py-3 text-right font-bold text-slate-600 hidden sm:table-cell">소득세(3%)</th>
+                <th className="px-5 py-3 text-right font-bold text-slate-600 hidden sm:table-cell">지방세(0.3%)</th>
+                <th className="px-5 py-3 text-right font-bold text-slate-600">실지급액</th>
+              </tr>
+            </thead>
+            <tbody>
+              {teacherFeeRows.length === 0 ? (
+                <tr><td colSpan={6} className="py-12 text-center text-slate-400">해당 월 강사료 데이터가 없습니다.</td></tr>
+              ) : teacherFeeRows.map(({ teacher, totalSessions, gross }) => {
+                const incomeTax = Math.round(gross * 0.03);
+                const localTax = Math.round(gross * 0.003);
+                const net = gross - incomeTax - localTax;
+                return (
+                  <tr key={teacher.id} className="border-b hover:bg-slate-50">
+                    <td className="px-5 py-3 font-medium">{teacher.name}
+                      <span className="ml-1.5 text-xs text-slate-400">{teacher.feeType === "monthly" ? "(월고정)" : teacher.feeType === "revenueShare" ? `(${teacher.feeRate}%)` : `(${Number(teacher.feeRate || 0).toLocaleString()}원/회)`}</span>
+                    </td>
+                    <td className="px-5 py-3 text-right text-slate-600">{totalSessions}회</td>
+                    <td className="px-5 py-3 text-right font-bold text-rose-600">{gross.toLocaleString()}</td>
+                    <td className="px-5 py-3 text-right text-slate-500 hidden sm:table-cell">{incomeTax.toLocaleString()}</td>
+                    <td className="px-5 py-3 text-right text-slate-500 hidden sm:table-cell">{localTax.toLocaleString()}</td>
+                    <td className="px-5 py-3 text-right font-bold text-slate-700">{net.toLocaleString()}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot className="bg-slate-50 border-t">
+              <tr>
+                <td className="px-5 py-3 font-bold text-slate-700">합계</td>
+                <td className="px-5 py-3 text-right font-bold text-slate-600">{teacherFeeRows.reduce((s, r) => s + r.totalSessions, 0)}회</td>
+                <td className="px-5 py-3 text-right font-bold text-rose-700">{totalFee.toLocaleString()}</td>
+                <td className="px-5 py-3 text-right font-bold hidden sm:table-cell text-slate-600">{Math.round(totalFee * 0.03).toLocaleString()}</td>
+                <td className="px-5 py-3 text-right font-bold hidden sm:table-cell text-slate-600">{Math.round(totalFee * 0.003).toLocaleString()}</td>
+                <td className="px-5 py-3 text-right font-bold text-slate-800">{Math.round(totalFee * (1 - 0.033)).toLocaleString()}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+
+      {/* 수납 내역 탭 */}
+      {tab === "collection" && (
+        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 border-b">
+              <tr>
+                <th className="px-4 py-3 text-left font-bold text-slate-600">결제일</th>
+                <th className="px-4 py-3 text-left font-bold text-slate-600">학생명</th>
+                <th className="px-4 py-3 text-left font-bold text-slate-600 hidden sm:table-cell">과목</th>
+                <th className="px-4 py-3 text-left font-bold text-slate-600 hidden sm:table-cell">강사</th>
+                <th className="px-4 py-3 text-right font-bold text-slate-600">금액</th>
+                <th className="px-4 py-3 text-right font-bold text-slate-600 hidden sm:table-cell">회차</th>
+              </tr>
+            </thead>
+            <tbody>
+              {collectionRows.length === 0 ? (
+                <tr><td colSpan={6} className="py-12 text-center text-slate-400">해당 월 수납 내역이 없습니다.</td></tr>
+              ) : collectionRows.map((r, i) => (
+                <tr key={i} className="border-b hover:bg-slate-50">
+                  <td className="px-4 py-3 text-slate-500">{r.date.slice(5).replace("-", "/")}</td>
+                  <td className="px-4 py-3 font-medium">{r.name}</td>
+                  <td className="px-4 py-3 text-slate-500 hidden sm:table-cell">{r.subject || "-"}</td>
+                  <td className="px-4 py-3 text-slate-500 hidden sm:table-cell">{r.teacher || "-"}</td>
+                  <td className="px-4 py-3 text-right font-bold text-indigo-700">{r.amount.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-right text-slate-400 hidden sm:table-cell">{r.sessions > 0 ? `${r.sessions}회` : "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot className="bg-slate-50 border-t">
+              <tr>
+                <td colSpan={4} className="px-4 py-3 font-bold text-slate-700">합계 ({collectionRows.length}건)</td>
+                <td className="px-4 py-3 text-right font-bold text-indigo-700">{collectionTotal.toLocaleString()}</td>
+                <td className="hidden sm:table-cell" />
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+
+      {/* 수업 매출 탭 */}
+      {tab === "lesson" && (
+        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 border-b">
+              <tr>
+                <th className="px-4 py-3 text-left font-bold text-slate-600">학생명</th>
+                <th className="px-4 py-3 text-left font-bold text-slate-600 hidden sm:table-cell">과목</th>
+                <th className="px-4 py-3 text-left font-bold text-slate-600 hidden sm:table-cell">강사</th>
+                <th className="px-4 py-3 text-right font-bold text-slate-600">수업회차</th>
+                <th className="px-4 py-3 text-right font-bold text-slate-600 hidden sm:table-cell">회당단가</th>
+                <th className="px-4 py-3 text-right font-bold text-slate-600">금액</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lessonRows.length === 0 ? (
+                <tr><td colSpan={6} className="py-12 text-center text-slate-400">해당 월 수업 기록이 없습니다.</td></tr>
+              ) : lessonRows.map((r, i) => (
+                <tr key={i} className="border-b hover:bg-slate-50">
+                  <td className="px-4 py-3 font-medium">{r.name}</td>
+                  <td className="px-4 py-3 text-slate-500 hidden sm:table-cell">{r.subject || "-"}</td>
+                  <td className="px-4 py-3 text-slate-500 hidden sm:table-cell">{r.teacher || "-"}</td>
+                  <td className="px-4 py-3 text-right text-slate-600">{r.sessions}회</td>
+                  <td className="px-4 py-3 text-right text-slate-400 hidden sm:table-cell">{r.perSession.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-right font-bold text-indigo-700">{r.amount.toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot className="bg-slate-50 border-t">
+              <tr>
+                <td colSpan={3} className="px-4 py-3 font-bold text-slate-700 hidden sm:table-cell">합계 ({lessonRows.length}명)</td>
+                <td colSpan={3} className="px-4 py-3 font-bold text-slate-700 sm:hidden">합계 ({lessonRows.length}명)</td>
+                <td className="px-4 py-3 text-right font-bold text-slate-600 hidden sm:table-cell">{lessonRows.reduce((s, r) => s + r.sessions, 0)}회</td>
+                <td className="hidden sm:table-cell" />
+                <td className="px-4 py-3 text-right font-bold text-indigo-700">{lessonTotal.toLocaleString()}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+};
 
 // =================================================================
 // [InstructorFeeView] - 강사료 계산 센터 (관리자 전용)
