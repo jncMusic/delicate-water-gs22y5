@@ -229,6 +229,9 @@ const INITIAL_TEACHERS_LIST = [
   "강열혁",
 ];
 
+// 원장 본인 (강사료 정산 대상에서 제외)
+const OWNER_NAME = "강열혁";
+
 const HOLIDAYS = {
   "2025-01-01": "신정",
   "2025-01-29": "설날",
@@ -13009,7 +13012,8 @@ const MonthlyClosingView = ({ teachers, students, showToast }) => {
   };
 
   const teacherFeeRows = useMemo(() => {
-    return teachers.map((t) => {
+    // 원장(강열혁) 본인은 강사료를 지급받지 않으므로 제외
+    return teachers.filter((t) => t.name !== OWNER_NAME).map((t) => {
       const rows = calcSessions(t.name);
       const totalSessions = rows.reduce((s, r) => s + r.sessions, 0);
       let gross = 0;
