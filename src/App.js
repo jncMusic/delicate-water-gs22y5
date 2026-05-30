@@ -502,44 +502,28 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
       ? allPayments[allPayments.length - 1].date
       : "기록 없음";
 
-  // 마지막 결제의 sessionDates(수납관리에 표시되는 그 데이터)를 직접 읽음
-  // sessionDates 없으면 sessionStartDate 기준 폴백 (UI와 동일)
+  // 누적 슬라이스 방식 (T vs P 모델과 동일)
+  // 각 결제는 sessionSlots[prevUnits, prevUnits+payUnit)를 커버
+  // 마지막 결제 커버 = slots[P-lastPayUnit, P), P 이후 = 미납
   let lastCoveredDate = "없음";
   const unpaidItems = []; // { date, label }
   const lastPayCoveredSlots = []; // 마지막 결제가 커버한 수업
-  let lastPaySessions = sessionUnit;
 
   if (allPayments.length > 0) {
+    const P = allPayments.reduce(
+      (sum, p) => sum + (p.totalSessions > 0 ? p.totalSessions : sessionUnit),
+      0
+    );
     const lastPay = allPayments[allPayments.length - 1];
-    lastPaySessions = lastPay.totalSessions > 0 ? lastPay.totalSessions : sessionUnit;
-
-    let lastPayDates;
-    // sessionDates가 완전한 경우(길이 >= totalSessions)만 사용
-    // 결제 후 추가된 수업이 sessionDates에 미반영된 경우를 방지
-    if (lastPay.sessionDates && lastPay.sessionDates.length >= lastPaySessions) {
-      lastPayDates = lastPay.sessionDates;
-    } else {
-      // sessionDates 미저장 또는 불완전 → sessionStartDate 기준 재계산
-      const startDate = lastPay.sessionStartDate || lastPay.date;
-      lastPayDates = sessionSlots
-        .filter((s) => s.date >= startDate)
-        .slice(0, lastPaySessions)
-        .map((s) => s.date);
-    }
-    const lastPayDateSet = new Set(lastPayDates);
-
-    // sessionSlots에서 lastPayDates에 포함된 슬롯 = 마지막 결제 커버
-    // 마지막 커버 슬롯보다 뒤에 있는 슬롯 = 미납
-    const lastCoveredIdx = lastPayDates.length > 0
-      ? sessionSlots.map((s) => s.date).lastIndexOf(lastPayDates[lastPayDates.length - 1])
-      : -1;
+    const lastPayUnit = lastPay.totalSessions > 0 ? lastPay.totalSessions : sessionUnit;
+    const prevCovered = P - lastPayUnit;
 
     for (let i = 0; i < sessionSlots.length; i++) {
       const slot = sessionSlots[i];
-      if (lastPayDateSet.has(slot.date) && lastPayCoveredSlots.length < lastPayDates.length) {
+      if (i >= prevCovered && i < P) {
         lastPayCoveredSlots.push(slot.label);
         lastCoveredDate = slot.label.replace("(당일취소)", "");
-      } else if (i > lastCoveredIdx) {
+      } else if (i >= P) {
         unpaidItems.push(slot);
       }
     }
