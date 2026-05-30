@@ -402,12 +402,14 @@ const getStudentPaymentStatus = (student) => {
     a.date.localeCompare(b.date)
   );
 
-  // 총 출석 슬롯 (날짜순으로 슬롯 분해)
+  // 총 출석 슬롯 (날짜순, 오늘 이하만 — 미래 예약 출석은 결제 판정 제외)
+  const todayStr = toLocalDateStr();
   const allSlots = [];
   for (const h of (student.attendanceHistory || []).slice().sort((a, b) =>
     a.date.localeCompare(b.date)
   )) {
     if (h.status !== "present" && h.status !== "canceled") continue;
+    if (h.date > todayStr) continue;
     const cnt = h.status === "canceled" ? 1 : (h.count || 1);
     for (let i = 0; i < cnt; i++) allSlots.push({ date: h.date, status: h.status });
   }
@@ -474,9 +476,10 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
   const sessionUnit = getEffectiveSessions(student);
   const tuition = parseInt(student.tuitionFee || 0).toLocaleString();
 
-  // 출석(present) + 당일취소(canceled) 모두 세션으로 포함
+  // 출석(present) + 당일취소(canceled) 모두 세션으로 포함 (오늘 이하만)
+  const todayForMsg = toLocalDateStr();
   const allSessions = (student.attendanceHistory || [])
-    .filter((h) => h.status === "present" || h.status === "canceled")
+    .filter((h) => (h.status === "present" || h.status === "canceled") && h.date <= todayForMsg)
     .sort((a, b) => a.date.localeCompare(b.date));
 
   // 누적 세션: present=count(1 or 2), canceled=0.5
