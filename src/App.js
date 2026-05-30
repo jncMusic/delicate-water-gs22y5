@@ -12923,9 +12923,8 @@ const MonthlyClosingView = ({ teachers, students, showToast }) => {
   const [selYear, setSelYear] = useState(today.getFullYear());
   const [selMonth, setSelMonth] = useState(today.getMonth() + 1);
 
-  const periodStart = `${selYear}-${String(selMonth).padStart(2, "0")}-01`;
-  const lastDay = new Date(selYear, selMonth, 0).getDate();
-  const periodEnd = `${selYear}-${String(selMonth).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+  // 급여 정산주기(전월 24일~당월 23일) — 강사료 계산 센터/보고서와 동일
+  const { start: periodStart, end: periodEnd } = calcDefaultPeriod(selYear, selMonth);
 
   // ── 수납 기준 매출 ────────────────────────────────────────────
   // 해당 월에 결제된 paymentHistory 항목의 amount(또는 tuitionFee) 합산
@@ -13109,7 +13108,12 @@ const MonthlyClosingView = ({ teachers, students, showToast }) => {
           <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
             <TrendingUp size={20} className="text-indigo-600" /> 월마감 자료
           </h1>
-          <p className="text-xs text-slate-400 mt-0.5">매출 · 강사료 · 순수익 종합</p>
+          <p className="text-xs text-slate-400 mt-0.5">
+            매출 · 강사료 · 순수익 종합
+            <span className="ml-1.5 text-slate-500 font-medium">
+              (정산기간 {periodStart.slice(5).replace("-", "/")} ~ {periodEnd.slice(5).replace("-", "/")})
+            </span>
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={prevMonth} className="p-2 rounded-lg hover:bg-slate-100 active:bg-slate-200 text-slate-500"><ChevronLeft size={18} /></button>
