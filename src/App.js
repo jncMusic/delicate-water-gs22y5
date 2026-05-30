@@ -12976,12 +12976,7 @@ const MonthlyClosingView = ({ teachers, students, showToast }) => {
   }, [students, periodStart, periodEnd]);
   const lessonTotal = lessonRows.reduce((s, r) => s + r.amount, 0);
 
-  // ── 강사료 ────────────────────────────────────────────────────
-  const resolveFeeTeacher = useCallback((s, date, h) => {
-    if (h && h.teacherOverride) return h.teacherOverride;
-    return s.teacher || "";
-  }, []);
-
+  // ── 강사료 (강사료 계산 센터와 동일 로직: 모듈 레벨 resolveFeeTeacher 사용) ──
   const calcSessions = useCallback((teacherName) =>
     students.map((s) => {
       const recs = (s.attendanceHistory || []).filter(
@@ -12990,23 +12985,29 @@ const MonthlyClosingView = ({ teachers, students, showToast }) => {
           resolveFeeTeacher(s, h.date, h) === teacherName
       );
       if (!recs.length) return null;
-      const sessions = recs.reduce((sum, h) => sum + (h.status === "present" ? (h.count || 1) : 0.5), 0);
+      const sessions = recs.reduce((sum, h) => sum + (h.status === "present" ? (h.count || 1) : (h.status === "canceled" ? 0.5 : 0)), 0);
       return { name: s.name, studentId: s.id, sessions, tuitionFee: Number(s.tuitionFee || 0) };
     }).filter(Boolean),
-  [students, periodStart, periodEnd, resolveFeeTeacher]);
+  [students, periodStart, periodEnd]);
 
+  // 강사료 계산 센터와 동일
   const calcStudentFee = (teacher, row) => {
     if (!teacher) return 0;
-    const override = (teacher.studentFeeOverrides || {})[row.studentId];
+    const overrides = teacher.studentFeeOverrides || {};
+    const override = overrides[row.studentId];
     if (override != null && override !== "") {
-      if (typeof override === "number" || typeof override === "string") return row.sessions * Number(override);
+      if (typeof override === "number" || (typeof override === "string" && override !== "")) {
+        return row.sessions * Number(override);
+      }
       const { type, value } = override;
       if (value !== "" && value != null && Number(value) >= 0) {
-        if (type === "percent") return Math.round(row.tuitionFee * Number(value) / 100);
+        if (type === "percent") return Math.round(row.tuitionFee * (Number(value) / 100));
         return row.sessions * Number(value);
       }
     }
-    if (teacher.feeType === "revenueShare") return Math.round(row.tuitionFee * Number(teacher.feeRate || 0) / 100);
+    if (teacher.feeType === "revenueShare") {
+      return Math.round(row.tuitionFee * (Number(teacher.feeRate || 0) / 100));
+    }
     return row.sessions * Number(teacher.feeRate || 0);
   };
 
@@ -13022,7 +13023,7 @@ const MonthlyClosingView = ({ teachers, students, showToast }) => {
         gross = rows.reduce((s, r) => s + calcStudentFee(t, r), 0);
       }
       return { teacher: t, rows, totalSessions, gross };
-    }).filter((r) => r.totalSessions > 0 || r.teacher.feeType === "monthly");
+    }).filter((r) => r.totalSessions > 0 && r.gross > 0);
   }, [teachers, calcSessions]);
 
   const totalFee = teacherFeeRows.reduce((s, r) => s + r.gross, 0);
