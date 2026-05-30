@@ -13109,7 +13109,20 @@ const MonthlyClosingView = ({ teachers, students, showToast }) => {
         </div>
         <div className="flex items-center gap-2">
           <button onClick={prevMonth} className="p-2 rounded-lg hover:bg-slate-100 active:bg-slate-200 text-slate-500"><ChevronLeft size={18} /></button>
-          <span className="text-lg font-bold text-slate-700 w-28 text-center">{selYear}년 {selMonth}월</span>
+          <div className="flex items-center gap-1">
+            <select value={selYear} onChange={(e) => setSelYear(Number(e.target.value))}
+              className="text-base font-bold text-slate-700 bg-transparent border-none outline-none cursor-pointer hover:text-indigo-600 pr-1">
+              {Array.from({ length: 5 }, (_, i) => today.getFullYear() - 2 + i).map(y => (
+                <option key={y} value={y}>{y}년</option>
+              ))}
+            </select>
+            <select value={selMonth} onChange={(e) => setSelMonth(Number(e.target.value))}
+              className="text-base font-bold text-slate-700 bg-transparent border-none outline-none cursor-pointer hover:text-indigo-600">
+              {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
+                <option key={m} value={m}>{m}월</option>
+              ))}
+            </select>
+          </div>
           <button onClick={nextMonth} className="p-2 rounded-lg hover:bg-slate-100 active:bg-slate-200 text-slate-500"><ChevronRight size={18} /></button>
           <button
             onClick={handleExport}
