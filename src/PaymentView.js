@@ -685,30 +685,44 @@ export const PaymentView = ({
     });
   }, [activeTab]); // kyuljeLogsData 변경 시 재조회 불필요 (billStates 확인 후 skip)
 
-  // ── 수강 진척도 헬퍼 ──────────────────────────────────────────
+  // ── 수강 진척도 헬퍼 (순수 누적 모델: T vs P) ──────────────────
+  // T = 총 출석 슬롯(오늘 이하, 당일취소=1, 연강=count), P = 총 결제 회차
+  // 날짜·sessionStartDate와 무관 → 결제일이 수업일과 겹쳐도 중복 카운트 없음
+  // T < P: 수강 중 / T == P: 수강권 만료(결제 대상) / T > P: 미납 초과
   const getStudentProgress = (s) => {
-    const sessionUnit = getEffectiveSessions(s);
+    const unit = getEffectiveSessions(s);
     const sortedPayments = [...(s.paymentHistory || [])].sort((a, b) =>
       a.date.localeCompare(b.date)
     );
+    const todayStr = toLocalDateStr();
 
-    let currentUsage = 0;
-    let lastPayUnit = sessionUnit;
-    let isOverdue = false;
-    let isCompleted = false;
-
-    if (sortedPayments.length > 0) {
-      // 선불: 마지막 결제의 sessionStartDate 이후 출석 횟수로 판단
-      const lastPay = sortedPayments[sortedPayments.length - 1];
-      const lastPayStart = lastPay.sessionStartDate || lastPay.date;
-      lastPayUnit = lastPay.totalSessions > 0 ? lastPay.totalSessions : sessionUnit;
-      currentUsage = (s.attendanceHistory || [])
-        .filter((h) => (h.status === "present" || h.status === "canceled") && h.date >= lastPayStart)
-        .reduce((sum, h) => sum + (h.status === "canceled" ? 1 : (h.count || 1)), 0);
-      const remainingCapacity = lastPayUnit - currentUsage;
-      isOverdue = remainingCapacity < 0;
-      isCompleted = remainingCapacity === 0;
+    // 총 출석 슬롯 (미래 예약 출석은 제외)
+    let T = 0;
+    for (const h of (s.attendanceHistory || [])) {
+      if (h.status !== "present" && h.status !== "canceled") continue;
+      if (h.date > todayStr) continue;
+      T += h.status === "canceled" ? 1 : (h.count || 1);
     }
+
+    // 총 결제 회차
+    let P = 0;
+    for (const p of sortedPayments) {
+      P += p.totalSessions > 0 ? p.totalSessions : unit;
+    }
+
+    const lastPay = sortedPayments.length > 0 ? sortedPayments[sortedPayments.length - 1] : null;
+    const lastPayUnit = lastPay
+      ? (lastPay.totalSessions > 0 ? lastPay.totalSessions : unit)
+      : unit;
+    const previousCovered = P - lastPayUnit;
+
+    // 현재 사이클 진척: 미납초과 시 초과분 그대로 노출(예: 5/4), 그 외 클램프
+    const currentUsage = sortedPayments.length > 0
+      ? Math.max(0, T - previousCovered)
+      : 0;
+
+    const isOverdue = sortedPayments.length > 0 && T > P;
+    const isCompleted = sortedPayments.length > 0 && T === P;
 
     return {
       currentUsage,
@@ -730,23 +744,28 @@ export const PaymentView = ({
     return sorted.length > 0 ? sorted[sorted.length - 1].date : (s.lastPaymentDate || "");
   };
 
-  // 마지막 결제 사이클의 N회차 소진 날짜 계산 (선불: sessionStartDate 이후 N회)
+  // 마지막 결제 사이클의 N회차 소진 날짜 계산 (누적 모델: 이전 결제 커버분 다음 N회)
   const getPaymentDueDate = (s) => {
-    const sessionUnit = getEffectiveSessions(s);
+    const unit = getEffectiveSessions(s);
     const sortedPayments = [...(s.paymentHistory || [])].sort((a, b) => a.date.localeCompare(b.date));
     if (sortedPayments.length === 0) return "";
-    const lastPay = sortedPayments[sortedPayments.length - 1];
-    const lastPayStart = lastPay.sessionStartDate || lastPay.date;
-    const lastPaySessions = lastPay.totalSessions > 0 ? lastPay.totalSessions : sessionUnit;
-    const sortedAtt = [...(s.attendanceHistory || [])]
-      .filter((h) => (h.status === "present" || h.status === "canceled") && h.date >= lastPayStart)
-      .sort((a, b) => a.date.localeCompare(b.date));
-    let count = 0;
-    for (const h of sortedAtt) {
-      count += h.status === "canceled" ? 1 : (h.count || 1);
-      if (count >= lastPaySessions) return h.date;
-    }
-    return sortedAtt.length > 0 ? sortedAtt[sortedAtt.length - 1].date : "";
+    let P = 0;
+    for (const p of sortedPayments) P += p.totalSessions > 0 ? p.totalSessions : unit;
+
+    // 출석 슬롯을 날짜순으로 분해 (연강=count, 당일취소=1)
+    const slots = [];
+    [...(s.attendanceHistory || [])]
+      .filter((h) => h.status === "present" || h.status === "canceled")
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .forEach((h) => {
+        const cnt = h.status === "canceled" ? 1 : (h.count || 1);
+        for (let i = 0; i < cnt; i++) slots.push(h.date);
+      });
+
+    // 마지막 결제가 커버하는 마지막 슬롯(= P번째) 소진일
+    const dueIdx = P - 1;
+    if (dueIdx < slots.length) return slots[dueIdx];
+    return slots.length > 0 ? slots[slots.length - 1] : "";
   };
 
   // ── 강사 목록 (드롭다운) ──────────────────────────────────────
