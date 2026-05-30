@@ -998,10 +998,15 @@ export const PaymentView = ({
     filtered.sort((a, b) => {
       const lastNotifA = messageLogs.filter((l) => l.studentId === a.id).sort((x, y) => y.sentAt.localeCompare(x.sentAt))[0]?.sentAt || null;
       const lastNotifB = messageLogs.filter((l) => l.studentId === b.id).sort((x, y) => y.sentAt.localeCompare(x.sentAt))[0]?.sentAt || null;
-      // 신규 사이클(이전 안내 후 결제 완료)인 학생은 하단으로
-      const aNewCycle = isPaidAfterNotif(a, lastNotifA);
-      const bNewCycle = isPaidAfterNotif(b, lastNotifB);
-      if (aNewCycle !== bNewCycle) return aNewCycle ? 1 : -1;
+      const lastPayA = getLastPaymentDate(a);
+      const lastPayB = getLastPaymentDate(b);
+      // 마지막 결제일 이후 안내를 보낸 학생 = 이번 사이클 안내 완료 → 하단
+      const aDone = lastNotifA && lastPayA && lastNotifA > lastPayA;
+      const bDone = lastNotifB && lastPayB && lastNotifB > lastPayB;
+      if (aDone !== bDone) return aDone ? 1 : -1;
+      // 안내 미발송이 더 위 (긴급)
+      if (!lastNotifA && lastNotifB) return -1;
+      if (lastNotifA && !lastNotifB) return 1;
       return (lastNotifA || "").localeCompare(lastNotifB || "");
     });
     return filtered;
@@ -1919,11 +1924,13 @@ export const PaymentView = ({
                     const { displayStatus, statusColor } = getStudentProgress(s);
                     const lastNotif = getLastNotifDate(s.id);
                     const notifSt = getNotifStatus(s.id);
-                    const isNewCycle = isPaidAfterNotif(s, lastNotif);
+                    const lastPay = getLastPaymentDate(s);
+                    // 마지막 결제 이후 안내를 보낸 경우 = 이번 사이클 안내 완료
+                    const isNotifDoneThisCycle = lastNotif && lastPay && lastNotif > lastPay;
                     return (
                       <tr
                         key={s.id}
-                        className={`border-b transition-colors cursor-pointer ${selectedIds.includes(s.id) ? "bg-indigo-50" : isNewCycle ? "bg-sky-50/40 hover:bg-sky-50" : "hover:bg-slate-50"}`}
+                        className={`border-b transition-colors cursor-pointer ${selectedIds.includes(s.id) ? "bg-indigo-50" : isNotifDoneThisCycle ? "bg-slate-50/60 hover:bg-slate-100" : "hover:bg-slate-50"}`}
                         onClick={() => toggleSelect(s.id)}
                       >
                         <td className="py-3 px-3" onClick={(e) => e.stopPropagation()}>
@@ -1950,10 +1957,9 @@ export const PaymentView = ({
                           {(() => { const d = getComputedLastPayDate(s); return d ? `${d.slice(2,4)}/${d.slice(5,7)}/${d.slice(8,10)}` : <span className="text-slate-300">-</span>; })()}
                         </td>
                         <td className="py-3 px-4 text-xs hidden sm:table-cell">
-                          {isPaidAfterNotif(s, lastNotif) ? (
-                            <span className="font-medium text-sky-600">
-                              🔄 신규사이클
-                              {(() => { const d = getLastPaymentDate(s); return d ? ` (결제: ${d.slice(5,7)}/${d.slice(8,10)})` : ""; })()}
+                          {isNotifDoneThisCycle ? (
+                            <span className="font-medium text-slate-400">
+                              ✅ 안내완료 {lastNotif ? `(${lastNotif.slice(5,7)}/${lastNotif.slice(8,10)})` : ""}
                             </span>
                           ) : notifSt === "done" ? (
                             <span className="font-medium text-emerald-600">
