@@ -1852,6 +1852,10 @@ export const PaymentView = ({
               </button>
               <span className="text-sm text-slate-500 ml-1">
                 미납/만료 <span className="font-bold text-rose-600">{sendList.length}명</span>
+                <span className="text-slate-400 mx-1">/</span>
+                <span className="font-bold text-rose-600">
+                  {sendList.reduce((sum, s) => sum + (Number(s.tuitionFee) || 0), 0).toLocaleString()}원
+                </span>
               </span>
             </div>
 
