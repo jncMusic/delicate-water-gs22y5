@@ -509,6 +509,7 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
   // 각 결제는 sessionSlots[prevUnits, prevUnits+payUnit)를 커버
   // 마지막 결제 커버 = slots[P-lastPayUnit, P), P 이후 = 미납
   let lastCoveredDate = "없음";
+  let lastPaySessions = sessionUnit; // 마지막 결제가 커버한 회차 수
   const unpaidItems = []; // { date, label }
   const lastPayCoveredSlots = []; // 마지막 결제가 커버한 수업
 
@@ -519,6 +520,7 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
     );
     const lastPay = allPayments[allPayments.length - 1];
     const lastPayUnit = lastPay.totalSessions > 0 ? lastPay.totalSessions : sessionUnit;
+    lastPaySessions = lastPayUnit;
     const prevCovered = P - lastPayUnit;
 
     for (let i = 0; i < sessionSlots.length; i++) {
