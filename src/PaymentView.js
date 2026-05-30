@@ -776,8 +776,10 @@ export const PaymentView = ({
   }, [students]);
 
   // ── 발송 상태 (none / sms-only / done) ───────────────────────
-  const getNotifStatus = (studentId) => {
-    const logs = messageLogs.filter((l) => l.studentId === studentId);
+  const getNotifStatus = (studentId, since = null) => {
+    let logs = messageLogs.filter((l) => l.studentId === studentId);
+    // since(보통 마지막 결제일) 이후 발송만 집계 → "이번 사이클" 기준 판정
+    if (since) logs = logs.filter((l) => l.sentAt > since);
     if (!logs.length) return "none";
     // 같은 날 SMS + 결제선생 각각 발송 시 채널 병합 후 판정
     const dedupeMap = {};
@@ -996,18 +998,14 @@ export const PaymentView = ({
     });
 
     filtered.sort((a, b) => {
-      const lastNotifA = messageLogs.filter((l) => l.studentId === a.id).sort((x, y) => y.sentAt.localeCompare(x.sentAt))[0]?.sentAt || null;
-      const lastNotifB = messageLogs.filter((l) => l.studentId === b.id).sort((x, y) => y.sentAt.localeCompare(x.sentAt))[0]?.sentAt || null;
-      const lastPayA = getLastPaymentDate(a);
-      const lastPayB = getLastPaymentDate(b);
-      // 마지막 결제일 이후 안내를 보낸 학생 = 이번 사이클 안내 완료 → 하단
-      const aDone = lastNotifA && lastPayA && lastNotifA > lastPayA;
-      const bDone = lastNotifB && lastPayB && lastNotifB > lastPayB;
+      // 이번 사이클(마지막 결제일 이후) 안내 발송 여부 → 발송한 학생은 하단
+      const aDone = getNotifStatus(a.id, getLastPaymentDate(a)) !== "none";
+      const bDone = getNotifStatus(b.id, getLastPaymentDate(b)) !== "none";
       if (aDone !== bDone) return aDone ? 1 : -1;
-      // 안내 미발송이 더 위 (긴급)
-      if (!lastNotifA && lastNotifB) return -1;
-      if (lastNotifA && !lastNotifB) return 1;
-      return (lastNotifA || "").localeCompare(lastNotifB || "");
+      // 상단(미발송) 그룹은 결제 도래일이 이른 순으로
+      const dueA = getPaymentDueDate(a) || "9999";
+      const dueB = getPaymentDueDate(b) || "9999";
+      return dueA.localeCompare(dueB);
     });
     return filtered;
   }, [students, sentFilter, searchTerm, selectedTeacher, filterWeek, messageLogs]);
@@ -1923,14 +1921,13 @@ export const PaymentView = ({
                   ) : sendList.map((s) => {
                     const { displayStatus, statusColor } = getStudentProgress(s);
                     const lastNotif = getLastNotifDate(s.id);
-                    const notifSt = getNotifStatus(s.id);
                     const lastPay = getLastPaymentDate(s);
-                    // 마지막 결제 이후 안내를 보낸 경우 = 이번 사이클 안내 완료
-                    const isNotifDoneThisCycle = lastNotif && lastPay && lastNotif > lastPay;
+                    // 이번 사이클(마지막 결제일 이후) 기준 안내 발송 상태
+                    const cycleNotifSt = getNotifStatus(s.id, lastPay);
                     return (
                       <tr
                         key={s.id}
-                        className={`border-b transition-colors cursor-pointer ${selectedIds.includes(s.id) ? "bg-indigo-50" : isNotifDoneThisCycle ? "bg-slate-50/60 hover:bg-slate-100" : "hover:bg-slate-50"}`}
+                        className={`border-b transition-colors cursor-pointer ${selectedIds.includes(s.id) ? "bg-indigo-50" : cycleNotifSt === "done" ? "bg-slate-50/60 hover:bg-slate-100" : "hover:bg-slate-50"}`}
                         onClick={() => toggleSelect(s.id)}
                       >
                         <td className="py-3 px-3" onClick={(e) => e.stopPropagation()}>
@@ -1957,20 +1954,16 @@ export const PaymentView = ({
                           {(() => { const d = getComputedLastPayDate(s); return d ? `${d.slice(2,4)}/${d.slice(5,7)}/${d.slice(8,10)}` : <span className="text-slate-300">-</span>; })()}
                         </td>
                         <td className="py-3 px-4 text-xs hidden sm:table-cell">
-                          {isNotifDoneThisCycle ? (
+                          {cycleNotifSt === "done" ? (
                             <span className="font-medium text-slate-400">
                               ✅ 안내완료 {lastNotif ? `(${lastNotif.slice(5,7)}/${lastNotif.slice(8,10)})` : ""}
                             </span>
-                          ) : notifSt === "done" ? (
-                            <span className="font-medium text-emerald-600">
-                              🟢 {lastNotif} {notifAgeLabel(lastNotif)}
-                            </span>
-                          ) : notifSt === "sms-only" ? (
+                          ) : cycleNotifSt === "sms-only" ? (
                             <span className="font-medium text-amber-600">
-                              🟡 {lastNotif} {notifAgeLabel(lastNotif)}
+                              🟡 SMS발송 {lastNotif ? `(${lastNotif.slice(5,7)}/${lastNotif.slice(8,10)})` : ""}
                             </span>
                           ) : (
-                            <span className="text-rose-400">🔴 미발송</span>
+                            <span className="text-rose-500 font-medium">🔴 미발송</span>
                           )}
                         </td>
                         <td className="py-3 px-4 text-center" onClick={(e) => e.stopPropagation()}>
