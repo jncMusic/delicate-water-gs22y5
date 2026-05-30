@@ -820,6 +820,12 @@ export const PaymentView = ({
     return (student.paymentHistory || []).some((p) => p.date > notifDate);
   };
 
+  // 마지막 결제일 반환
+  const getLastPaymentDate = (student) => {
+    const pays = [...(student.paymentHistory || [])].sort((a, b) => b.date.localeCompare(a.date));
+    return pays.length > 0 ? pays[0].date : null;
+  };
+
   // ── 최근 10일 회차 완료 학생 (수납현황 탭) ───────────────────
   const thisWeekCycleComplete = useMemo(() => {
     const todayStr = toLocalDateStr();
@@ -990,13 +996,13 @@ export const PaymentView = ({
     });
 
     filtered.sort((a, b) => {
-      const da = messageLogs
-        .filter((l) => l.studentId === a.id)
-        .sort((x, y) => y.sentAt.localeCompare(x.sentAt))[0]?.sentAt || "";
-      const db = messageLogs
-        .filter((l) => l.studentId === b.id)
-        .sort((x, y) => y.sentAt.localeCompare(x.sentAt))[0]?.sentAt || "";
-      return da.localeCompare(db);
+      const lastNotifA = messageLogs.filter((l) => l.studentId === a.id).sort((x, y) => y.sentAt.localeCompare(x.sentAt))[0]?.sentAt || null;
+      const lastNotifB = messageLogs.filter((l) => l.studentId === b.id).sort((x, y) => y.sentAt.localeCompare(x.sentAt))[0]?.sentAt || null;
+      // 신규 사이클(이전 안내 후 결제 완료)인 학생은 하단으로
+      const aNewCycle = isPaidAfterNotif(a, lastNotifA);
+      const bNewCycle = isPaidAfterNotif(b, lastNotifB);
+      if (aNewCycle !== bNewCycle) return aNewCycle ? 1 : -1;
+      return (lastNotifA || "").localeCompare(lastNotifB || "");
     });
     return filtered;
   }, [students, sentFilter, searchTerm, selectedTeacher, filterWeek, messageLogs]);
@@ -1913,10 +1919,11 @@ export const PaymentView = ({
                     const { displayStatus, statusColor } = getStudentProgress(s);
                     const lastNotif = getLastNotifDate(s.id);
                     const notifSt = getNotifStatus(s.id);
+                    const isNewCycle = isPaidAfterNotif(s, lastNotif);
                     return (
                       <tr
                         key={s.id}
-                        className={`border-b transition-colors cursor-pointer ${selectedIds.includes(s.id) ? "bg-indigo-50" : "hover:bg-slate-50"}`}
+                        className={`border-b transition-colors cursor-pointer ${selectedIds.includes(s.id) ? "bg-indigo-50" : isNewCycle ? "bg-sky-50/40 hover:bg-sky-50" : "hover:bg-slate-50"}`}
                         onClick={() => toggleSelect(s.id)}
                       >
                         <td className="py-3 px-3" onClick={(e) => e.stopPropagation()}>
@@ -1944,7 +1951,10 @@ export const PaymentView = ({
                         </td>
                         <td className="py-3 px-4 text-xs hidden sm:table-cell">
                           {isPaidAfterNotif(s, lastNotif) ? (
-                            <span className="font-medium text-blue-600">✅ {lastNotif} 결제완료</span>
+                            <span className="font-medium text-sky-600">
+                              🔄 신규사이클
+                              {(() => { const d = getLastPaymentDate(s); return d ? ` (결제: ${d.slice(5,7)}/${d.slice(8,10)})` : ""; })()}
+                            </span>
                           ) : notifSt === "done" ? (
                             <span className="font-medium text-emerald-600">
                               🟢 {lastNotif} {notifAgeLabel(lastNotif)}
