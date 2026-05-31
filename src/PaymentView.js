@@ -648,11 +648,13 @@ export const PaymentView = ({
   const [quickPayDate, setQuickPayDate] = useState("");
   const [quickPaySessions, setQuickPaySessions] = useState(4);
   const [quickPayAmount, setQuickPayAmount] = useState("");
+  const [quickPayMethod, setQuickPayMethod] = useState("현장");
 
-  // 수납현황 학생 선택 시 해당 학생의 회차로 초기화
+  // 수납현황 학생 선택 시 해당 학생의 회차/직전 결제방법으로 초기화
   React.useEffect(() => {
     if (quickPayStudent) {
       setQuickPaySessions(getEffectiveSessions(quickPayStudent));
+      setQuickPayMethod(quickPayStudent.lastPaymentMethod || "현장");
     }
   }, [quickPayStudent]);
 
@@ -805,6 +807,16 @@ export const PaymentView = ({
       .filter((l) => l.studentId === studentId)
       .sort((a, b) => b.sentAt.localeCompare(a.sentAt));
     return logs.length > 0 ? logs[0].sentAt : null;
+  };
+
+  // 이번 사이클(마지막 결제일 이후) 최신 결제선생 청구서 로그 (billId/shortURL 포함)
+  const getLatestKyuljeLog = (studentId, since = null) => {
+    let logs = (messageLogs || []).filter(
+      (l) => l.studentId === studentId && (l.channels || []).includes("결제선생") && l.billId
+    );
+    if (since) logs = logs.filter((l) => l.sentAt > since);
+    logs.sort((a, b) => b.sentAt.localeCompare(a.sentAt));
+    return logs[0] || null;
   };
 
   // 안내 발송일 레이블: 30일 이내 "N일 전", 이후 "오래됨"
@@ -1235,7 +1247,7 @@ export const PaymentView = ({
         quickPayDate,
         amount,
         quickPayDate,
-        "",
+        quickPayMethod,
         quickPaySessions
       );
       showToast(`${quickPayStudent.name} 결제 완료 저장`, "success");
@@ -1243,6 +1255,7 @@ export const PaymentView = ({
       setQuickPayDate("");
       setQuickPaySessions(4);
       setQuickPayAmount("");
+      setQuickPayMethod("현장");
     } catch (e) {
       showToast("저장 오류: " + e.message, "error");
     } finally {
@@ -1387,6 +1400,23 @@ export const PaymentView = ({
                   ))}
                 </div>
               </div>
+              <div className="mb-3">
+                <label className="block text-xs font-bold text-slate-500 mb-1">
+                  결제방법
+                  {quickPayStudent.lastPaymentMethod && (
+                    <span className="ml-1 text-slate-400 font-normal">(이전: {quickPayStudent.lastPaymentMethod})</span>
+                  )}
+                </label>
+                <div className="grid grid-cols-4 gap-2">
+                  {["현장", "계좌이체", "결제선생", "기타"].map((m) => (
+                    <button key={m} type="button"
+                      onClick={() => setQuickPayMethod(m)}
+                      className={`py-2 rounded-lg text-xs font-bold border-2 transition-colors ${
+                        quickPayMethod === m ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-slate-500 border-slate-200 hover:border-emerald-300"
+                      }`}>{m}</button>
+                  ))}
+                </div>
+              </div>
               <div className="mb-4">
                 <label className="block text-xs font-bold text-slate-500 mb-1">결제금액</label>
                 <div className="flex items-center gap-1">
@@ -1398,7 +1428,7 @@ export const PaymentView = ({
                 </div>
               </div>
               <div className="flex gap-2 justify-end mt-2">
-                <button onClick={() => { setQuickPayStudent(null); setQuickPayDate(""); setQuickPaySessions(4); setQuickPayAmount(""); }}
+                <button onClick={() => { setQuickPayStudent(null); setQuickPayDate(""); setQuickPaySessions(4); setQuickPayAmount(""); setQuickPayMethod("현장"); }}
                   className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg font-bold">취소</button>
                 <button onClick={handleQuickPaySave} disabled={!quickPayDate || quickPaySaving}
                   className="px-6 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 shadow-md disabled:opacity-40">
@@ -1924,6 +1954,9 @@ export const PaymentView = ({
                     const lastPay = getLastPaymentDate(s);
                     // 이번 사이클(마지막 결제일 이후) 기준 안내 발송 상태
                     const cycleNotifSt = getNotifStatus(s.id, lastPay);
+                    // 이번 사이클 발송된 결제선생 청구서 (링크/파기용)
+                    const kyuljeLog = getLatestKyuljeLog(s.id, lastPay);
+                    const sendDeleteKey = `send-${s.id}`;
                     return (
                       <tr
                         key={s.id}
@@ -1980,6 +2013,48 @@ export const PaymentView = ({
                               className="px-2 py-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 active:bg-emerald-200 font-medium"
                               title="결제선생 발송"
                             >💳</button>
+                            {kyuljeLog && (
+                              <>
+                                {kyuljeLog.shortURL && (
+                                  <a
+                                    href={kyuljeLog.shortURL}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="px-2 py-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 font-medium"
+                                    title="발송한 결제선생 청구서 열기"
+                                  >청구서</a>
+                                )}
+                                {deleteConfirm?.id === sendDeleteKey ? (
+                                  <span className="flex items-center gap-1">
+                                    <button
+                                      onClick={async (e) => {
+                                        e.stopPropagation();
+                                        try {
+                                          if (kyuljeLog.billId) await destroyBill(kyuljeLog.billId, String(s.tuitionFee || 0));
+                                        } catch (err) {
+                                          showToast?.("Paymint 파기 실패: " + err.message, "error");
+                                        }
+                                        if (onDeleteMessageLog) await onDeleteMessageLog(kyuljeLog);
+                                        setDeleteConfirm(null);
+                                        showToast?.(`${s.name} 청구서 파기`, "success");
+                                      }}
+                                      className="text-xs px-2 py-1 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                                    >확인</button>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); setDeleteConfirm(null); }}
+                                      className="text-xs px-2 py-1 bg-slate-200 text-slate-600 rounded-lg hover:bg-slate-300"
+                                    >취소</button>
+                                  </span>
+                                ) : (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); setDeleteConfirm({ id: sendDeleteKey }); }}
+                                    className="text-xs px-2 py-1 text-red-400 hover:bg-red-50 rounded-lg border border-transparent hover:border-red-200"
+                                    title="발송한 결제선생 청구서 파기"
+                                  >파기</button>
+                                )}
+                              </>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -2311,6 +2386,7 @@ export const PaymentView = ({
                       <th className="py-3 px-4 text-left">강사</th>
                       <th className="py-3 px-4 text-left">발송일</th>
                       <th className="py-3 px-4 text-center">상태</th>
+                      <th className="py-3 px-4 text-center">조회</th>
                       <th className="py-3 px-4 text-center">파기</th>
                     </tr>
                   </thead>
@@ -2332,6 +2408,18 @@ export const PaymentView = ({
                         <td className="py-3 px-4 text-slate-500 text-xs">{log.sentAt}</td>
                         <td className="py-3 px-4 text-center">
                           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${rowStatus.cls}`}>{rowStatus.text}</span>
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          {log.billId ? (
+                            <button
+                              onClick={() => fetchBillState(log.billId)}
+                              disabled={bs?.loading}
+                              title="결제선생 청구서 상태 다시 조회"
+                              className="text-xs px-2 py-1 text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors border border-transparent hover:border-indigo-200 disabled:opacity-40"
+                            >{bs?.loading ? "조회 중" : "상태확인"}</button>
+                          ) : (
+                            <span className="text-xs text-slate-300">-</span>
+                          )}
                         </td>
                         <td className="py-3 px-4 text-center">
                           {isDestroyed ? (
