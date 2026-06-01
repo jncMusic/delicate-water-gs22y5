@@ -1708,8 +1708,11 @@ export const PaymentView = ({
                 <span className="bg-blue-200 text-blue-800 text-xs px-1.5 py-0.5 rounded-full">{weeklyKyuljeHistory.length}건</span>
                 {weeklyKyuljeHistory.length > 0 && (
                   <>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">
+                      💳 결제선생 {weeklyKyuljeHistory.filter(r => r.paidAfter && r.paidAfter.method === "결제선생").length}건
+                    </span>
                     <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">
-                      결제 {weeklyKyuljeHistory.filter(r => r.paidAfter).length}건
+                      타수단 {weeklyKyuljeHistory.filter(r => r.paidAfter && r.paidAfter.method !== "결제선생").length}건
                     </span>
                     <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">
                       미납 {weeklyKyuljeHistory.filter(r => !r.paidAfter).length}건
@@ -1742,9 +1745,15 @@ export const PaymentView = ({
                           <td className="py-3 px-4 text-xs text-slate-500">{log.sentAt}</td>
                           <td className="py-3 px-4">
                             {paidAfter ? (
-                              <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">
-                                ✅ {paidAfter.date} · {Number(paidAfter.amount || 0).toLocaleString()}원
-                              </span>
+                              paidAfter.method === "결제선생" ? (
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">
+                                  💳 결제선생 {paidAfter.date} · {Number(paidAfter.amount || 0).toLocaleString()}원
+                                </span>
+                              ) : (
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">
+                                  ✅ {paidAfter.method || "수단미상"} {paidAfter.date} · {Number(paidAfter.amount || 0).toLocaleString()}원
+                                </span>
+                              )
                             ) : (
                               <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">
                                 ⏳ 미납
@@ -2363,7 +2372,7 @@ export const PaymentView = ({
             if (bs?.state === "D") return { text: "파기됨", cls: "bg-rose-100 text-rose-700" };
             if (bs?.state === "F") return { text: "결제(카드)", cls: "bg-emerald-100 text-emerald-700" };
             if (bs?.state === "C") return { text: "승인취소", cls: "bg-orange-100 text-orange-700" };
-            if (paidAfter) return { text: `수납 ${paidAfter.date.slice(5).replace("-","/")} ${Number(paidAfter.amount||0).toLocaleString()}원`, cls: "bg-blue-100 text-blue-700" };
+            if (paidAfter) return { text: `수납${paidAfter.method && paidAfter.method !== "결제선생" ? `(${paidAfter.method})` : ""} ${paidAfter.date.slice(5).replace("-","/")} ${Number(paidAfter.amount||0).toLocaleString()}원`, cls: paidAfter.method && paidAfter.method !== "결제선생" ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700" };
             if (bs?.state === "W") return { text: "미결제", cls: "bg-amber-100 text-amber-700" };
             if (!log.billId) return { text: "발송완료", cls: "bg-indigo-50 text-indigo-500" };
             return { text: "조회 중...", cls: "bg-slate-100 text-slate-400" };
