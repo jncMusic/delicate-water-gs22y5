@@ -1266,7 +1266,7 @@ export const PaymentView = ({
   // ── 탭 메타 정보 ─────────────────────────────────────────────
   const TABS = [
     { id: "today", label: "수납현황", icon: <Bell size={14} />, badge: thisWeekCycleComplete.length || null },
-    { id: "send", label: "발송센터", icon: <Send size={14} />, badge: sendList.filter(s => getNotifStatus(s.id) === "none").length || null },
+    { id: "send", label: "발송센터", icon: <Send size={14} />, badge: sendList.filter(s => getNotifStatus(s.id, getLastPaymentDate(s)) === "none").length || null },
     { id: "confirm", label: "결제확인", icon: <CreditCard size={14} />, badge: processableStudents.length || null },
     { id: "manage", label: "수납관리", icon: <Users size={14} />, badge: null },
     { id: "kyulje", label: "결제선생", icon: <CreditCard size={14} />, badge: kyuljeLogsData.length || null },
