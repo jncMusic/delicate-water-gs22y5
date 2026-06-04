@@ -3370,7 +3370,7 @@ const ConsultationView = ({
     const nameLabel = `${consult.name} ${isAdult ? "님" : "학생"}`;
     const subject = consult.subject || "음악";
     if (type === "available") {
-      return `안녕하세요, J&C 음악학원입니다.\n\n문의주신 ${subject} 수업 가능 시간 안내드립니다.\n\n- 요일/시간: (예: 월요일 오후 4시, 수요일 오후 5시)\n\n편하신 시간에 방문하시거나 연락 주시면 자세히 안내드리겠습니다.\n\nJ&C 음악학원 (☎ 010-4028-9803)`;
+      return `안녕하세요, J&C 음악학원입니다. 문의해 주신 ${subject} 수업 가능 시간을 다음과 같이 안내드리게 되어 기쁘게 생각합니다.\n\n- 요일/시간: (예: 월요일 오후 4시, 수요일 오후 5시)\n\n편하신 시간에 방문하시거나 연락 주시면 자세히 안내드리겠습니다.\n\n감사합니다.\n\nJ&C 음악학원장 드림.`;
     }
     if (type === "new_lesson") {
       // 이름 또는 전화번호로 등록 학생 조회 → 원비·회차·등록일·시간 자동 채움
