@@ -6,6 +6,7 @@ import {
 import Header from './components/Header';
 import GallerySection from './components/GallerySection';
 import PracticeRoomSection from './components/PracticeRoomSection';
+import BlogSection from './components/BlogSection';
 import { COURSES } from './lib/courses';
 
 // =================================================================
@@ -230,6 +231,9 @@ export default function HomePage() {
 
         {/* ── 갤러리 (클라이언트 컴포넌트) ── */}
         <GallerySection />
+
+        {/* ── 학원 소식 (네이버 블로그 연동) ── */}
+        <BlogSection />
 
         {/* ── 강사 소개 ── */}
         <section id="teachers" className="py-24 px-4 sm:px-6 lg:px-8 bg-slate-50">
