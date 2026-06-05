@@ -626,6 +626,30 @@ export const PaymentView = ({
     }
   };
 
+  // ── 결제선생 재발송: 기존 청구서 파기 후 새 청구서 발송 ──────────
+  const [kyuljeResending, setKyuljeResending] = useState(null); // studentId
+  const handleKyuljeResend = async (student, kyuljeLog) => {
+    setKyuljeResending(student.id);
+    try {
+      if (kyuljeLog?.billId) {
+        await destroyBill(kyuljeLog.billId, String(student.tuitionFee || 0));
+        if (onDeleteMessageLog) await onDeleteMessageLog(kyuljeLog);
+      }
+      const result = await sendKyuljesaengnim(student, {});
+      if (onSaveMessageLog)
+        await onSaveMessageLog({
+          studentId: student.id, studentName: student.name, phone: student.phone || "",
+          sentAt: toLocalDateStr(), channels: ["결제선생"], messageType: "결제안내",
+          sentBy: user?.name || "원장", billId: result.billId, shortURL: result.shortURL,
+        });
+      showToast(`${student.name} 재발송 완료`, "success");
+    } catch (e) {
+      showToast("재발송 실패: " + e.message, "error");
+    } finally {
+      setKyuljeResending(null);
+    }
+  };
+
   // ── 결제확인(confirm) 탭 상태 ─────────────────────────────────
   const [paymentMethods, setPaymentMethods] = useState({});
   const [completedPeriod, setCompletedPeriod] = useState("today");
@@ -2034,6 +2058,12 @@ export const PaymentView = ({
                                     title="발송한 결제선생 청구서 열기"
                                   >청구서</a>
                                 )}
+                                <button
+                                  onClick={async (e) => { e.stopPropagation(); await handleKyuljeResend(s, kyuljeLog); }}
+                                  disabled={kyuljeResending === s.id}
+                                  className="px-2 py-1 text-xs bg-amber-50 text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-100 font-medium disabled:opacity-50"
+                                  title="기존 청구서 파기 후 재발송"
+                                >{kyuljeResending === s.id ? "..." : "재발송"}</button>
                                 {deleteConfirm?.id === sendDeleteKey ? (
                                   <span className="flex items-center gap-1">
                                     <button
