@@ -8,6 +8,9 @@ import GallerySection from './components/GallerySection';
 import PracticeRoomSection from './components/PracticeRoomSection';
 import BlogSection from './components/BlogSection';
 import { COURSES } from './lib/courses';
+import { INSTRUMENTS } from './lib/instruments';
+
+const INSTRUMENT_ID_MAP = Object.fromEntries(INSTRUMENTS.map((i) => [i.name, i.id]));
 
 // =================================================================
 // 상수 데이터
@@ -184,14 +187,25 @@ export default function HomePage() {
                   </div>
 
                   <div className="flex flex-wrap gap-2 mb-6">
-                    {course.instruments.map((inst) => (
-                      <span
-                        key={inst}
-                        className="text-sm font-semibold bg-white/10 text-white px-3 py-1.5 rounded-full border border-white/10 group-hover:bg-[#d4a843]/20 group-hover:border-[#d4a843]/30 group-hover:text-[#d4a843] transition-colors"
-                      >
-                        {inst}
-                      </span>
-                    ))}
+                    {course.instruments.map((inst) => {
+                      const id = INSTRUMENT_ID_MAP[inst];
+                      return id ? (
+                        <a
+                          key={inst}
+                          href={`/instruments/${id}`}
+                          className="text-sm font-semibold bg-white/10 text-white px-3 py-1.5 rounded-full border border-white/10 hover:bg-[#d4a843]/20 hover:border-[#d4a843]/30 hover:text-[#d4a843] transition-colors"
+                        >
+                          {inst}
+                        </a>
+                      ) : (
+                        <span
+                          key={inst}
+                          className="text-sm font-semibold bg-white/10 text-white px-3 py-1.5 rounded-full border border-white/10"
+                        >
+                          {inst}
+                        </span>
+                      );
+                    })}
                   </div>
 
                   <p className="text-white/60 text-sm leading-relaxed mb-6">{course.description}</p>
