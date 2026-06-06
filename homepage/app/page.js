@@ -193,9 +193,9 @@ export default function HomePage() {
                         <a
                           key={inst}
                           href={`/instruments/${id}`}
-                          className="text-sm font-semibold bg-white/10 text-white px-3 py-1.5 rounded-full border border-white/10 hover:bg-[#d4a843]/20 hover:border-[#d4a843]/30 hover:text-[#d4a843] transition-colors"
+                          className="text-sm font-semibold bg-white/10 text-white px-3 py-1.5 rounded-full border border-white/10 hover:bg-[#d4a843]/20 hover:border-[#d4a843]/30 hover:text-[#d4a843] transition-colors cursor-pointer underline-offset-2 hover:underline"
                         >
-                          {inst}
+                          {inst} →
                         </a>
                       ) : (
                         <span
