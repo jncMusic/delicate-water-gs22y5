@@ -1342,53 +1342,73 @@ export const PaymentView = ({
                 spellCheck="false"
               />
             </div>
-            <div className="p-4 border-t bg-slate-50 rounded-b-xl flex justify-end gap-3 shrink-0 flex-wrap">
-              <button onClick={() => setShowMsgPreview(false)} className="px-5 py-2.5 rounded-lg text-slate-600 hover:bg-slate-200 font-bold">취소</button>
-              <button
-                onClick={() => {
-                  if (navigator.clipboard) {
-                    navigator.clipboard.writeText(msgContent).then(() => {
-                      showToast("안내 문구가 복사되었습니다!", "success");
+            <div className="p-4 border-t bg-slate-50 rounded-b-xl shrink-0 space-y-3">
+              {/* 발송 방법 선택: 문자 / 결제선생 분리 */}
+              <div>
+                <p className="text-xs font-bold text-slate-400 mb-2 px-0.5">발송 방법 선택</p>
+                <div className="grid grid-cols-2 gap-3">
+                  {msgStudent?.phone ? (
+                    <button
+                      onClick={async () => {
+                        setMsgSending(true);
+                        try {
+                          await sendAligoSms(msgStudent.phone, msgContent);
+                          if (onSaveMessageLog)
+                            await onSaveMessageLog({ studentId: msgStudent.id, studentName: msgStudent.name, phone: msgStudent.phone, sentAt: new Date().toISOString().split("T")[0], channels: ["sms"], messageType: "결제안내", sentBy: user?.name || "원장" });
+                          showToast(`${msgStudent.name} 문자 발송 완료`, "success");
+                          setShowMsgPreview(false);
+                        } catch (e) {
+                          showToast("발송 실패: " + e.message, "error");
+                        } finally {
+                          setMsgSending(false);
+                        }
+                      }}
+                      disabled={msgSending}
+                      className="flex flex-col items-center justify-center gap-0.5 px-4 py-3 rounded-xl bg-blue-600 text-white font-bold hover:bg-blue-700 shadow-lg disabled:opacity-60 transition-colors"
+                    >
+                      <span className="text-base">📱 {msgSending ? "발송 중..." : "문자 발송"}</span>
+                      <span className="text-[11px] font-medium text-blue-100">위 안내 문구를 SMS로 전송</span>
+                    </button>
+                  ) : (
+                    <button
+                      disabled
+                      className="flex flex-col items-center justify-center gap-0.5 px-4 py-3 rounded-xl bg-slate-100 text-slate-400 font-bold cursor-not-allowed"
+                    >
+                      <span className="text-base">📱 문자 발송</span>
+                      <span className="text-[11px] font-medium">연락처가 없습니다</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
                       setShowMsgPreview(false);
-                    });
-                  }
-                }}
-                className="px-6 py-2.5 rounded-lg bg-indigo-600 text-white font-bold hover:bg-indigo-700 shadow-lg flex items-center"
-              >
-                <Copy size={18} className="mr-2" /> 복사하기
-              </button>
-              {msgStudent?.phone && (
+                      setKyuljePreviewStudent(msgStudent);
+                    }}
+                    disabled={msgSending}
+                    className="flex flex-col items-center justify-center gap-0.5 px-4 py-3 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-700 shadow-lg disabled:opacity-60 transition-colors"
+                  >
+                    <span className="text-base">💳 결제선생 발송</span>
+                    <span className="text-[11px] font-medium text-emerald-100">결제선생 청구서로 전송</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* 보조 액션: 취소 / 복사하기 */}
+              <div className="flex justify-end gap-2 pt-1">
+                <button onClick={() => setShowMsgPreview(false)} className="px-4 py-2 rounded-lg text-slate-500 hover:bg-slate-200 font-bold text-sm">취소</button>
                 <button
-                  onClick={async () => {
-                    setMsgSending(true);
-                    try {
-                      await sendAligoSms(msgStudent.phone, msgContent);
-                      if (onSaveMessageLog)
-                        await onSaveMessageLog({ studentId: msgStudent.id, studentName: msgStudent.name, phone: msgStudent.phone, sentAt: new Date().toISOString().split("T")[0], channels: ["sms"], messageType: "결제안내", sentBy: user?.name || "원장" });
-                      showToast(`${msgStudent.name} 문자 발송 완료`, "success");
-                      setShowMsgPreview(false);
-                    } catch (e) {
-                      showToast("발송 실패: " + e.message, "error");
-                    } finally {
-                      setMsgSending(false);
+                  onClick={() => {
+                    if (navigator.clipboard) {
+                      navigator.clipboard.writeText(msgContent).then(() => {
+                        showToast("안내 문구가 복사되었습니다!", "success");
+                        setShowMsgPreview(false);
+                      });
                     }
                   }}
-                  disabled={msgSending}
-                  className="px-6 py-2.5 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700 shadow-lg flex items-center disabled:opacity-60"
+                  className="px-4 py-2 rounded-lg bg-white border border-indigo-200 text-indigo-600 font-bold hover:bg-indigo-50 text-sm flex items-center"
                 >
-                  📱 {msgSending ? "발송 중..." : "문자 발송"}
+                  <Copy size={16} className="mr-1.5" /> 복사하기
                 </button>
-              )}
-              <button
-                onClick={() => {
-                  setShowMsgPreview(false);
-                  setKyuljePreviewStudent(msgStudent);
-                }}
-                disabled={msgSending}
-                className="px-6 py-2.5 rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700 shadow-lg flex items-center disabled:opacity-60"
-              >
-                💳 결제선생
-              </button>
+              </div>
             </div>
           </div>
         </div>
