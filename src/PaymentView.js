@@ -238,11 +238,6 @@ export const BulkMessageModal = ({
     return init;
   });
   const [activeIdx, setActiveIdx] = useState(0);
-  const [sendChannels, setSendChannels] = useState(() =>
-    Object.fromEntries(
-      students.map((s) => [s.id, { sms: true, kyuljesaengnim: false }])
-    )
-  );
 
   const handleStyleChange = (style) => {
     setMsgStyle(style);
@@ -301,39 +296,58 @@ export const BulkMessageModal = ({
     }
   };
 
-  const handleSendAll = async (s, kyuljeOverride = {}) => {
-    const ch = sendChannels[s.id] || { sms: true, kyuljesaengnim: false };
-    const channelArr = [];
-    let kyuljesaengnimExtra = {};
-    if (ch.sms && s.phone) {
-      setSending((prev) => ({ ...prev, [s.id]: true }));
-      try {
-        await sendAligoSms(s.phone, messages[s.id]);
-        channelArr.push("sms");
-        showToast(`${s.name} 문자 발송 완료`, "success");
-      } catch (e) {
-        showToast(`${s.name} 문자 발송 실패: ${e.message}`, "error");
-      } finally {
-        setSending((prev) => ({ ...prev, [s.id]: false }));
+  // 발송 이력 저장 (handleMarkSent와 달리 채널별 중복 발송 허용)
+  const logSent = async (s, channels, extra = {}) => {
+    try {
+      if (onSaveLog) {
+        await onSaveLog({
+          studentId: s.id,
+          studentName: s.name,
+          phone: s.phone || "",
+          sentAt: today,
+          channels,
+          messageType: "결제안내",
+          sentBy: user?.name || "원장",
+          ...extra,
+        });
       }
-    } else if (ch.sms && !s.phone) {
+      setSent((prev) => ({ ...prev, [s.id]: true }));
+    } catch (e) {
+      showToast("저장 오류: " + e.message, "error");
+    }
+  };
+
+  // 📱 문자만 발송
+  const handleSendSms = async (s) => {
+    if (!s.phone) {
       showToast(`${s.name}: 연락처가 없습니다.`, "warning");
+      return;
     }
-    if (ch.kyuljesaengnim) {
-      try {
-        const result = await sendKyuljesaengnim(s, kyuljeOverride);
-        channelArr.push("결제선생");
-        kyuljesaengnimExtra = {
-          billId: result.billId,
-          shortURL: result.shortURL,
-        };
-        const urlNote = result.shortURL ? ` (링크: ${result.shortURL})` : "";
-        showToast(`${s.name} 결제선생 발송 완료${urlNote}`, "success");
-      } catch (e) {
-        showToast(`${s.name} 결제선생 발송 실패: ${e.message}`, "error");
-      }
+    setSending((prev) => ({ ...prev, [s.id]: true }));
+    try {
+      await sendAligoSms(s.phone, messages[s.id]);
+      showToast(`${s.name} 문자 발송 완료`, "success");
+      await logSent(s, ["sms"]);
+    } catch (e) {
+      showToast(`${s.name} 문자 발송 실패: ${e.message}`, "error");
+    } finally {
+      setSending((prev) => ({ ...prev, [s.id]: false }));
     }
-    if (channelArr.length) await handleMarkSent(s, channelArr, kyuljesaengnimExtra);
+  };
+
+  // 💳 결제선생만 발송 (미리보기 확정 후 호출)
+  const handleSendKyulje = async (s, override = {}) => {
+    try {
+      const result = await sendKyuljesaengnim(s, override);
+      const urlNote = result.shortURL ? ` (링크: ${result.shortURL})` : "";
+      showToast(`${s.name} 결제선생 발송 완료${urlNote}`, "success");
+      await logSent(s, ["결제선생"], {
+        billId: result.billId,
+        shortURL: result.shortURL,
+      });
+    } catch (e) {
+      showToast(`${s.name} 결제선생 발송 실패: ${e.message}`, "error");
+    }
   };
 
   const getLastNotif = (studentId) => {
@@ -439,82 +453,46 @@ export const BulkMessageModal = ({
                     ) : null;
                   })()}
                 </div>
-                <div className="flex items-center gap-3">
-                  <div className="flex gap-3 text-sm border rounded-lg px-3 py-1.5 bg-slate-50">
-                    <label className="flex items-center gap-1 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={sendChannels[activeStudent.id]?.sms ?? true}
-                        onChange={(e) =>
-                          setSendChannels((prev) => ({
-                            ...prev,
-                            [activeStudent.id]: {
-                              ...prev[activeStudent.id],
-                              sms: e.target.checked,
-                            },
-                          }))
-                        }
-                        className="accent-blue-600"
-                      />
-                      📱 문자
-                    </label>
-                    <label className="flex items-center gap-1 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={
-                          sendChannels[activeStudent.id]?.kyuljesaengnim ?? false
-                        }
-                        onChange={(e) =>
-                          setSendChannels((prev) => ({
-                            ...prev,
-                            [activeStudent.id]: {
-                              ...prev[activeStudent.id],
-                              kyuljesaengnim: e.target.checked,
-                            },
-                          }))
-                        }
-                        className="accent-emerald-600"
-                      />
-                      💳 결제선생
-                    </label>
-                  </div>
+                <div className="flex items-center gap-2 flex-wrap">
                   <button
                     onClick={() => handleCopySingle(activeStudent.id)}
                     className="px-3 py-1.5 text-xs border rounded-lg font-bold flex items-center gap-1 hover:bg-slate-50"
                   >
                     <Copy size={13} /> 복사
                   </button>
+                  {/* 📱 문자 발송 — 누르면 바로 문자 발송 */}
                   <button
-                    onClick={() => {
-                      const ch = sendChannels[activeStudent.id] || { sms: true, kyuljesaengnim: false };
-                      if (ch.kyuljesaengnim) setKyuljePreviewStudent(activeStudent);
-                      else handleSendAll(activeStudent);
-                    }}
-                    disabled={!!sent[activeStudent.id] || !!sending[activeStudent.id]}
+                    onClick={() => handleSendSms(activeStudent)}
+                    disabled={!activeStudent.phone || !!sending[activeStudent.id]}
+                    title={!activeStudent.phone ? "연락처가 없습니다" : "문자 발송"}
                     className={`px-3 py-1.5 text-xs rounded-lg font-bold flex items-center gap-1 transition-colors ${
-                      sent[activeStudent.id]
-                        ? "bg-emerald-100 text-emerald-700 border border-emerald-200 cursor-default"
+                      !activeStudent.phone
+                        ? "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed"
                         : sending[activeStudent.id]
                         ? "bg-blue-100 text-blue-600 border border-blue-200 cursor-wait"
-                        : "bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm"
+                        : "bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
                     }`}
                   >
-                    {sent[activeStudent.id]
-                      ? "✓ 발송완료"
-                      : sending[activeStudent.id]
-                      ? "발송 중..."
-                      : "발송하기"}
+                    📱 {sending[activeStudent.id] ? "발송 중..." : "문자 발송"}
+                  </button>
+                  {/* 💳 결제선생 발송 — 누르면 미리보기 후 결제선생 발송 */}
+                  <button
+                    onClick={() => setKyuljePreviewStudent(activeStudent)}
+                    className="px-3 py-1.5 text-xs rounded-lg font-bold flex items-center gap-1 transition-colors bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm"
+                  >
+                    💳 결제선생 발송
                   </button>
                   <button
                     onClick={() => handleMarkSent(activeStudent)}
                     disabled={!!sent[activeStudent.id]}
+                    title="발송하지 않고 발송완료로만 표시"
                     className={`px-3 py-1.5 text-xs rounded-lg font-bold flex items-center gap-1 transition-colors ${
                       sent[activeStudent.id]
                         ? "bg-emerald-100 text-emerald-700 border border-emerald-200 cursor-default"
-                        : "bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm"
+                        : "bg-white text-slate-600 border hover:bg-slate-50"
                     }`}
                   >
-                    {sent[activeStudent.id] ? "✓ 완료" : "완료 처리"}
+                    {sent[activeStudent.id] ? "✓ 발송완료" : "완료 처리"}
                   </button>
                 </div>
               </div>
@@ -556,7 +534,7 @@ export const BulkMessageModal = ({
           onClose={() => setKyuljePreviewStudent(null)}
           onConfirm={async (override) => {
             setKyuljeSending(true);
-            await handleSendAll(kyuljePreviewStudent, override);
+            await handleSendKyulje(kyuljePreviewStudent, override);
             setKyuljeSending(false);
             setKyuljePreviewStudent(null);
           }}
@@ -1342,73 +1320,53 @@ export const PaymentView = ({
                 spellCheck="false"
               />
             </div>
-            <div className="p-4 border-t bg-slate-50 rounded-b-xl shrink-0 space-y-3">
-              {/* 발송 방법 선택: 문자 / 결제선생 분리 */}
-              <div>
-                <p className="text-xs font-bold text-slate-400 mb-2 px-0.5">발송 방법 선택</p>
-                <div className="grid grid-cols-2 gap-3">
-                  {msgStudent?.phone ? (
-                    <button
-                      onClick={async () => {
-                        setMsgSending(true);
-                        try {
-                          await sendAligoSms(msgStudent.phone, msgContent);
-                          if (onSaveMessageLog)
-                            await onSaveMessageLog({ studentId: msgStudent.id, studentName: msgStudent.name, phone: msgStudent.phone, sentAt: new Date().toISOString().split("T")[0], channels: ["sms"], messageType: "결제안내", sentBy: user?.name || "원장" });
-                          showToast(`${msgStudent.name} 문자 발송 완료`, "success");
-                          setShowMsgPreview(false);
-                        } catch (e) {
-                          showToast("발송 실패: " + e.message, "error");
-                        } finally {
-                          setMsgSending(false);
-                        }
-                      }}
-                      disabled={msgSending}
-                      className="flex flex-col items-center justify-center gap-0.5 px-4 py-3 rounded-xl bg-blue-600 text-white font-bold hover:bg-blue-700 shadow-lg disabled:opacity-60 transition-colors"
-                    >
-                      <span className="text-base">📱 {msgSending ? "발송 중..." : "문자 발송"}</span>
-                      <span className="text-[11px] font-medium text-blue-100">위 안내 문구를 SMS로 전송</span>
-                    </button>
-                  ) : (
-                    <button
-                      disabled
-                      className="flex flex-col items-center justify-center gap-0.5 px-4 py-3 rounded-xl bg-slate-100 text-slate-400 font-bold cursor-not-allowed"
-                    >
-                      <span className="text-base">📱 문자 발송</span>
-                      <span className="text-[11px] font-medium">연락처가 없습니다</span>
-                    </button>
-                  )}
-                  <button
-                    onClick={() => {
+            <div className="p-4 border-t bg-slate-50 rounded-b-xl flex justify-end gap-3 shrink-0 flex-wrap">
+              <button onClick={() => setShowMsgPreview(false)} className="px-5 py-2.5 rounded-lg text-slate-600 hover:bg-slate-200 font-bold">취소</button>
+              <button
+                onClick={() => {
+                  if (navigator.clipboard) {
+                    navigator.clipboard.writeText(msgContent).then(() => {
+                      showToast("안내 문구가 복사되었습니다!", "success");
                       setShowMsgPreview(false);
-                      setKyuljePreviewStudent(msgStudent);
-                    }}
-                    disabled={msgSending}
-                    className="flex flex-col items-center justify-center gap-0.5 px-4 py-3 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-700 shadow-lg disabled:opacity-60 transition-colors"
-                  >
-                    <span className="text-base">💳 결제선생 발송</span>
-                    <span className="text-[11px] font-medium text-emerald-100">결제선생 청구서로 전송</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* 보조 액션: 취소 / 복사하기 */}
-              <div className="flex justify-end gap-2 pt-1">
-                <button onClick={() => setShowMsgPreview(false)} className="px-4 py-2 rounded-lg text-slate-500 hover:bg-slate-200 font-bold text-sm">취소</button>
+                    });
+                  }
+                }}
+                className="px-6 py-2.5 rounded-lg bg-indigo-600 text-white font-bold hover:bg-indigo-700 shadow-lg flex items-center"
+              >
+                <Copy size={18} className="mr-2" /> 복사하기
+              </button>
+              {msgStudent?.phone && (
                 <button
-                  onClick={() => {
-                    if (navigator.clipboard) {
-                      navigator.clipboard.writeText(msgContent).then(() => {
-                        showToast("안내 문구가 복사되었습니다!", "success");
-                        setShowMsgPreview(false);
-                      });
+                  onClick={async () => {
+                    setMsgSending(true);
+                    try {
+                      await sendAligoSms(msgStudent.phone, msgContent);
+                      if (onSaveMessageLog)
+                        await onSaveMessageLog({ studentId: msgStudent.id, studentName: msgStudent.name, phone: msgStudent.phone, sentAt: new Date().toISOString().split("T")[0], channels: ["sms"], messageType: "결제안내", sentBy: user?.name || "원장" });
+                      showToast(`${msgStudent.name} 문자 발송 완료`, "success");
+                      setShowMsgPreview(false);
+                    } catch (e) {
+                      showToast("발송 실패: " + e.message, "error");
+                    } finally {
+                      setMsgSending(false);
                     }
                   }}
-                  className="px-4 py-2 rounded-lg bg-white border border-indigo-200 text-indigo-600 font-bold hover:bg-indigo-50 text-sm flex items-center"
+                  disabled={msgSending}
+                  className="px-6 py-2.5 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700 shadow-lg flex items-center disabled:opacity-60"
                 >
-                  <Copy size={16} className="mr-1.5" /> 복사하기
+                  📱 {msgSending ? "발송 중..." : "문자 발송"}
                 </button>
-              </div>
+              )}
+              <button
+                onClick={() => {
+                  setShowMsgPreview(false);
+                  setKyuljePreviewStudent(msgStudent);
+                }}
+                disabled={msgSending}
+                className="px-6 py-2.5 rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700 shadow-lg flex items-center disabled:opacity-60"
+              >
+                💳 결제선생
+              </button>
             </div>
           </div>
         </div>
