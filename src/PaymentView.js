@@ -857,9 +857,17 @@ export const PaymentView = ({
       );
       if (!recentRecord) return false;
       const { isCompleted, isOverdue } = getStudentProgress(s);
-      return isCompleted || isOverdue;
+      if (!isCompleted && !isOverdue) return false;
+      if (searchTerm) {
+        return (
+          s.name.includes(searchTerm) ||
+          (s.subject && s.subject.includes(searchTerm)) ||
+          (s.teacher && s.teacher.includes(searchTerm))
+        );
+      }
+      return true;
     });
-  }, [students]);
+  }, [students, searchTerm]);
 
   // ── 오늘 결제 완료 목록 ───────────────────────────────────────
   const todayPaidList = useMemo(() => {
@@ -976,8 +984,19 @@ export const PaymentView = ({
           : null;
         return { log, student, paidAfter };
       })
+      .filter(({ log, student }) => {
+        if (!searchTerm) return true;
+        const name = student?.name || log.studentName || "";
+        const subject = student?.subject || "";
+        const teacher = student?.teacher || "";
+        return (
+          name.includes(searchTerm) ||
+          subject.includes(searchTerm) ||
+          teacher.includes(searchTerm)
+        );
+      })
       .sort((a, b) => b.log.sentAt.localeCompare(a.log.sentAt));
-  }, [messageLogs, students]);
+  }, [messageLogs, students, searchTerm]);
 
   // ── 발송센터(send) 탭 필터링 목록 ────────────────────────────
   const sendList = useMemo(() => {
