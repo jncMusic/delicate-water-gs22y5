@@ -12834,6 +12834,7 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
   const [selectedDay, setSelectedDay] = useState("월");
   const [viewMode, setViewMode] = useState("daily");
   const [selectedPart, setSelectedPart] = useState("전체"); // 파트 필터
+  const [sheetTeacherFilter, setSheetTeacherFilter] = useState([]); // 출강표 강사 필터 (빈 배열 = 전체)
 
   const printRef = useRef(null);
 
@@ -12895,7 +12896,8 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
       });
       const link = document.createElement("a");
       link.href = canvas.toDataURL("image/png");
-      link.download = `시간표_${selectedPart}_${selectedDay}.png`;
+      const teacherSuffix = viewMode === "sheet" && sheetTeacherFilter.length > 0 ? `_${sheetTeacherFilter.join("_")}` : "";
+      link.download = `시간표_${viewMode === "sheet" ? "출강표" : `${selectedPart}_${selectedDay}`}${teacherSuffix}.png`;
       link.click();
     } catch (err) {
       console.error(err);
@@ -13071,6 +13073,45 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
 
         {/* 2열: 파트 필터 & 보기 모드 & 요일 선택 */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 bg-slate-50/50 p-2 rounded-xl border border-slate-100">
+          {/* 출강표 모드: 강사 멀티 선택 */}
+          {viewMode === "sheet" && !isTeacherMode && (() => {
+            const availTeachers = teachers.filter((t) =>
+              students.some((s) => s.teacher === t.name && s.status === "재원")
+            );
+            const toggle = (name) =>
+              setSheetTeacherFilter((prev) =>
+                prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name]
+              );
+            return (
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-slate-500 font-medium whitespace-nowrap">강사 선택</span>
+                <button
+                  onClick={() => setSheetTeacherFilter([])}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
+                    sheetTeacherFilter.length === 0
+                      ? "bg-indigo-600 text-white border-indigo-600"
+                      : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
+                  }`}
+                >
+                  전체
+                </button>
+                {availTeachers.map((t) => (
+                  <button
+                    key={t.name}
+                    onClick={() => toggle(t.name)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
+                      sheetTeacherFilter.includes(t.name)
+                        ? "bg-indigo-600 text-white border-indigo-600"
+                        : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
+                    }`}
+                  >
+                    {t.name} T
+                  </button>
+                ))}
+              </div>
+            );
+          })()}
+
           {/* 파트 선택 버튼들 (출강표 모드에서는 숨김) */}
           {viewMode !== "sheet" && (
             <div className="flex gap-1 overflow-x-auto max-w-full no-scrollbar pb-1 md:pb-0">
@@ -13364,14 +13405,15 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
           return h * 60 + m;
         };
 
-        // 파트 필터 없이 재원 학생이 있는 강사 전체
-        const sheetTeachers = teachers.filter((t) =>
-          students.some((s) =>
+        // 재원 학생이 있는 강사 + 강사 필터 적용 (빈 배열 = 전체)
+        const sheetTeachers = teachers.filter((t) => {
+          if (sheetTeacherFilter.length > 0 && !sheetTeacherFilter.includes(t.name)) return false;
+          return students.some((s) =>
             s.teacher === t.name &&
             s.status === "재원" &&
             SHEET_DAYS.some((d) => getLessonTime(s, d))
-          )
-        );
+          );
+        });
 
         // 강사·요일별 수업 목록 (시간순)
         const getCell = (teacherName, day) =>
