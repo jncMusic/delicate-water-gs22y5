@@ -413,7 +413,8 @@ const getStudentPaymentStatus = (student) => {
   )) {
     if (h.status !== "present" && h.status !== "canceled") continue;
     if (h.date > todayStr) continue;
-    allSlots.push({ date: h.date, status: h.status }); // 연강(count) 무시 — 결제 단위는 수업일 기준 1회
+    const cnt = h.status === "canceled" ? 1 : (h.count || 1);
+    for (let i = 0; i < cnt; i++) allSlots.push({ date: h.date, status: h.status });
   }
   const T = allSlots.length;
 
@@ -489,8 +490,10 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
   const sessionSlots = []; // { date, label, weight }
   allSessions.forEach((h) => {
     if (h.status === "present") {
-      // 연강(count) 무시 — 결제 단위는 수업일 기준 1회
-      sessionSlots.push({ date: h.date, label: h.date.slice(5).replace("-", "/"), weight: 1 });
+      const cnt = h.count || 1;
+      for (let i = 0; i < cnt; i++) {
+        sessionSlots.push({ date: h.date, label: h.date.slice(5).replace("-", "/"), weight: 1 });
+      }
     } else if (h.status === "canceled") {
       sessionSlots.push({ date: h.date, label: h.date.slice(5).replace("-", "/") + "(당일취소)", weight: 1 });
     }
