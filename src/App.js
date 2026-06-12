@@ -4705,7 +4705,12 @@ const ClassLogView = ({ students, teachers, user, showToast }) => {
       else history.push(record);
       msg = `${student.name} 출석 처리(1회)`;
     } else if ((existing.count || 1) === 1) {
-      // 1회 → 연강 2회
+      // 1회 → 연강 2회 (오클릭 방지 확인 — 즉시 저장되므로 한 번 더 확인)
+      if (!window.confirm(
+        `${student.name} 학생의 ${dateStr}을(를) 연강(2회)으로 처리할까요?\n\n연강은 수업 2회로 계산되어 결제 회차에 반영됩니다.`
+      )) {
+        return;
+      }
       history[idx] = { ...existing, count: 2 };
       msg = `${student.name} 연강 처리(2회)`;
     } else {
