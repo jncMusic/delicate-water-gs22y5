@@ -485,19 +485,38 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
     .filter((h) => (h.status === "present" || h.status === "canceled") && h.date <= todayForMsg)
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  // 누적 세션: present=count(1 or 2), canceled=0.5
-  // 각 세션에 라벨 부여 (표시용)
-  const sessionSlots = []; // { date, label, weight }
+  // 누적 세션: present=count(1 or 2), canceled=1
+  // 각 세션에 라벨 부여 (표시용) — fromDouble: 연강 슬롯 여부
+  const sessionSlots = []; // { date, label, fromDouble }
   allSessions.forEach((h) => {
     if (h.status === "present") {
       const cnt = h.count || 1;
       for (let i = 0; i < cnt; i++) {
-        sessionSlots.push({ date: h.date, label: h.date.slice(5).replace("-", "/"), weight: 1 });
+        sessionSlots.push({ date: h.date, label: h.date.slice(5).replace("-", "/"), fromDouble: cnt >= 2 });
       }
     } else if (h.status === "canceled") {
-      sessionSlots.push({ date: h.date, label: h.date.slice(5).replace("-", "/") + "(당일취소)", weight: 1 });
+      sessionSlots.push({ date: h.date, label: h.date.slice(5).replace("-", "/") + "(당일취소)", fromDouble: false });
     }
   });
+
+  // 슬롯 배열 → 날짜별 그룹화 후 표시 문자열 배열로 변환 (연강이면 날짜 하나로 묶어 (연강) 표시)
+  const slotsToLabels = (slots) => {
+    const seen = new Map();
+    const order = [];
+    slots.forEach((slot) => {
+      if (!seen.has(slot.date)) {
+        seen.set(slot.date, { label: slot.label, fromDouble: slot.fromDouble });
+        order.push(slot.date);
+      } else if (slot.fromDouble) {
+        seen.get(slot.date).fromDouble = true;
+      }
+    });
+    return order.map((date) => {
+      const g = seen.get(date);
+      if (g.label.includes("당일취소")) return g.label;
+      return g.label + (g.fromDouble ? "(연강)" : "");
+    });
+  };
 
   // 결제 이력 정렬
   const allPayments = (student.paymentHistory || []).sort((a, b) =>
@@ -513,8 +532,8 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
   // 마지막 결제 커버 = slots[P-lastPayUnit, P), P 이후 = 미납
   let lastCoveredDate = "없음";
   let lastPaySessions = sessionUnit; // 마지막 결제가 커버한 회차 수
-  const unpaidItems = []; // { date, label }
-  const lastPayCoveredSlots = []; // 마지막 결제가 커버한 수업
+  const unpaidItems = []; // { date, label, fromDouble }
+  const lastPayCoveredSlots = []; // 마지막 결제가 커버한 수업 슬롯
 
   if (allPayments.length > 0) {
     const P = allPayments.reduce(
@@ -529,8 +548,8 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
     for (let i = 0; i < sessionSlots.length; i++) {
       const slot = sessionSlots[i];
       if (i >= prevCovered && i < P) {
-        lastPayCoveredSlots.push(slot.label);
-        lastCoveredDate = slot.label.replace("(당일취소)", "");
+        lastPayCoveredSlots.push(slot);
+        lastCoveredDate = slot.date.slice(5).replace("-", "/");
       } else if (i >= P) {
         unpaidItems.push(slot);
       }
@@ -541,11 +560,11 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
       unpaidItems.push(slot);
     }
   }
-  const unpaidSlots = unpaidItems.map((s) => s.label);
+  const unpaidSlots = slotsToLabels(unpaidItems);
 
   // 수업일자: 마지막 결제 커버 세션 + 미납분
   const recentSessions =
-    [...lastPayCoveredSlots, ...unpaidSlots].join(", ") ||
+    [...slotsToLabels(lastPayCoveredSlots), ...unpaidSlots].join(", ") ||
     "(출석 기록 없음)";
 
   const unpaidDatesStr = unpaidSlots.length > 0 ? unpaidSlots.join(", ") : "없음";
@@ -9655,7 +9674,8 @@ const StudentManagementModal = ({
                     const sessionSlots = [];
                     sortedAtt.forEach((h) => {
                       const cnt = h.status === "canceled" ? 1 : (h.count || 1);
-                      for (let i = 0; i < cnt; i++) sessionSlots.push(h.date);
+                      const fromDouble = h.status === "present" && cnt >= 2;
+                      for (let i = 0; i < cnt; i++) sessionSlots.push({ date: h.date, fromDouble });
                     });
                     const payWithIdx = sortedPay.map((h, i) => {
                       let prevUnits = 0;
@@ -9674,12 +9694,16 @@ const StudentManagementModal = ({
                       const slots = sessionSlots.slice(h.prevUnits, h.prevUnits + payUnit);
                       const startNum = h.prevUnits + 1;
                       const endNum = h.prevUnits + payUnit;
-                      // 날짜별로 그룹화 (연강 여부 확인)
+                      // 날짜별로 그룹화 — 연강 슬롯이 하나라도 있으면 (연강) 표시
                       const dateGroups = [];
-                      slots.forEach((date) => {
+                      slots.forEach(({ date, fromDouble }) => {
                         const last = dateGroups[dateGroups.length - 1];
-                        if (last && last.date === date) last.cnt++;
-                        else dateGroups.push({ date, cnt: 1 });
+                        if (last && last.date === date) {
+                          last.cnt++;
+                          if (fromDouble) last.fromDouble = true;
+                        } else {
+                          dateGroups.push({ date, cnt: 1, fromDouble });
+                        }
                       });
                       return (
                         <div
@@ -9700,7 +9724,7 @@ const StudentManagementModal = ({
                               {dateGroups
                                 .map((g) =>
                                   g.date.slice(5).replace("-", "/") +
-                                  (g.cnt > 1 ? "(연강)" : "")
+                                  (g.fromDouble ? "(연강)" : "")
                                 )
                                 .join(", ")}
                             </div>
