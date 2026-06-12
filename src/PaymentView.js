@@ -705,7 +705,7 @@ export const PaymentView = ({
     for (const h of (s.attendanceHistory || [])) {
       if (h.status !== "present" && h.status !== "canceled") continue;
       if (h.date > todayStr) continue;
-      T += h.status === "canceled" ? 1 : (h.count || 1);
+      T += 1; // 연강(count) 무시 — 결제 단위는 수업일 기준 1회
     }
 
     // 총 결제 회차
@@ -762,8 +762,7 @@ export const PaymentView = ({
       .filter((h) => h.status === "present" || h.status === "canceled")
       .sort((a, b) => a.date.localeCompare(b.date))
       .forEach((h) => {
-        const cnt = h.status === "canceled" ? 1 : (h.count || 1);
-        for (let i = 0; i < cnt; i++) slots.push(h.date);
+        slots.push(h.date); // 연강(count) 무시 — 결제 단위는 수업일 기준 1회
       });
 
     // 마지막 결제가 커버하는 마지막 슬롯(= P번째) 소진일
