@@ -6106,7 +6106,16 @@ const AttendanceActionModal = ({ student, date, onClose, onSelectStatus, current
           </button>
           {isPresent && (
             <button
-              onClick={() => onSelectStatus("double", memo)}
+              onClick={() => {
+                // 연강(2회) 처리 시 오클릭 방지 확인 — 해제는 확인 없이 진행
+                if (!isDouble) {
+                  const ok = window.confirm(
+                    `${student.name} 학생의 ${date}을(를) 연강(2회)으로 처리할까요?\n\n연강은 수업 2회로 계산되어 결제 회차에 반영됩니다.`
+                  );
+                  if (!ok) return;
+                }
+                onSelectStatus("double", memo);
+              }}
               className={`w-full py-3 rounded-lg font-bold transition-colors ${
                 isDouble
                   ? "bg-violet-200 text-violet-800 hover:bg-violet-300"
@@ -7955,6 +7964,13 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
     const idx = history.findIndex((h) => h.date === dateStr && h.status === "present");
     if (idx === -1) return;
     const current = history[idx].count || 1;
+    // 연강(2회) 처리 시 오클릭 방지 확인 — 해제(2→1)는 확인 없이 진행
+    if (current === 1) {
+      const ok = window.confirm(
+        `${student.name} 학생의 ${dateStr}을(를) 연강(2회)으로 처리할까요?\n\n연강은 수업 2회로 계산되어 결제 회차에 반영됩니다.`
+      );
+      if (!ok) return;
+    }
     history[idx] = { ...history[idx], count: current === 1 ? 2 : 1 };
     const lastPay = student.lastPaymentDate || "0000-00-00";
     const sessionsCompleted = history.reduce((sum, h) => {
