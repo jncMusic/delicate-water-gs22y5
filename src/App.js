@@ -413,8 +413,7 @@ const getStudentPaymentStatus = (student) => {
   )) {
     if (h.status !== "present" && h.status !== "canceled") continue;
     if (h.date > todayStr) continue;
-    const cnt = h.status === "canceled" ? 1 : (h.count || 1);
-    for (let i = 0; i < cnt; i++) allSlots.push({ date: h.date, status: h.status });
+    allSlots.push({ date: h.date, status: h.status }); // 연강(count) 무시 — 결제 단위는 수업일 기준 1회
   }
   const T = allSlots.length;
 
@@ -1870,182 +1869,6 @@ const PaymentDetailModal = ({
   );
 };
 
-// =================================================================
-// [수납 관리 모달] 대시보드에서 수강권 만료/미납자 확인
-// =================================================================
-const PaymentManagementModal = ({ students, messageLogs, onClose, user, onNavigate, showToast }) => {
-  const [activeTab, setActiveTab] = useState("expired");
-
-  const { expiredStudents, overdueStudents } = useMemo(() => {
-    const filtered =
-      user.role === "teacher"
-        ? students.filter((s) => s.teacher === user.name && s.status === "재원")
-        : students.filter((s) => s.status === "재원");
-    const expired = [];
-    const overdue = [];
-    for (const s of filtered) {
-      if ((s.paymentHistory || []).length === 0) continue;
-      const { isCycleComplete, isOverdue } = getStudentPaymentStatus(s);
-      if (isOverdue) overdue.push(s);
-      if (isCycleComplete) expired.push(s);
-    }
-    return { expiredStudents: expired, overdueStudents: overdue };
-  }, [students, user]);
-
-  const today = new Date().toISOString().slice(0, 10);
-  const sentToday = new Set(
-    messageLogs.filter((l) => l.sentAt === today).map((l) => l.studentId)
-  );
-  const lastSentMap = useMemo(() => {
-    const map = {};
-    for (const l of messageLogs) {
-      if (!map[l.studentId] || l.sentAt > map[l.studentId]) {
-        map[l.studentId] = l.sentAt;
-      }
-    }
-    return map;
-  }, [messageLogs]);
-
-  const listToShow = activeTab === "expired" ? expiredStudents : overdueStudents;
-
-  return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[80vh] flex flex-col">
-        {/* 헤더 */}
-        <div className="flex justify-between items-center px-6 py-5 border-b">
-          <h2 className="font-bold text-lg text-slate-800 flex items-center gap-2">
-            <CreditCard size={20} className="text-indigo-500" /> 수납 관리
-          </h2>
-          <button
-            onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 p-2 rounded-lg hover:bg-slate-100"
-          >
-            <X size={20} />
-          </button>
-        </div>
-
-        {/* 탭 */}
-        <div className="flex border-b">
-          <button
-            onClick={() => setActiveTab("expired")}
-            className={`flex-1 py-3 text-sm font-bold transition-colors ${
-              activeTab === "expired"
-                ? "border-b-2 border-indigo-500 text-indigo-600"
-                : "text-slate-400 hover:text-slate-600"
-            }`}
-          >
-            수강권 만료
-            <span
-              className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${
-                activeTab === "expired"
-                  ? "bg-indigo-100 text-indigo-600"
-                  : "bg-slate-100 text-slate-500"
-              }`}
-            >
-              {expiredStudents.length}
-            </span>
-          </button>
-          <button
-            onClick={() => setActiveTab("overdue")}
-            className={`flex-1 py-3 text-sm font-bold transition-colors ${
-              activeTab === "overdue"
-                ? "border-b-2 border-rose-500 text-rose-600"
-                : "text-slate-400 hover:text-slate-600"
-            }`}
-          >
-            미납자 (수강권 초과)
-            <span
-              className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${
-                activeTab === "overdue"
-                  ? "bg-rose-100 text-rose-600"
-                  : "bg-slate-100 text-slate-500"
-              }`}
-            >
-              {overdueStudents.length}
-            </span>
-          </button>
-        </div>
-
-        {/* 목록 */}
-        <div className="overflow-y-auto flex-1 p-4 space-y-2">
-          {listToShow.length === 0 ? (
-            <div className="py-12 text-center text-slate-400 text-sm">
-              해당 학생이 없습니다
-            </div>
-          ) : (
-            listToShow.map((s) => {
-              const isSentToday = sentToday.has(s.id);
-              const lastSent = lastSentMap[s.id];
-              return (
-                <div
-                  key={s.id}
-                  className="flex items-center justify-between px-4 py-3 rounded-xl border border-slate-100 bg-slate-50/60 hover:bg-white hover:border-indigo-200 transition-all gap-2"
-                >
-                  <div className="flex flex-col flex-1 min-w-0">
-                    <span className="font-bold text-slate-800 text-sm">
-                      {s.name}
-                    </span>
-                    <span className="text-xs text-slate-400 mt-0.5">
-                      {s.teacher || "-"} · {s.subject || "과목 미정"}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {activeTab === "overdue" && (
-                      <button
-                        onClick={() => {
-                          const msg = generatePaymentMessage(s);
-                          navigator.clipboard.writeText(msg).then(() => {
-                            showToast?.(`${s.name} 결제안내 문자 복사됨`);
-                          });
-                        }}
-                        className="text-xs bg-indigo-50 text-indigo-600 border border-indigo-200 px-2 py-1 rounded-full font-bold hover:bg-indigo-100"
-                      >
-                        문자 복사
-                      </button>
-                    )}
-                    {isSentToday ? (
-                      <span className="text-xs bg-emerald-50 text-emerald-600 border border-emerald-200 px-2 py-1 rounded-full font-bold">
-                        오늘 발송
-                      </span>
-                    ) : lastSent ? (
-                      <span className="text-xs bg-slate-100 text-slate-500 border border-slate-200 px-2 py-1 rounded-full">
-                        {lastSent} 발송
-                      </span>
-                    ) : (
-                      <span className="text-xs bg-rose-50 text-rose-500 border border-rose-200 px-2 py-1 rounded-full font-bold">
-                        미발송
-                      </span>
-                    )}
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-
-        {/* 푸터 */}
-        <div className="p-4 border-t flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm text-slate-500 hover:bg-slate-100 rounded-lg font-bold"
-          >
-            닫기
-          </button>
-          <button
-            onClick={() => {
-              onClose();
-              onNavigate(user.role === "admin" ? "payments" : "students");
-            }}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700"
-          >
-            수납 관리 바로가기
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 // [DashboardView] - 상담 통계 카드 숨김 처리 (강사 권한 분리)
 const DashboardView = ({
   students,
@@ -2063,8 +1886,6 @@ const DashboardView = ({
       ? students.filter((s) => s.teacher === user.name && s.status === "재원")
       : students.filter((s) => s.status === "재원");
   }, [students, user]);
-
-  const [showPaymentMgmt, setShowPaymentMgmt] = useState(false);
 
   // 2. 수납 상태 계산
   const isPaymentDue = (s) => {
@@ -2296,7 +2117,7 @@ const DashboardView = ({
           value={`${stats.paymentDueCount}명`}
           trend="만료·미납 확인"
           trendUp={false}
-          onClick={() => setShowPaymentMgmt(true)}
+          onClick={() => onNavigate("payments")}
         />
 
         {/* [수정] 대기 중인 상담 카드는 '관리자(admin)'에게만 표시 */}
@@ -2599,17 +2420,6 @@ const DashboardView = ({
         </div>
       )}
 
-      {/* 수납 관리 모달 */}
-      {showPaymentMgmt && (
-        <PaymentManagementModal
-          students={students}
-          messageLogs={messageLogs}
-          onClose={() => setShowPaymentMgmt(false)}
-          user={user}
-          onNavigate={onNavigate}
-          showToast={showToast}
-        />
-      )}
     </div>
   );
 };
