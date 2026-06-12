@@ -389,7 +389,7 @@ export default function HomePage() {
             <div className="grid lg:grid-cols-2 gap-10 items-start">
               <div className="rounded-2xl overflow-hidden shadow-xl aspect-video lg:aspect-auto lg:h-80">
                 <iframe
-                  src="https://maps.google.com/maps?q=서울특별시+양천구+목동서로+35+목동프라자&output=embed&z=17&hl=ko"
+                  src="https://maps.google.com/maps?q=서울시+양천구+목동서로+35&output=embed&z=17&hl=ko"
                   width="100%"
                   height="100%"
                   style={{ border: 0, minHeight: '320px' }}
@@ -411,7 +411,7 @@ export default function HomePage() {
                       서울시 양천구 목동서로 35<br />목동프라자 3층
                     </div>
                     <a
-                      href="https://map.naver.com/v5/search/서울시+양천구+목동서로+35+목동프라자"
+                      href="https://map.naver.com/v5/search/서울시+양천구+목동서로+35"
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-xs text-[#d4a843] hover:underline mt-1.5 inline-block"
