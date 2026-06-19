@@ -13317,7 +13317,7 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
 
         return (
           <div ref={printRef} id="print-sheet-root" className="flex-1 overflow-auto p-4 bg-white">
-            <table className="w-full text-xs border-collapse min-w-[600px]" style={{ tableLayout: "fixed" }}>
+            <table className="w-full text-sm border-collapse min-w-[600px]" style={{ tableLayout: "fixed" }}>
               <thead>
                 <tr className="bg-slate-100">
                   <th className="border border-slate-300 px-3 py-2.5 text-center font-bold text-slate-600 text-sm" style={{ width: "80px" }}>강사</th>
@@ -13337,7 +13337,7 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
               <tbody>
                 {sheetTeachers.map((teacher, ti) => (
                   <tr key={teacher.name} className={ti % 2 === 0 ? "bg-white" : "bg-slate-50/60"}>
-                    <td className="border border-slate-300 px-3 py-2 text-center font-bold text-slate-700 text-xs whitespace-nowrap align-middle bg-slate-50">
+                    <td className="border border-slate-300 px-3 py-2 text-center font-bold text-slate-700 text-sm whitespace-nowrap align-middle bg-slate-50">
                       {teacher.name} T
                     </td>
                     {SHEET_DAYS.map((day) => {
@@ -13359,10 +13359,10 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
                         }
                         items.push(
                           <div key={i} className="flex items-baseline gap-1 py-0.5 whitespace-nowrap">
-                            <span className="text-slate-400 tabular-nums text-xs">
+                            <span className="text-slate-400 tabular-nums text-xs leading-snug">
                               {String(Math.floor(l.min / 60)).padStart(2, "0")}:{String(l.min % 60).padStart(2, "0")}
                             </span>
-                            <span className="font-medium text-slate-800">{l.name}</span>
+                            <span className="font-medium text-slate-800 text-sm">{l.name}</span>
                           </div>
                         );
                       });
