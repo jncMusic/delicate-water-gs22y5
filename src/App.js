@@ -13317,14 +13317,15 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
 
         return (
           <div ref={printRef} id="print-sheet-root" className="flex-1 overflow-auto p-4 bg-white">
-            <table className="w-full text-xs border-collapse min-w-[600px]">
+            <table className="w-full text-xs border-collapse min-w-[600px]" style={{ tableLayout: "fixed" }}>
               <thead>
                 <tr className="bg-slate-100">
-                  <th className="border border-slate-300 px-3 py-2.5 text-center font-bold text-slate-600 w-24 text-sm">강사</th>
+                  <th className="border border-slate-300 px-3 py-2.5 text-center font-bold text-slate-600 text-sm" style={{ width: "80px" }}>강사</th>
                   {SHEET_DAYS.map((day) => (
                     <th
                       key={day}
-                      className={`border border-slate-300 px-3 py-2.5 text-center font-bold text-sm ${
+                      style={{ width: `calc((100% - 80px) / 7)` }}
+                      className={`border border-slate-300 px-2 py-2.5 text-center font-bold text-sm ${
                         day === "일" ? "text-rose-600" : day === "토" ? "text-blue-600" : "text-slate-700"
                       }`}
                     >
@@ -13366,7 +13367,7 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
                         );
                       });
                       return (
-                        <td key={day} className="border border-slate-300 px-2 py-1.5 align-top min-w-[90px]">
+                        <td key={day} className="border border-slate-300 px-2 py-1.5 align-top">
                           {items}
                         </td>
                       );
