@@ -12745,7 +12745,11 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
   const handleDownloadImage = async () => {
     if (!printRef.current) return;
     try {
-      const canvas = await html2canvas(printRef.current, {
+      // 출강표는 overflow-auto 컨테이너 대신 내부 table을 직접 캡처 (가로 잘림 방지)
+      const target = viewMode === "sheet"
+        ? (printRef.current.querySelector("table") || printRef.current)
+        : printRef.current;
+      const canvas = await html2canvas(target, {
         scale: 2,
         useCORS: true,
         backgroundColor: "#ffffff",
@@ -13288,7 +13292,7 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
         }
 
         return (
-          <div ref={printRef} className="flex-1 overflow-auto p-4 bg-white">
+          <div ref={printRef} id="print-sheet-root" className="flex-1 overflow-auto p-4 bg-white">
             <table className="w-full text-xs border-collapse min-w-[600px]">
               <thead>
                 <tr className="bg-slate-100">
