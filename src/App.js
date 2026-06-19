@@ -12691,6 +12691,7 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
   const [viewMode, setViewMode] = useState("daily");
   const [selectedPart, setSelectedPart] = useState("전체"); // 파트 필터
   const [sheetTeacherFilter, setSheetTeacherFilter] = useState([]); // 출강표 강사 필터 (빈 배열 = 전체)
+  const [printOrientation, setPrintOrientation] = useState("landscape"); // 출강표 인쇄 방향
 
   const printRef = useRef(null);
 
@@ -12765,7 +12766,16 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
     }
   };
 
-  const handlePrint = () => window.print();
+  const handlePrint = () => {
+    // 출강표 인쇄 방향 동적 적용
+    const styleId = "print-orientation-override";
+    let el = document.getElementById(styleId);
+    if (!el) { el = document.createElement("style"); el.id = styleId; document.head.appendChild(el); }
+    el.textContent = printOrientation === "portrait"
+      ? `@media print { @page { size: A4 portrait; margin: 6mm; } #print-sheet-root { zoom: 0.62; } }`
+      : `@media print { @page { size: A4 landscape; margin: 8mm; } #print-sheet-root { zoom: 1; } }`;
+    window.print();
+  };
 
   const getSubjectColor = (subject) => {
     const part = getPartBySubject(subject);
@@ -12968,6 +12978,20 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
                     {t.name} T
                   </button>
                 ))}
+                <span className="text-slate-200 mx-1">|</span>
+                <span className="text-xs text-slate-500 font-medium whitespace-nowrap">용지</span>
+                <div className="flex bg-white border border-slate-200 p-0.5 rounded-lg">
+                  <button
+                    onClick={() => setPrintOrientation("landscape")}
+                    className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${printOrientation === "landscape" ? "bg-slate-100 text-indigo-600" : "text-slate-400 hover:text-slate-600"}`}
+                    title="A4 가로 출력"
+                  >가로</button>
+                  <button
+                    onClick={() => setPrintOrientation("portrait")}
+                    className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${printOrientation === "portrait" ? "bg-slate-100 text-indigo-600" : "text-slate-400 hover:text-slate-600"}`}
+                    title="A4 세로 출력"
+                  >세로</button>
+                </div>
               </div>
             );
           })()}
