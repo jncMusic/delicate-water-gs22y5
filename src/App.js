@@ -3837,9 +3837,19 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
   }, [teachers]);
 
   const getTeachersByDay = (dayIndex) => {
-    let dayTeachers = teachers.filter(
-      (t) => t.days && t.days.includes(dayIndex)
+    const dayNameMap = ["일", "월", "화", "수", "목", "금", "토"];
+    const dayName = dayNameMap[dayIndex];
+    // 실제 재원 학생 스케줄 기준으로 해당 요일에 수업 있는 강사 목록 계산
+    const teacherNamesWithStudents = new Set(
+      students
+        .filter((s) => {
+          if (s.status !== "재원") return false;
+          return s.schedules ? !!s.schedules[dayName] : s.className === dayName;
+        })
+        .map((s) => s.teacher)
+        .filter(Boolean)
     );
+    let dayTeachers = teachers.filter((t) => teacherNamesWithStudents.has(t.name));
     if (selectedTeacher)
       dayTeachers = dayTeachers.filter((t) => t.name === selectedTeacher);
     return dayTeachers;
