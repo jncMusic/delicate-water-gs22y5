@@ -12092,7 +12092,13 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
         ];
       })
       .filter(Boolean);
-    const ws = window.XLSX.utils.aoa_to_sheet([...header, ...dataRows]);
+    const totalGross = dataRows.reduce((s, r) => s + r[7], 0);
+    const totalIt = dataRows.reduce((s, r) => s + r[8], 0);
+    const totalLt = dataRows.reduce((s, r) => s + r[9], 0);
+    const totalTax = dataRows.reduce((s, r) => s + r[10], 0);
+    const totalNet = dataRows.reduce((s, r) => s + r[11], 0);
+    const totalRow = ["", "합  계", "", "", "", "", "", totalGross, totalIt, totalLt, totalTax, totalNet];
+    const ws = window.XLSX.utils.aoa_to_sheet([...header, ...dataRows, [], totalRow]);
     window.XLSX.utils.book_append_sheet(wb, ws, "세무자료");
     window.XLSX.writeFile(wb, `세무자료_${selectedYear}년${selectedMonth}월.xlsx`);
   };
@@ -12479,29 +12485,50 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
                 </tr>
               </thead>
               <tbody>
-                {teacherList
-                  .map((t) => {
-                    const rows2 = calcSessions(t.name);
-                    const sess = rows2.reduce((s, r) => s + r.sessions, 0);
-                    if (!sess) return null;
-                    const gross = calcFee(t, rows2);
-                    if (!gross) return null;
-                    const it = Math.round(gross * 0.03);
-                    const lt = Math.round(gross * 0.003);
-                    return (
-                      <tr key={t.id} className="border-t hover:bg-slate-50 active:bg-slate-100 transition-colors">
-                        <td className="px-4 py-3 font-medium">{t.name}</td>
-                        <td className="px-4 py-3 text-slate-500">{t.part || "—"}</td>
-                        <td className="px-4 py-3 text-right">{gross.toLocaleString()}</td>
-                        <td className="px-4 py-3 text-right text-rose-600">{it.toLocaleString()}</td>
-                        <td className="px-4 py-3 text-right text-rose-500">{lt.toLocaleString()}</td>
-                        <td className="px-4 py-3 text-right font-bold text-emerald-700">
-                          {(gross - it - lt).toLocaleString()}
-                        </td>
-                      </tr>
-                    );
-                  })
-                  .filter(Boolean)}
+                {(() => {
+                  const taxRows = teacherList
+                    .map((t) => {
+                      const rows2 = calcSessions(t.name);
+                      const sess = rows2.reduce((s, r) => s + r.sessions, 0);
+                      if (!sess) return null;
+                      const gross = calcFee(t, rows2);
+                      if (!gross) return null;
+                      const it = Math.round(gross * 0.03);
+                      const lt = Math.round(gross * 0.003);
+                      return { t, gross, it, lt };
+                    })
+                    .filter(Boolean);
+                  const sumGross = taxRows.reduce((s, r) => s + r.gross, 0);
+                  const sumIt = taxRows.reduce((s, r) => s + r.it, 0);
+                  const sumLt = taxRows.reduce((s, r) => s + r.lt, 0);
+                  const sumNet = taxRows.reduce((s, r) => s + (r.gross - r.it - r.lt), 0);
+                  return (
+                    <>
+                      {taxRows.map(({ t, gross, it, lt }) => (
+                        <tr key={t.id} className="border-t hover:bg-slate-50 active:bg-slate-100 transition-colors">
+                          <td className="px-4 py-3 font-medium">{t.name}</td>
+                          <td className="px-4 py-3 text-slate-500">{t.part || "—"}</td>
+                          <td className="px-4 py-3 text-right">{gross.toLocaleString()}</td>
+                          <td className="px-4 py-3 text-right text-rose-600">{it.toLocaleString()}</td>
+                          <td className="px-4 py-3 text-right text-rose-500">{lt.toLocaleString()}</td>
+                          <td className="px-4 py-3 text-right font-bold text-emerald-700">
+                            {(gross - it - lt).toLocaleString()}
+                          </td>
+                        </tr>
+                      ))}
+                      {taxRows.length > 0 && (
+                        <tr className="border-t-2 border-slate-300 bg-slate-50 font-bold">
+                          <td className="px-4 py-3">합  계</td>
+                          <td className="px-4 py-3"></td>
+                          <td className="px-4 py-3 text-right">{sumGross.toLocaleString()}</td>
+                          <td className="px-4 py-3 text-right text-rose-600">{sumIt.toLocaleString()}</td>
+                          <td className="px-4 py-3 text-right text-rose-500">{sumLt.toLocaleString()}</td>
+                          <td className="px-4 py-3 text-right text-emerald-700">{sumNet.toLocaleString()}</td>
+                        </tr>
+                      )}
+                    </>
+                  );
+                })()}
               </tbody>
             </table>
             {teacherList.every((t) => {
