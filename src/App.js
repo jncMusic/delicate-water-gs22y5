@@ -3078,9 +3078,11 @@ const ConsultationView = ({
   // 1. [기능 보존] 진행 중 / 보관함 필터링
   const filteredConsultations = useMemo(
     () =>
-      allConsultations.filter((c) =>
-        viewMode === "pending" ? c.status === "pending" : c.status !== "pending"
-      ),
+      allConsultations
+        .filter((c) =>
+          viewMode === "pending" ? c.status === "pending" : c.status !== "pending"
+        )
+        .sort((a, b) => (b.date || "").localeCompare(a.date || "")),
     [allConsultations, viewMode]
   );
 
