@@ -11904,10 +11904,12 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
         return row.sessions * Number(value); // fixed
       }
     }
-    // 기본 단가 (revenueShare는 calcFee에서 전체 합산으로 처리)
+    // 기본 단가 (revenueShare는 학생별 수업 비율 적용)
     if (teacher.feeType === "revenueShare") {
       const rate = Number(teacher.feeRate || 0) / 100;
-      return Math.round(row.tuitionFee * rate);
+      const total = row.totalStudentSessions || 0;
+      const ratio = total > 0 ? row.sessions / total : 1;
+      return Math.round(row.tuitionFee * rate * ratio);
     }
     return row.sessions * Number(teacher.feeRate || 0);
   };
