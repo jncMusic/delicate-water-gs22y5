@@ -11880,6 +11880,7 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
             studentId: s.id,
             sessions,
             totalStudentSessions,
+            standardSessions: getEffectiveSessions(s),
             tuitionFee: Number(s.tuitionFee || 0),
           };
         })
@@ -11904,12 +11905,12 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
         return row.sessions * Number(value); // fixed
       }
     }
-    // 기본 단가 (revenueShare는 학생별 수업 비율 적용)
+    // 기본 단가 (revenueShare: 회당 단가 × 실제 수업 횟수 × 비율)
     if (teacher.feeType === "revenueShare") {
       const rate = Number(teacher.feeRate || 0) / 100;
-      const total = row.totalStudentSessions || 0;
-      const ratio = total > 0 ? row.sessions / total : 1;
-      return Math.round(row.tuitionFee * rate * ratio);
+      const base = row.standardSessions || row.totalStudentSessions || 4;
+      const perSession = row.tuitionFee / base;
+      return Math.round(perSession * row.sessions * rate);
     }
     return row.sessions * Number(teacher.feeRate || 0);
   };
