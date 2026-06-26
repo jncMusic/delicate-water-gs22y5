@@ -10093,7 +10093,24 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
     const regDateStr = s.registrationDate || (s.createdAt ? s.createdAt.slice(0, 10) : "");
     let firstLesson = "(날짜/요일/시간 입력)";
     let lessonDayKo = "";
-    if (regDateStr) {
+    if (scheduleEntries.length > 0) {
+      // 실제 시간표의 첫 번째 수업 요일/시간 사용
+      const [firstDay, firstTime] = scheduleEntries[0];
+      lessonDayKo = firstDay;
+      const targetDayIdx = DAYS_KO_BULK.indexOf(firstDay);
+      if (regDateStr && targetDayIdx >= 0) {
+        const base = new Date(regDateStr + "T00:00:00");
+        let diff = targetDayIdx - base.getDay();
+        if (diff < 0) diff += 7;
+        base.setDate(base.getDate() + diff);
+        const y = base.getFullYear();
+        const m = String(base.getMonth() + 1).padStart(2, "0");
+        const d = String(base.getDate()).padStart(2, "0");
+        firstLesson = `${y}-${m}-${d} (${firstDay}) ${firstTime}`;
+      } else {
+        firstLesson = `(날짜 입력) (${firstDay}) ${firstTime}`;
+      }
+    } else if (regDateStr) {
       const d = new Date(regDateStr + "T00:00:00");
       lessonDayKo = DAYS_KO_BULK[d.getDay()];
       const lessonTime = getStudentScheduleTime(s, lessonDayKo);
