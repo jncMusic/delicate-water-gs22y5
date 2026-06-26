@@ -10047,7 +10047,10 @@ const applyStudentVars = (text, s) => {
   const nameSuffix = s.grade === "성인" ? "님" : " 학생";
   const name = s.name + nameSuffix;
   const teacher = s.teacher || "(강사)";
-  const fee = s.tuitionFee ? `${Number(s.tuitionFee).toLocaleString()}원` : "(금액)원";
+  // tuitionFee가 0이어도 표시 (falsy 체크 대신 null/undefined 체크)
+  const fee = (s.tuitionFee != null && s.tuitionFee !== "")
+    ? `${Number(s.tuitionFee).toLocaleString()}원`
+    : "(금액)원";
   const rawSubject = s.subject || "(과목)";
   const subject = rawSubject.includes("1:1") ? rawSubject : `${rawSubject} 1:1 개인레슨`;
   const sessions = (() => {
@@ -10056,17 +10059,23 @@ const applyStudentVars = (text, s) => {
     return Object.keys(s.schedules || {}).length >= 2 ? 8 : 4;
   })();
   const scheduleEntries = Object.entries(s.schedules || {});
+  // schedules 없으면 className/time 폴백
   const scheduleStr = scheduleEntries.length > 0
     ? scheduleEntries.map(([day, time]) => `${day}요일 ${time}`).join(", ")
     : (s.className ? `${s.className}요일 ${s.time || ""}` : "(수업 일정)");
-  const regDateStr = s.registrationDate || (s.createdAt ? s.createdAt.slice(0, 10) : "");
+  // registrationDate 없으면 오늘 날짜 기준으로 계산
+  const regDateStr = s.registrationDate || (s.createdAt ? s.createdAt.slice(0, 10) : new Date().toISOString().slice(0, 10));
   let firstLesson = "(날짜/요일/시간 입력)";
   let lessonDayKo = "";
-  if (scheduleEntries.length > 0) {
-    const [firstDay, firstTime] = scheduleEntries[0];
+  // schedules가 있으면 실제 수업 요일/시간 사용
+  const effectiveEntries = scheduleEntries.length > 0
+    ? scheduleEntries
+    : (s.className ? [[s.className, s.time || ""]] : []);
+  if (effectiveEntries.length > 0) {
+    const [firstDay, firstTime] = effectiveEntries[0];
     lessonDayKo = firstDay;
     const targetDayIdx = DAYS_KO_BULK.indexOf(firstDay);
-    if (regDateStr && targetDayIdx >= 0) {
+    if (targetDayIdx >= 0) {
       const base = new Date(regDateStr + "T00:00:00");
       let diff = targetDayIdx - base.getDay();
       if (diff < 0) diff += 7;
@@ -10074,17 +10083,15 @@ const applyStudentVars = (text, s) => {
       const y = base.getFullYear();
       const m = String(base.getMonth() + 1).padStart(2, "0");
       const d = String(base.getDate()).padStart(2, "0");
-      firstLesson = `${y}-${m}-${d} (${firstDay}) ${firstTime}`;
+      firstLesson = `${y}-${m}-${d} (${firstDay}) ${firstTime || "(시간 입력)"}`;
     } else {
-      firstLesson = `(날짜 입력) (${firstDay}) ${firstTime}`;
+      firstLesson = `${regDateStr} (${firstDay}) ${firstTime || "(시간 입력)"}`;
     }
-  } else if (regDateStr) {
+  } else {
+    // schedules도 className도 없으면 등록일 기준으로만
     const d = new Date(regDateStr + "T00:00:00");
     lessonDayKo = DAYS_KO_BULK[d.getDay()];
-    const lessonTime = getStudentScheduleTime(s, lessonDayKo);
-    firstLesson = lessonTime
-      ? `${regDateStr} (${lessonDayKo}) ${lessonTime}`
-      : `${regDateStr} (${lessonDayKo}) (시간 입력)`;
+    firstLesson = `${regDateStr} (${lessonDayKo}) (시간 입력)`;
   }
   const closingDay = lessonDayKo
     ? `다음주 ${lessonDayKo}요일에 뵙겠습니다.`
@@ -10246,65 +10253,8 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
     }
   };
 
-  // 학생 정보 변수 치환: {{이름}} {{강사}} {{원비}} {{과목}} {{횟수}} {{수업일시}} {{수업일정}} {{마무리}}
-  const applyStudentVarsInner = (text, s) => {
-    if (!s) return text;
-    const nameSuffix = s.grade === "성인" ? "님" : " 학생";
-    const name = s.name + nameSuffix;
-    const teacher = s.teacher || "(강사)";
-    const fee = s.tuitionFee ? `${Number(s.tuitionFee).toLocaleString()}원` : "(금액)원";
-    const rawSubject = s.subject || "(과목)";
-    const subject = rawSubject.includes("1:1") ? rawSubject : `${rawSubject} 1:1 개인레슨`;
-    const sessions = (() => {
-      const saved = parseInt(s.totalSessions);
-      if (!isNaN(saved) && saved > 0) return saved;
-      return Object.keys(s.schedules || {}).length >= 2 ? 8 : 4;
-    })();
-    const scheduleEntries = Object.entries(s.schedules || {});
-    const scheduleStr = scheduleEntries.length > 0
-      ? scheduleEntries.map(([day, time]) => `${day}요일 ${time}`).join(", ")
-      : (s.className ? `${s.className}요일 ${s.time || ""}` : "(수업 일정)");
-    const regDateStr = s.registrationDate || (s.createdAt ? s.createdAt.slice(0, 10) : "");
-    let firstLesson = "(날짜/요일/시간 입력)";
-    let lessonDayKo = "";
-    if (scheduleEntries.length > 0) {
-      // 실제 시간표의 첫 번째 수업 요일/시간 사용
-      const [firstDay, firstTime] = scheduleEntries[0];
-      lessonDayKo = firstDay;
-      const targetDayIdx = DAYS_KO_BULK.indexOf(firstDay);
-      if (regDateStr && targetDayIdx >= 0) {
-        const base = new Date(regDateStr + "T00:00:00");
-        let diff = targetDayIdx - base.getDay();
-        if (diff < 0) diff += 7;
-        base.setDate(base.getDate() + diff);
-        const y = base.getFullYear();
-        const m = String(base.getMonth() + 1).padStart(2, "0");
-        const d = String(base.getDate()).padStart(2, "0");
-        firstLesson = `${y}-${m}-${d} (${firstDay}) ${firstTime}`;
-      } else {
-        firstLesson = `(날짜 입력) (${firstDay}) ${firstTime}`;
-      }
-    } else if (regDateStr) {
-      const d = new Date(regDateStr + "T00:00:00");
-      lessonDayKo = DAYS_KO_BULK[d.getDay()];
-      const lessonTime = getStudentScheduleTime(s, lessonDayKo);
-      firstLesson = lessonTime
-        ? `${regDateStr} (${lessonDayKo}) ${lessonTime}`
-        : `${regDateStr} (${lessonDayKo}) (시간 입력)`;
-    }
-    const closingDay = lessonDayKo
-      ? `다음주 ${lessonDayKo}요일에 뵙겠습니다.`
-      : "다음주 (요일)에 뵙겠습니다.";
-    return text
-      .replace(/\{\{이름\}\}/g, name)
-      .replace(/\{\{강사\}\}/g, teacher)
-      .replace(/\{\{원비\}\}/g, fee)
-      .replace(/\{\{과목\}\}/g, subject)
-      .replace(/\{\{횟수\}\}/g, `${sessions}회`)
-      .replace(/\{\{수업일시\}\}/g, firstLesson)
-      .replace(/\{\{수업일정\}\}/g, scheduleStr)
-      .replace(/\{\{마무리\}\}/g, closingDay);
-  };
+  // top-level applyStudentVars와 동일한 로직 (BulkSmsView 내부 사용)
+  const applyStudentVarsInner = (text, s) => applyStudentVars(text, s);
 
   const toggleOne = (id) => {
     setSelectedIds((prev) =>
