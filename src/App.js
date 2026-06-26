@@ -8975,6 +8975,7 @@ const StudentView = ({
         initialTab={modalTab}
         // 🔥 [중요] 모달에도 user 정보 전달 (권한 체크용)
         user={user}
+        showToast={showToast}
         onSave={(data) => {
           onUpdateStudent(selectedStudent?.id || null, data);
           setIsDetailModalOpen(false);
@@ -9000,6 +9001,7 @@ const StudentManagementModal = ({
   onDelete,
   initialTab = "info",
   user, // 🔥 user prop 수신
+  showToast,
 }) => {
   const [activeTab, setActiveTab] = useState("info");
   const [formData, setFormData] = useState({});
@@ -9009,13 +9011,16 @@ const StudentManagementModal = ({
   const [baseDate, setBaseDate] = useState(new Date(nowSMM.getFullYear(), nowSMM.getMonth() - 1, 1));
   const [payAmount, setPayAmount] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
+  const [notifyTemplateId, setNotifyTemplateId] = useState("custom");
+  const [notifyMessage, setNotifyMessage] = useState("");
+  const [notifySending, setNotifySending] = useState(false);
 
   const DAYS = ["월", "화", "수", "목", "금", "토", "일"];
 
-  // 🔥 [보안] 탭 목록 설정 (관리자만 payment 탭 보임)
+  // 🔥 [보안] 탭 목록 설정 (관리자만 payment·notify 탭 보임)
   const TABS =
     user?.role === "admin"
-      ? ["info", "attendance", "payment"]
+      ? ["info", "attendance", "payment", "notify"]
       : ["info", "attendance"];
 
   useEffect(() => {
@@ -9343,6 +9348,8 @@ const StudentManagementModal = ({
                     ? "bg-emerald-50 text-emerald-700 shadow-inner ring-1 ring-emerald-100"
                     : tab === "payment"
                     ? "bg-indigo-50 text-indigo-700 shadow-inner ring-1 ring-indigo-100"
+                    : tab === "notify"
+                    ? "bg-amber-50 text-amber-700 shadow-inner ring-1 ring-amber-100"
                     : "bg-slate-100 text-slate-800 shadow-inner"
                   : "text-slate-400 hover:bg-slate-50 active:bg-slate-100"
               }`}
@@ -9350,11 +9357,14 @@ const StudentManagementModal = ({
               {tab === "info" && <User size={16} />}
               {tab === "attendance" && <CheckCircle size={16} />}
               {tab === "payment" && <CreditCard size={16} />}
+              {tab === "notify" && <Bell size={16} />}
               {tab === "info"
                 ? "기본 정보"
                 : tab === "attendance"
                 ? "출석 관리"
-                : "수납 관리"}
+                : tab === "payment"
+                ? "수납 관리"
+                : "공지 관리"}
             </button>
           ))}
         </div>
@@ -9758,6 +9768,84 @@ const StudentManagementModal = ({
               </div>
             </div>
           )}
+
+          {/* 공지 관리 탭 */}
+          {activeTab === "notify" && user?.role === "admin" && (
+            <div className="space-y-4 animate-in slide-in-from-right-2 duration-300">
+              <div className="bg-amber-50 p-4 rounded-xl border border-amber-100 shadow-sm">
+                <p className="text-sm font-bold text-amber-800 mb-1 flex items-center gap-1.5">
+                  <Bell size={14} /> 공지 발송
+                </p>
+                <p className="text-xs text-amber-600">
+                  {student?.name} {student?.grade === "성인" ? "님" : "학생"}에게 문자를 발송합니다.
+                  수신번호: {student?.phone || "(연락처 없음)"}
+                </p>
+              </div>
+
+              {/* 템플릿 선택 */}
+              <div>
+                <p className="text-xs font-bold text-slate-500 mb-2 ml-1">템플릿 선택</p>
+                <div className="flex flex-wrap gap-2">
+                  {BULK_SMS_TEMPLATES.map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={() => {
+                        setNotifyTemplateId(t.id);
+                        if (t.id === "custom") { setNotifyMessage(""); return; }
+                        let text = applyTemplateGreetings(t.text);
+                        text = applyStudentVars(text, { ...student, ...formData });
+                        setNotifyMessage(text);
+                      }}
+                      className={`px-3 py-1.5 text-xs rounded-lg font-medium border transition-all ${
+                        notifyTemplateId === t.id
+                          ? "bg-amber-500 text-white border-amber-500 shadow-sm"
+                          : "bg-white text-slate-600 border-slate-200 hover:border-amber-300"
+                      }`}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 메시지 편집 */}
+              <div>
+                <p className="text-xs font-bold text-slate-500 mb-1.5 ml-1">메시지 내용</p>
+                <textarea
+                  className="w-full p-3 border rounded-xl text-sm outline-none focus:ring-2 focus:ring-amber-400 bg-white resize-none"
+                  rows={10}
+                  placeholder="직접 입력하거나 템플릿을 선택하세요."
+                  value={notifyMessage}
+                  onChange={(e) => { setNotifyMessage(e.target.value); setNotifyTemplateId("custom"); }}
+                />
+                <p className="text-right text-xs text-slate-400 mt-1">{notifyMessage.length}자</p>
+              </div>
+
+              {/* 발송 버튼 */}
+              <button
+                disabled={!student?.phone || !notifyMessage.trim() || notifySending}
+                onClick={async () => {
+                  if (!student?.phone) { showToast?.("연락처가 없습니다.", "error"); return; }
+                  if (!notifyMessage.trim()) { showToast?.("메시지를 입력하세요.", "error"); return; }
+                  setNotifySending(true);
+                  try {
+                    await sendAligoSms(student.phone, notifyMessage);
+                    showToast?.("발송 완료!", "success");
+                    setNotifyMessage("");
+                    setNotifyTemplateId("custom");
+                  } catch (e) {
+                    showToast?.(e.message || "발송 실패", "error");
+                  } finally {
+                    setNotifySending(false);
+                  }
+                }}
+                className="w-full py-3 bg-amber-500 text-white text-sm font-bold rounded-xl hover:bg-amber-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+              >
+                <Send size={15} />
+                {notifySending ? "발송 중..." : "문자 발송"}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* 푸터 */}
@@ -9951,6 +10039,67 @@ const applyTemplateGreetings = (text) =>
     .replace(/\{\{시즌인사\}\}/g, getShortSeasonalGreeting())
     .replace(/\{\{시즌인사2\}\}/g, getShortClosingGreeting());
 
+const DAYS_KO_BULK = ["일", "월", "화", "수", "목", "금", "토"];
+
+// 학생 정보 변수 치환: {{이름}} {{강사}} {{원비}} {{과목}} {{횟수}} {{수업일시}} {{수업일정}} {{마무리}}
+const applyStudentVars = (text, s) => {
+  if (!s) return text;
+  const nameSuffix = s.grade === "성인" ? "님" : " 학생";
+  const name = s.name + nameSuffix;
+  const teacher = s.teacher || "(강사)";
+  const fee = s.tuitionFee ? `${Number(s.tuitionFee).toLocaleString()}원` : "(금액)원";
+  const rawSubject = s.subject || "(과목)";
+  const subject = rawSubject.includes("1:1") ? rawSubject : `${rawSubject} 1:1 개인레슨`;
+  const sessions = (() => {
+    const saved = parseInt(s.totalSessions);
+    if (!isNaN(saved) && saved > 0) return saved;
+    return Object.keys(s.schedules || {}).length >= 2 ? 8 : 4;
+  })();
+  const scheduleEntries = Object.entries(s.schedules || {});
+  const scheduleStr = scheduleEntries.length > 0
+    ? scheduleEntries.map(([day, time]) => `${day}요일 ${time}`).join(", ")
+    : (s.className ? `${s.className}요일 ${s.time || ""}` : "(수업 일정)");
+  const regDateStr = s.registrationDate || (s.createdAt ? s.createdAt.slice(0, 10) : "");
+  let firstLesson = "(날짜/요일/시간 입력)";
+  let lessonDayKo = "";
+  if (scheduleEntries.length > 0) {
+    const [firstDay, firstTime] = scheduleEntries[0];
+    lessonDayKo = firstDay;
+    const targetDayIdx = DAYS_KO_BULK.indexOf(firstDay);
+    if (regDateStr && targetDayIdx >= 0) {
+      const base = new Date(regDateStr + "T00:00:00");
+      let diff = targetDayIdx - base.getDay();
+      if (diff < 0) diff += 7;
+      base.setDate(base.getDate() + diff);
+      const y = base.getFullYear();
+      const m = String(base.getMonth() + 1).padStart(2, "0");
+      const d = String(base.getDate()).padStart(2, "0");
+      firstLesson = `${y}-${m}-${d} (${firstDay}) ${firstTime}`;
+    } else {
+      firstLesson = `(날짜 입력) (${firstDay}) ${firstTime}`;
+    }
+  } else if (regDateStr) {
+    const d = new Date(regDateStr + "T00:00:00");
+    lessonDayKo = DAYS_KO_BULK[d.getDay()];
+    const lessonTime = getStudentScheduleTime(s, lessonDayKo);
+    firstLesson = lessonTime
+      ? `${regDateStr} (${lessonDayKo}) ${lessonTime}`
+      : `${regDateStr} (${lessonDayKo}) (시간 입력)`;
+  }
+  const closingDay = lessonDayKo
+    ? `다음주 ${lessonDayKo}요일에 뵙겠습니다.`
+    : "다음주 (요일)에 뵙겠습니다.";
+  return text
+    .replace(/\{\{이름\}\}/g, name)
+    .replace(/\{\{강사\}\}/g, teacher)
+    .replace(/\{\{원비\}\}/g, fee)
+    .replace(/\{\{과목\}\}/g, subject)
+    .replace(/\{\{횟수\}\}/g, `${sessions}회`)
+    .replace(/\{\{수업일시\}\}/g, firstLesson)
+    .replace(/\{\{수업일정\}\}/g, scheduleStr)
+    .replace(/\{\{마무리\}\}/g, closingDay);
+};
+
 const BULK_SMS_TEMPLATES = [
   { id: "custom",   label: "직접 입력", text: "" },
 
@@ -10097,10 +10246,8 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
     }
   };
 
-  const DAYS_KO_BULK = ["일", "월", "화", "수", "목", "금", "토"];
-
   // 학생 정보 변수 치환: {{이름}} {{강사}} {{원비}} {{과목}} {{횟수}} {{수업일시}} {{수업일정}} {{마무리}}
-  const applyStudentVars = (text, s) => {
+  const applyStudentVarsInner = (text, s) => {
     if (!s) return text;
     const nameSuffix = s.grade === "성인" ? "님" : " 학생";
     const name = s.name + nameSuffix;
@@ -10173,7 +10320,7 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
     let text = applyTemplateGreetings(t.text);
     if (selectedIds.length === 1) {
       const s = students.find((st) => st.id === selectedIds[0]);
-      if (s) text = applyStudentVars(text, s);
+      if (s) text = applyStudentVarsInner(text, s);
     }
     setMessage(text);
   }, [selectedIds, templateId]); // eslint-disable-line
