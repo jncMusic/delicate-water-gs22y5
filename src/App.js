@@ -9960,7 +9960,7 @@ const BULK_SMS_TEMPLATES = [
     label: "미납 안내",
     text:
 `안녕하세요, J&C 음악학원입니다. {{시즌인사}}
-[이름] 학생 수강료가 미납된 것으로 확인됩니다. 빠른 납부 부탁드립니다.
+{{이름}} 수강료({{원비}})가 미납된 것으로 확인됩니다. 빠른 납부 부탁드립니다.
 항상 감사드립니다. {{시즌인사2}}
 J&C 음악학원장 드림.`,
   },
@@ -9993,8 +9993,8 @@ J&C 음악학원장 드림.`,
     label: "수업 변경",
     text:
 `안녕하세요, J&C 음악학원입니다. {{시즌인사}}
-[이름] 학생 수업 일정이 아래와 같이 변경됩니다.
-▪ 기존: [기존 일시]
+{{이름}} 수업 일정이 아래와 같이 변경됩니다.
+▪ 기존: {{수업일정}}
 ▪ 변경: [변경 일시]
 불편을 드려 죄송합니다. 문의: 02-2655-0220
 항상 감사드립니다. {{시즌인사2}}
@@ -10022,13 +10022,13 @@ J&C 음악학원장 드림.`,
     text:
 `안녕하세요, J&C 음악학원입니다.
 
-[이름]의 첫 수업 안내드립니다.
+{{이름}}의 첫 수업 안내드립니다.
 
-* 첫 수업: (날짜/요일/시간 입력)
-* 과목: [과목]
+* 첫 수업: {{수업일시}}
+* 과목: {{과목}}
 
 * 원비 안내
-월 원비: (금액)원 / (횟수)회 수업
+월 원비: {{원비}} / {{횟수}} 수업
 하나은행 125-91025-766307 강열혁(제이앤씨음악학원)
 방문(카드/현금), 계좌이체·제로페이, 온라인 카드결제 모두 가능합니다.
 
@@ -10036,7 +10036,7 @@ J&C 음악학원장 드림.`,
 당일 취소 및 노쇼는 수업 1회 차감됩니다.
 변경 사항은 수업 전날까지 연락 부탁드립니다.
 
-항상 감사드립니다. 다음주 (요일)에 뵙겠습니다.
+항상 감사드립니다. {{마무리}}
 J&C 음악학원장 드림.`,
   },
 ];
@@ -10072,17 +10072,24 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
 
   const DAYS_KO_BULK = ["일", "월", "화", "수", "목", "금", "토"];
 
-  // 1명 선택 시 new_lesson 템플릿에 학생 정보 자동 채움
-  const buildNewLessonMsg = (ids) => {
-    const base = BULK_SMS_TEMPLATES.find((t) => t.id === "new_lesson")?.text || "";
-    if (ids.length !== 1) return base;
-    const s = students.find((st) => st.id === ids[0]);
-    if (!s) return base;
-
-    // 성인: "이름님", 학생: "이름 학생"
+  // 학생 정보 변수 치환: {{이름}} {{강사}} {{원비}} {{과목}} {{횟수}} {{수업일시}} {{수업일정}} {{마무리}}
+  const applyStudentVars = (text, s) => {
+    if (!s) return text;
     const nameSuffix = s.grade === "성인" ? "님" : " 학생";
-
-    // 첫 수업 날짜 + 요일 + 시간
+    const name = s.name + nameSuffix;
+    const teacher = s.teacher || "(강사)";
+    const fee = s.tuitionFee ? `${Number(s.tuitionFee).toLocaleString()}원` : "(금액)원";
+    const rawSubject = s.subject || "(과목)";
+    const subject = rawSubject.includes("1:1") ? rawSubject : `${rawSubject} 1:1 개인레슨`;
+    const sessions = (() => {
+      const saved = parseInt(s.totalSessions);
+      if (!isNaN(saved) && saved > 0) return saved;
+      return Object.keys(s.schedules || {}).length >= 2 ? 8 : 4;
+    })();
+    const scheduleEntries = Object.entries(s.schedules || {});
+    const scheduleStr = scheduleEntries.length > 0
+      ? scheduleEntries.map(([day, time]) => `${day}요일 ${time}`).join(", ")
+      : (s.className ? `${s.className}요일 ${s.time || ""}` : "(수업 일정)");
     const regDateStr = s.registrationDate || (s.createdAt ? s.createdAt.slice(0, 10) : "");
     let firstLesson = "(날짜/요일/시간 입력)";
     let lessonDayKo = "";
@@ -10094,28 +10101,18 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
         ? `${regDateStr} (${lessonDayKo}) ${lessonTime}`
         : `${regDateStr} (${lessonDayKo}) (시간 입력)`;
     }
-
-    // 과목 + "1:1 개인레슨" 접미
-    const rawSubject = s.subject || "(과목)";
-    const subject = rawSubject.includes("1:1") ? rawSubject : `${rawSubject} 1:1 개인레슨`;
-
-    // 마무리 인사 요일
-    const closingDay = lessonDayKo ? `다음주 ${lessonDayKo}요일에 뵙겠습니다.` : "다음주 (요일)에 뵙겠습니다.";
-
-    const fee = s.tuitionFee ? `${Number(s.tuitionFee).toLocaleString()}원` : "(금액)원";
-    const sessions = (() => {
-      const saved = parseInt(s.totalSessions);
-      if (!isNaN(saved) && saved > 0) return saved;
-      return Object.keys(s.schedules || {}).length >= 2 ? 8 : 4;
-    })();
-
-    return base
-      .replace("[이름]", s.name + nameSuffix)
-      .replace("[과목]", subject)
-      .replace("(날짜/요일/시간 입력)", firstLesson)
-      .replace("(금액)원", fee)
-      .replace("(횟수)회", `${sessions}회`)
-      .replace("다음주 (요일)에 뵙겠습니다.", closingDay);
+    const closingDay = lessonDayKo
+      ? `다음주 ${lessonDayKo}요일에 뵙겠습니다.`
+      : "다음주 (요일)에 뵙겠습니다.";
+    return text
+      .replace(/\{\{이름\}\}/g, name)
+      .replace(/\{\{강사\}\}/g, teacher)
+      .replace(/\{\{원비\}\}/g, fee)
+      .replace(/\{\{과목\}\}/g, subject)
+      .replace(/\{\{횟수\}\}/g, `${sessions}회`)
+      .replace(/\{\{수업일시\}\}/g, firstLesson)
+      .replace(/\{\{수업일정\}\}/g, scheduleStr)
+      .replace(/\{\{마무리\}\}/g, closingDay);
   };
 
   const toggleOne = (id) => {
@@ -10124,22 +10121,22 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
     );
   };
 
-  // new_lesson 템플릿 활성화 중 선택 변경 시 자동 갱신
+  // 템플릿 또는 선택 학생 변경 시 자동 갱신 (직접 입력 제외)
   useEffect(() => {
-    if (templateId === "new_lesson") {
-      setMessage(buildNewLessonMsg(selectedIds));
+    if (templateId === "custom") return;
+    const t = BULK_SMS_TEMPLATES.find((t) => t.id === templateId);
+    if (!t || !t.text) { setMessage(""); return; }
+    let text = applyTemplateGreetings(t.text);
+    if (selectedIds.length === 1) {
+      const s = students.find((st) => st.id === selectedIds[0]);
+      if (s) text = applyStudentVars(text, s);
     }
+    setMessage(text);
   }, [selectedIds, templateId]); // eslint-disable-line
 
   const handleTemplateChange = (tid) => {
     setTemplateId(tid);
-    if (tid === "new_lesson") {
-      setMessage(buildNewLessonMsg(selectedIds));
-    } else {
-      const t = BULK_SMS_TEMPLATES.find((t) => t.id === tid);
-      if (t && t.text) setMessage(applyTemplateGreetings(t.text));
-      else setMessage("");
-    }
+    if (tid === "custom") setMessage("");
   };
 
   const handleSend = async () => {
