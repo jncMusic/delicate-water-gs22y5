@@ -1,19 +1,10 @@
-<<<<<<< HEAD
-/* 1. 나눔스퀘어 폰트 불러오기 (CDN) */
-@import url("https://cdn.jsdelivr.net/gh/moonspam/NanumSquare@2.0/nanumsquare.css");
-=======
 /* 1. 프리텐다드 폰트 불러오기 (CDN) */
 @import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css");
->>>>>>> ed2bae399fb6b8b52205e802872c4aa027899bbe
 
 /* 2. 전체 문서에 폰트 적용 */
 body {
   margin: 0;
-<<<<<<< HEAD
-  font-family: "NanumSquare", -apple-system, BlinkMacSystemFont, system-ui, Roboto, "Helvetica Neue", "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", sans-serif;
-=======
   font-family: "Pretendard", -apple-system, BlinkMacSystemFont, system-ui, Roboto, "Helvetica Neue", "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", sans-serif;
->>>>>>> ed2bae399fb6b8b52205e802872c4aa027899bbe
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -25,4 +16,21 @@ body {
 /* 3. 버튼, 입력창 등 폼 요소에도 폰트 상속 강제 */
 button, input, select, textarea {
   font-family: inherit;
+}
+
+/* 4. 출강표 인쇄: 가로 방향, 여백 최소화, 표 전체 너비 맞춤 */
+@media print {
+  @page { size: A4 landscape; margin: 8mm; }
+  body > * { display: none !important; }
+  #print-sheet-root { display: block !important; }
+  #print-sheet-root table {
+    width: 100%;
+    font-size: 9px;
+    border-collapse: collapse;
+  }
+  #print-sheet-root th,
+  #print-sheet-root td {
+    border: 1px solid #cbd5e1 !important;
+    padding: 3px 4px !important;
+  }
 }
