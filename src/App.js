@@ -11465,7 +11465,7 @@ const MonthlyClosingView = ({ teachers, students, showToast }) => {
       );
       if (!recs.length) return null;
       const sessions = recs.reduce((sum, h) => sum + (h.status === "present" ? (h.count || 1) : (h.status === "canceled" ? 0.5 : 0)), 0);
-      return { name: s.name, studentId: s.id, sessions, tuitionFee: Number(s.tuitionFee || 0) };
+      return { name: s.name, studentId: s.id, sessions, standardSessions: getEffectiveSessions(s), tuitionFee: Number(s.tuitionFee || 0) };
     }).filter(Boolean),
   [students, periodStart, periodEnd]);
 
@@ -11480,12 +11480,14 @@ const MonthlyClosingView = ({ teachers, students, showToast }) => {
       }
       const { type, value } = override;
       if (value !== "" && value != null && Number(value) >= 0) {
-        if (type === "percent") return Math.round(row.tuitionFee * (Number(value) / 100));
+        if (type === "percent") return Math.round((row.tuitionFee / (row.standardSessions || 4)) * row.sessions * (Number(value) / 100));
         return row.sessions * Number(value);
       }
     }
     if (teacher.feeType === "revenueShare") {
-      return Math.round(row.tuitionFee * (Number(teacher.feeRate || 0) / 100));
+      const rate = Number(teacher.feeRate || 0) / 100;
+      const base = row.standardSessions || 4;
+      return Math.round((row.tuitionFee / base) * row.sessions * rate);
     }
     return row.sessions * Number(teacher.feeRate || 0);
   };
