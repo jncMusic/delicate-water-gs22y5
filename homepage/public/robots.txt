@@ -1,4 +1,0 @@
-User-agent: *
-Allow: /
-
-Sitemap: https://jncmusic.kr/sitemap.xml

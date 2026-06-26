@@ -485,19 +485,38 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
     .filter((h) => (h.status === "present" || h.status === "canceled") && h.date <= todayForMsg)
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  // 누적 세션: present=count(1 or 2), canceled=0.5
-  // 각 세션에 라벨 부여 (표시용)
-  const sessionSlots = []; // { date, label, weight }
+  // 누적 세션: present=count(1 or 2), canceled=1
+  // 각 세션에 라벨 부여 (표시용) — fromDouble: 연강 슬롯 여부
+  const sessionSlots = []; // { date, label, fromDouble }
   allSessions.forEach((h) => {
     if (h.status === "present") {
       const cnt = h.count || 1;
       for (let i = 0; i < cnt; i++) {
-        sessionSlots.push({ date: h.date, label: h.date.slice(5).replace("-", "/"), weight: 1 });
+        sessionSlots.push({ date: h.date, label: h.date.slice(5).replace("-", "/"), fromDouble: cnt >= 2 });
       }
     } else if (h.status === "canceled") {
-      sessionSlots.push({ date: h.date, label: h.date.slice(5).replace("-", "/") + "(당일취소)", weight: 1 });
+      sessionSlots.push({ date: h.date, label: h.date.slice(5).replace("-", "/") + "(당일취소)", fromDouble: false });
     }
   });
+
+  // 슬롯 배열 → 날짜별 그룹화 후 표시 문자열 배열로 변환 (연강이면 날짜 하나로 묶어 (연강) 표시)
+  const slotsToLabels = (slots) => {
+    const seen = new Map();
+    const order = [];
+    slots.forEach((slot) => {
+      if (!seen.has(slot.date)) {
+        seen.set(slot.date, { label: slot.label, fromDouble: slot.fromDouble });
+        order.push(slot.date);
+      } else if (slot.fromDouble) {
+        seen.get(slot.date).fromDouble = true;
+      }
+    });
+    return order.map((date) => {
+      const g = seen.get(date);
+      if (g.label.includes("당일취소")) return g.label;
+      return g.label + (g.fromDouble ? "(연강)" : "");
+    });
+  };
 
   // 결제 이력 정렬
   const allPayments = (student.paymentHistory || []).sort((a, b) =>
@@ -513,8 +532,8 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
   // 마지막 결제 커버 = slots[P-lastPayUnit, P), P 이후 = 미납
   let lastCoveredDate = "없음";
   let lastPaySessions = sessionUnit; // 마지막 결제가 커버한 회차 수
-  const unpaidItems = []; // { date, label }
-  const lastPayCoveredSlots = []; // 마지막 결제가 커버한 수업
+  const unpaidItems = []; // { date, label, fromDouble }
+  const lastPayCoveredSlots = []; // 마지막 결제가 커버한 수업 슬롯
 
   if (allPayments.length > 0) {
     const P = allPayments.reduce(
@@ -529,8 +548,8 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
     for (let i = 0; i < sessionSlots.length; i++) {
       const slot = sessionSlots[i];
       if (i >= prevCovered && i < P) {
-        lastPayCoveredSlots.push(slot.label);
-        lastCoveredDate = slot.label.replace("(당일취소)", "");
+        lastPayCoveredSlots.push(slot);
+        lastCoveredDate = slot.date.slice(5).replace("-", "/");
       } else if (i >= P) {
         unpaidItems.push(slot);
       }
@@ -541,11 +560,11 @@ const generatePaymentMessage = (student, paymentUrl = "", style = "detailed") =>
       unpaidItems.push(slot);
     }
   }
-  const unpaidSlots = unpaidItems.map((s) => s.label);
+  const unpaidSlots = slotsToLabels(unpaidItems);
 
   // 수업일자: 마지막 결제 커버 세션 + 미납분
   const recentSessions =
-    [...lastPayCoveredSlots, ...unpaidSlots].join(", ") ||
+    [...slotsToLabels(lastPayCoveredSlots), ...unpaidSlots].join(", ") ||
     "(출석 기록 없음)";
 
   const unpaidDatesStr = unpaidSlots.length > 0 ? unpaidSlots.join(", ") : "없음";
@@ -1872,182 +1891,6 @@ const PaymentDetailModal = ({
   );
 };
 
-// =================================================================
-// [수납 관리 모달] 대시보드에서 수강권 만료/미납자 확인
-// =================================================================
-const PaymentManagementModal = ({ students, messageLogs, onClose, user, onNavigate, showToast }) => {
-  const [activeTab, setActiveTab] = useState("expired");
-
-  const { expiredStudents, overdueStudents } = useMemo(() => {
-    const filtered =
-      user.role === "teacher"
-        ? students.filter((s) => s.teacher === user.name && s.status === "재원")
-        : students.filter((s) => s.status === "재원");
-    const expired = [];
-    const overdue = [];
-    for (const s of filtered) {
-      if ((s.paymentHistory || []).length === 0) continue;
-      const { isCycleComplete, isOverdue } = getStudentPaymentStatus(s);
-      if (isOverdue) overdue.push(s);
-      if (isCycleComplete) expired.push(s);
-    }
-    return { expiredStudents: expired, overdueStudents: overdue };
-  }, [students, user]);
-
-  const today = new Date().toISOString().slice(0, 10);
-  const sentToday = new Set(
-    messageLogs.filter((l) => l.sentAt === today).map((l) => l.studentId)
-  );
-  const lastSentMap = useMemo(() => {
-    const map = {};
-    for (const l of messageLogs) {
-      if (!map[l.studentId] || l.sentAt > map[l.studentId]) {
-        map[l.studentId] = l.sentAt;
-      }
-    }
-    return map;
-  }, [messageLogs]);
-
-  const listToShow = activeTab === "expired" ? expiredStudents : overdueStudents;
-
-  return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[80vh] flex flex-col">
-        {/* 헤더 */}
-        <div className="flex justify-between items-center px-6 py-5 border-b">
-          <h2 className="font-bold text-lg text-slate-800 flex items-center gap-2">
-            <CreditCard size={20} className="text-indigo-500" /> 수납 관리
-          </h2>
-          <button
-            onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 p-2 rounded-lg hover:bg-slate-100"
-          >
-            <X size={20} />
-          </button>
-        </div>
-
-        {/* 탭 */}
-        <div className="flex border-b">
-          <button
-            onClick={() => setActiveTab("expired")}
-            className={`flex-1 py-3 text-sm font-bold transition-colors ${
-              activeTab === "expired"
-                ? "border-b-2 border-indigo-500 text-indigo-600"
-                : "text-slate-400 hover:text-slate-600"
-            }`}
-          >
-            수강권 만료
-            <span
-              className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${
-                activeTab === "expired"
-                  ? "bg-indigo-100 text-indigo-600"
-                  : "bg-slate-100 text-slate-500"
-              }`}
-            >
-              {expiredStudents.length}
-            </span>
-          </button>
-          <button
-            onClick={() => setActiveTab("overdue")}
-            className={`flex-1 py-3 text-sm font-bold transition-colors ${
-              activeTab === "overdue"
-                ? "border-b-2 border-rose-500 text-rose-600"
-                : "text-slate-400 hover:text-slate-600"
-            }`}
-          >
-            미납자 (수강권 초과)
-            <span
-              className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${
-                activeTab === "overdue"
-                  ? "bg-rose-100 text-rose-600"
-                  : "bg-slate-100 text-slate-500"
-              }`}
-            >
-              {overdueStudents.length}
-            </span>
-          </button>
-        </div>
-
-        {/* 목록 */}
-        <div className="overflow-y-auto flex-1 p-4 space-y-2">
-          {listToShow.length === 0 ? (
-            <div className="py-12 text-center text-slate-400 text-sm">
-              해당 학생이 없습니다
-            </div>
-          ) : (
-            listToShow.map((s) => {
-              const isSentToday = sentToday.has(s.id);
-              const lastSent = lastSentMap[s.id];
-              return (
-                <div
-                  key={s.id}
-                  className="flex items-center justify-between px-4 py-3 rounded-xl border border-slate-100 bg-slate-50/60 hover:bg-white hover:border-indigo-200 transition-all gap-2"
-                >
-                  <div className="flex flex-col flex-1 min-w-0">
-                    <span className="font-bold text-slate-800 text-sm">
-                      {s.name}
-                    </span>
-                    <span className="text-xs text-slate-400 mt-0.5">
-                      {s.teacher || "-"} · {s.subject || "과목 미정"}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {activeTab === "overdue" && (
-                      <button
-                        onClick={() => {
-                          const msg = generatePaymentMessage(s);
-                          navigator.clipboard.writeText(msg).then(() => {
-                            showToast?.(`${s.name} 결제안내 문자 복사됨`);
-                          });
-                        }}
-                        className="text-xs bg-indigo-50 text-indigo-600 border border-indigo-200 px-2 py-1 rounded-full font-bold hover:bg-indigo-100"
-                      >
-                        문자 복사
-                      </button>
-                    )}
-                    {isSentToday ? (
-                      <span className="text-xs bg-emerald-50 text-emerald-600 border border-emerald-200 px-2 py-1 rounded-full font-bold">
-                        오늘 발송
-                      </span>
-                    ) : lastSent ? (
-                      <span className="text-xs bg-slate-100 text-slate-500 border border-slate-200 px-2 py-1 rounded-full">
-                        {lastSent} 발송
-                      </span>
-                    ) : (
-                      <span className="text-xs bg-rose-50 text-rose-500 border border-rose-200 px-2 py-1 rounded-full font-bold">
-                        미발송
-                      </span>
-                    )}
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-
-        {/* 푸터 */}
-        <div className="p-4 border-t flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm text-slate-500 hover:bg-slate-100 rounded-lg font-bold"
-          >
-            닫기
-          </button>
-          <button
-            onClick={() => {
-              onClose();
-              onNavigate(user.role === "admin" ? "payments" : "students");
-            }}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700"
-          >
-            수납 관리 바로가기
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 // [DashboardView] - 상담 통계 카드 숨김 처리 (강사 권한 분리)
 const DashboardView = ({
   students,
@@ -2065,8 +1908,6 @@ const DashboardView = ({
       ? students.filter((s) => s.teacher === user.name && s.status === "재원")
       : students.filter((s) => s.status === "재원");
   }, [students, user]);
-
-  const [showPaymentMgmt, setShowPaymentMgmt] = useState(false);
 
   // 2. 수납 상태 계산
   const isPaymentDue = (s) => {
@@ -2298,7 +2139,7 @@ const DashboardView = ({
           value={`${stats.paymentDueCount}명`}
           trend="만료·미납 확인"
           trendUp={false}
-          onClick={() => setShowPaymentMgmt(true)}
+          onClick={() => onNavigate("payments")}
         />
 
         {/* [수정] 대기 중인 상담 카드는 '관리자(admin)'에게만 표시 */}
@@ -2601,17 +2442,6 @@ const DashboardView = ({
         </div>
       )}
 
-      {/* 수납 관리 모달 */}
-      {showPaymentMgmt && (
-        <PaymentManagementModal
-          students={students}
-          messageLogs={messageLogs}
-          onClose={() => setShowPaymentMgmt(false)}
-          user={user}
-          onNavigate={onNavigate}
-          showToast={showToast}
-        />
-      )}
     </div>
   );
 };
@@ -3248,9 +3078,11 @@ const ConsultationView = ({
   // 1. [기능 보존] 진행 중 / 보관함 필터링
   const filteredConsultations = useMemo(
     () =>
-      allConsultations.filter((c) =>
-        viewMode === "pending" ? c.status === "pending" : c.status !== "pending"
-      ),
+      allConsultations
+        .filter((c) =>
+          viewMode === "pending" ? c.status === "pending" : c.status !== "pending"
+        )
+        .sort((a, b) => (b.date || "").localeCompare(a.date || "")),
     [allConsultations, viewMode]
   );
 
@@ -3366,10 +3198,11 @@ const ConsultationView = ({
 
   // 상담 문자 템플릿 생성
   const generateConsultMsg = (consult, type) => {
-    const nameLabel = `${consult.name} ${consult.type === "adult" ? "님" : "학생"}`;
+    const isAdult = consult.type === "adult" || consult.type === "성인" || consult.grade === "성인";
+    const nameLabel = `${consult.name} ${isAdult ? "님" : "학생"}`;
     const subject = consult.subject || "음악";
     if (type === "available") {
-      return `안녕하세요, J&C 음악학원입니다.\n\n문의주신 ${subject} 수업 가능 시간 안내드립니다.\n\n- 요일/시간: (예: 월요일 오후 4시, 수요일 오후 5시)\n\n편하신 시간에 방문하시거나 연락 주시면 자세히 안내드리겠습니다.\n\nJ&C 음악학원 (☎ 010-4028-9803)`;
+      return `안녕하세요, JnC 음악학원입니다. 문의해 주신 ${subject} 수업 가능 시간을 다음과 같이 안내드리게 되어 기쁘게 생각합니다.\n\n- 요일/시간: (예: 월요일 오후 4시, 수요일 오후 5시)\n\n편하신 시간에 방문하시거나 연락 주시면 자세히 안내드리겠습니다.\n\n감사합니다.\n\nJnC 음악학원장 드림.`;
     }
     if (type === "new_lesson") {
       // 이름 또는 전화번호로 등록 학생 조회 → 원비·회차·등록일·시간 자동 채움
@@ -3405,16 +3238,16 @@ const ConsultationView = ({
       const closingDay = lessonDayKo
         ? `다음주 ${lessonDayKo}요일에 뵙겠습니다.`
         : "(요일)에 뵙겠습니다.";
-      return `안녕하세요, J&C 음악학원입니다.\n\n${nameLabel}의 첫 수업 안내드립니다.\n\n* 첫 수업: ${firstLesson}\n* 과목: ${fullSubject}\n\n* 원비 안내\n월 원비: ${fee} / ${sessions}회 수업\n하나은행 125-91025-766307 강열혁(제이앤씨음악학원)\n방문(카드/현금), 계좌이체·제로페이, 온라인 카드결제 모두 가능합니다.\n\n* 취소/노쇼 안내\n당일 취소 및 노쇼는 수업 1회 차감됩니다.\n변경 사항은 수업 전날까지 연락 부탁드립니다.\n\n항상 감사드립니다. ${closingDay}\nJ&C 음악학원장 드림.`;
+      return `안녕하세요, JnC 음악학원입니다. ${nameLabel}의 첫 수업을 다음과 같이 안내드리게 되어 기쁘게 생각합니다.\n\n* 첫 수업: ${firstLesson}\n* 과목: ${fullSubject}\n\n* 원비 안내\n월 원비: ${fee} / ${sessions}회 수업\n하나은행 125-91025-766307 강열혁(제이앤씨음악학원)\n방문(카드/현금), 계좌이체·제로페이, 온라인 카드결제 모두 가능합니다.\n\n* 취소/노쇼 안내\n당일 취소 및 노쇼는 수업 1회 차감됩니다.\n변경 사항은 수업 전날까지 연락 부탁드립니다.\n\n감사합니다. ${closingDay}\n\nJnC 음악학원장 드림.`;
     }
     if (type === "consult_confirm") {
-      return `안녕하세요, J&C 음악학원입니다.\n\n${nameLabel}, 상담 예약이 확인되었습니다.\n\n* 상담 일시: (날짜/요일/시간 입력)\n* 장소: J&C 음악학원 (목동)\n\n문의사항이 있으시면 언제든지 연락 주세요.\n연락처: 010-4028-9803\n\n감사합니다 :)\nJ&C 음악학원장 드림.`;
+      return `안녕하세요, JnC 음악학원입니다. ${nameLabel}의 상담 예약을 다음과 같이 안내드리게 되어 기쁘게 생각합니다.\n\n* 상담 일시: (날짜/요일/시간 입력)\n* 장소: JnC 음악학원 (목동)\n\n문의해 주셔서 감사합니다. 아래 학원 안내 정보 함께 참고하시기 바랍니다.\n\n[JnC 음악학원]\n* 위치: 서울 양천구 목동서로 35, 목동프라자 3층\n* 홈페이지: https://www.jncmusic.kr\n* 전화: 010-4028-9803\n\n[운영 시간]\n평일(월~금): 10:30 ~ 22:00\n주말(토·일): 09:00 ~ 22:00\n\n감사합니다.\n\nJnC 음악학원장 드림.`;
     }
     if (type === "academy_info") {
-      return `안녕하세요, J&C 음악학원입니다.\n\n문의해 주셔서 감사합니다 :)\n아래 학원 안내 정보 참고 부탁드립니다.\n\n[J&C 음악학원]\n* 위치: 서울 양천구 목동서로 35, 목동프라자 3층\n* 홈페이지: https://www.jncmusic.kr\n* 전화: 010-4028-9803\n\n[운영 시간]\n평일(월~금): 10:30 ~ 22:00\n주말(토·일): 09:00 ~ 22:00\n\n[상담 안내]\n상담은 예약제로 운영됩니다.\n방문 또는 전화 상담 모두 가능하오니 편하신 방법으로 예약 후 방문 부탁드립니다.\n\n감사합니다 :)\nJ&C 음악학원장 드림.`;
+      return `안녕하세요, JnC 음악학원입니다.\n\n문의해 주셔서 감사합니다.\n아래 학원 안내 정보 참고 부탁드립니다.\n\n[JnC 음악학원]\n* 위치: 서울 양천구 목동서로 35, 목동프라자 3층\n* 홈페이지: https://www.jncmusic.kr\n* 전화: 010-4028-9803\n\n[운영 시간]\n평일(월~금): 10:30 ~ 22:00\n주말(토·일): 09:00 ~ 22:00\n\n[상담 안내]\n상담은 예약제로 운영됩니다.\n방문 또는 전화 상담 모두 가능하오니 편하신 방법으로 예약 후 방문 부탁드립니다.\n\n감사합니다.\n\nJnC 음악학원장 드림.`;
     }
     if (type === "blank") {
-      return `안녕하세요, J&C 음악학원입니다.\n\n`;
+      return `안녕하세요, JnC 음악학원입니다.\n\n`;
     }
     return "";
   };
@@ -4006,9 +3839,19 @@ const CalendarView = ({ teachers, user, students, showToast }) => {
   }, [teachers]);
 
   const getTeachersByDay = (dayIndex) => {
-    let dayTeachers = teachers.filter(
-      (t) => t.days && t.days.includes(dayIndex)
+    const dayNameMap = ["일", "월", "화", "수", "목", "금", "토"];
+    const dayName = dayNameMap[dayIndex];
+    // 실제 재원 학생 스케줄 기준으로 해당 요일에 수업 있는 강사 목록 계산
+    const teacherNamesWithStudents = new Set(
+      students
+        .filter((s) => {
+          if (s.status !== "재원") return false;
+          return s.schedules ? !!s.schedules[dayName] : s.className === dayName;
+        })
+        .map((s) => s.teacher)
+        .filter(Boolean)
     );
+    let dayTeachers = teachers.filter((t) => teacherNamesWithStudents.has(t.name));
     if (selectedTeacher)
       dayTeachers = dayTeachers.filter((t) => t.name === selectedTeacher);
     return dayTeachers;
@@ -4893,7 +4736,12 @@ const ClassLogView = ({ students, teachers, user, showToast }) => {
       else history.push(record);
       msg = `${student.name} 출석 처리(1회)`;
     } else if ((existing.count || 1) === 1) {
-      // 1회 → 연강 2회
+      // 1회 → 연강 2회 (오클릭 방지 확인 — 즉시 저장되므로 한 번 더 확인)
+      if (!window.confirm(
+        `${student.name} 학생의 ${dateStr}을(를) 연강(2회)으로 처리할까요?\n\n연강은 수업 2회로 계산되어 결제 회차에 반영됩니다.`
+      )) {
+        return;
+      }
       history[idx] = { ...existing, count: 2 };
       msg = `${student.name} 연강 처리(2회)`;
     } else {
@@ -6294,7 +6142,16 @@ const AttendanceActionModal = ({ student, date, onClose, onSelectStatus, current
           </button>
           {isPresent && (
             <button
-              onClick={() => onSelectStatus("double", memo)}
+              onClick={() => {
+                // 연강(2회) 처리 시 오클릭 방지 확인 — 해제는 확인 없이 진행
+                if (!isDouble) {
+                  const ok = window.confirm(
+                    `${student.name} 학생의 ${date}을(를) 연강(2회)으로 처리할까요?\n\n연강은 수업 2회로 계산되어 결제 회차에 반영됩니다.`
+                  );
+                  if (!ok) return;
+                }
+                onSelectStatus("double", memo);
+              }}
               className={`w-full py-3 rounded-lg font-bold transition-colors ${
                 isDouble
                   ? "bg-violet-200 text-violet-800 hover:bg-violet-300"
@@ -8143,6 +8000,13 @@ const AttendanceView = ({ students, showToast, user, teachers, onUpdateStudent }
     const idx = history.findIndex((h) => h.date === dateStr && h.status === "present");
     if (idx === -1) return;
     const current = history[idx].count || 1;
+    // 연강(2회) 처리 시 오클릭 방지 확인 — 해제(2→1)는 확인 없이 진행
+    if (current === 1) {
+      const ok = window.confirm(
+        `${student.name} 학생의 ${dateStr}을(를) 연강(2회)으로 처리할까요?\n\n연강은 수업 2회로 계산되어 결제 회차에 반영됩니다.`
+      );
+      if (!ok) return;
+    }
     history[idx] = { ...history[idx], count: current === 1 ? 2 : 1 };
     const lastPay = student.lastPaymentDate || "0000-00-00";
     const sessionsCompleted = history.reduce((sum, h) => {
@@ -9822,7 +9686,8 @@ const StudentManagementModal = ({
                     const sessionSlots = [];
                     sortedAtt.forEach((h) => {
                       const cnt = h.status === "canceled" ? 1 : (h.count || 1);
-                      for (let i = 0; i < cnt; i++) sessionSlots.push(h.date);
+                      const fromDouble = h.status === "present" && cnt >= 2;
+                      for (let i = 0; i < cnt; i++) sessionSlots.push({ date: h.date, fromDouble });
                     });
                     const payWithIdx = sortedPay.map((h, i) => {
                       let prevUnits = 0;
@@ -9841,12 +9706,16 @@ const StudentManagementModal = ({
                       const slots = sessionSlots.slice(h.prevUnits, h.prevUnits + payUnit);
                       const startNum = h.prevUnits + 1;
                       const endNum = h.prevUnits + payUnit;
-                      // 날짜별로 그룹화 (연강 여부 확인)
+                      // 날짜별로 그룹화 — 연강 슬롯이 하나라도 있으면 (연강) 표시
                       const dateGroups = [];
-                      slots.forEach((date) => {
+                      slots.forEach(({ date, fromDouble }) => {
                         const last = dateGroups[dateGroups.length - 1];
-                        if (last && last.date === date) last.cnt++;
-                        else dateGroups.push({ date, cnt: 1 });
+                        if (last && last.date === date) {
+                          last.cnt++;
+                          if (fromDouble) last.fromDouble = true;
+                        } else {
+                          dateGroups.push({ date, cnt: 1, fromDouble });
+                        }
                       });
                       return (
                         <div
@@ -9867,7 +9736,7 @@ const StudentManagementModal = ({
                               {dateGroups
                                 .map((g) =>
                                   g.date.slice(5).replace("-", "/") +
-                                  (g.cnt > 1 ? "(연강)" : "")
+                                  (g.fromDouble ? "(연강)" : "")
                                 )
                                 .join(", ")}
                             </div>
@@ -9920,7 +9789,7 @@ const StudentManagementModal = ({
                 const assignedTeacher = teachers?.find(t => t.name === s.teacher);
                 const DAY_ID_TO_KR = {1:"월",2:"화",3:"수",4:"목",5:"금",6:"토",0:"일"};
                 const teacherDays = assignedTeacher?.days?.length
-                  ? assignedTeacher.days.map(d => DAY_ID_TO_KR[d] ?? d).join("·")
+                  ? assignedTeacher.days.filter(d => typeof d === "number").map(d => DAY_ID_TO_KR[d] ?? d).join("·")
                   : scheduleDays;
                 const teacherSchedule = [s.teacher ? s.teacher + " 선생님" : "", teacherDays ? teacherDays + "요일 출강" : ""].filter(Boolean).join(" / ");
                 const fee = s.tuitionFee ? Number(s.tuitionFee).toLocaleString() + "원" : "";
@@ -10091,7 +9960,7 @@ const BULK_SMS_TEMPLATES = [
     label: "미납 안내",
     text:
 `안녕하세요, J&C 음악학원입니다. {{시즌인사}}
-[이름] 학생 수강료가 미납된 것으로 확인됩니다. 빠른 납부 부탁드립니다.
+{{이름}} 수강료({{원비}})가 미납된 것으로 확인됩니다. 빠른 납부 부탁드립니다.
 항상 감사드립니다. {{시즌인사2}}
 J&C 음악학원장 드림.`,
   },
@@ -10124,8 +9993,8 @@ J&C 음악학원장 드림.`,
     label: "수업 변경",
     text:
 `안녕하세요, J&C 음악학원입니다. {{시즌인사}}
-[이름] 학생 수업 일정이 아래와 같이 변경됩니다.
-▪ 기존: [기존 일시]
+{{이름}} 수업 일정이 아래와 같이 변경됩니다.
+▪ 기존: {{수업일정}}
 ▪ 변경: [변경 일시]
 불편을 드려 죄송합니다. 문의: 02-2655-0220
 항상 감사드립니다. {{시즌인사2}}
@@ -10153,13 +10022,13 @@ J&C 음악학원장 드림.`,
     text:
 `안녕하세요, J&C 음악학원입니다.
 
-[이름]의 첫 수업 안내드립니다.
+{{이름}}의 첫 수업 안내드립니다.
 
-* 첫 수업: (날짜/요일/시간 입력)
-* 과목: [과목]
+* 첫 수업: {{수업일시}}
+* 과목: {{과목}}
 
 * 원비 안내
-월 원비: (금액)원 / (횟수)회 수업
+월 원비: {{원비}} / {{횟수}} 수업
 하나은행 125-91025-766307 강열혁(제이앤씨음악학원)
 방문(카드/현금), 계좌이체·제로페이, 온라인 카드결제 모두 가능합니다.
 
@@ -10167,7 +10036,7 @@ J&C 음악학원장 드림.`,
 당일 취소 및 노쇼는 수업 1회 차감됩니다.
 변경 사항은 수업 전날까지 연락 부탁드립니다.
 
-항상 감사드립니다. 다음주 (요일)에 뵙겠습니다.
+항상 감사드립니다. {{마무리}}
 J&C 음악학원장 드림.`,
   },
 ];
@@ -10203,17 +10072,24 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
 
   const DAYS_KO_BULK = ["일", "월", "화", "수", "목", "금", "토"];
 
-  // 1명 선택 시 new_lesson 템플릿에 학생 정보 자동 채움
-  const buildNewLessonMsg = (ids) => {
-    const base = BULK_SMS_TEMPLATES.find((t) => t.id === "new_lesson")?.text || "";
-    if (ids.length !== 1) return base;
-    const s = students.find((st) => st.id === ids[0]);
-    if (!s) return base;
-
-    // 성인: "이름님", 학생: "이름 학생"
+  // 학생 정보 변수 치환: {{이름}} {{강사}} {{원비}} {{과목}} {{횟수}} {{수업일시}} {{수업일정}} {{마무리}}
+  const applyStudentVars = (text, s) => {
+    if (!s) return text;
     const nameSuffix = s.grade === "성인" ? "님" : " 학생";
-
-    // 첫 수업 날짜 + 요일 + 시간
+    const name = s.name + nameSuffix;
+    const teacher = s.teacher || "(강사)";
+    const fee = s.tuitionFee ? `${Number(s.tuitionFee).toLocaleString()}원` : "(금액)원";
+    const rawSubject = s.subject || "(과목)";
+    const subject = rawSubject.includes("1:1") ? rawSubject : `${rawSubject} 1:1 개인레슨`;
+    const sessions = (() => {
+      const saved = parseInt(s.totalSessions);
+      if (!isNaN(saved) && saved > 0) return saved;
+      return Object.keys(s.schedules || {}).length >= 2 ? 8 : 4;
+    })();
+    const scheduleEntries = Object.entries(s.schedules || {});
+    const scheduleStr = scheduleEntries.length > 0
+      ? scheduleEntries.map(([day, time]) => `${day}요일 ${time}`).join(", ")
+      : (s.className ? `${s.className}요일 ${s.time || ""}` : "(수업 일정)");
     const regDateStr = s.registrationDate || (s.createdAt ? s.createdAt.slice(0, 10) : "");
     let firstLesson = "(날짜/요일/시간 입력)";
     let lessonDayKo = "";
@@ -10225,28 +10101,18 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
         ? `${regDateStr} (${lessonDayKo}) ${lessonTime}`
         : `${regDateStr} (${lessonDayKo}) (시간 입력)`;
     }
-
-    // 과목 + "1:1 개인레슨" 접미
-    const rawSubject = s.subject || "(과목)";
-    const subject = rawSubject.includes("1:1") ? rawSubject : `${rawSubject} 1:1 개인레슨`;
-
-    // 마무리 인사 요일
-    const closingDay = lessonDayKo ? `다음주 ${lessonDayKo}요일에 뵙겠습니다.` : "다음주 (요일)에 뵙겠습니다.";
-
-    const fee = s.tuitionFee ? `${Number(s.tuitionFee).toLocaleString()}원` : "(금액)원";
-    const sessions = (() => {
-      const saved = parseInt(s.totalSessions);
-      if (!isNaN(saved) && saved > 0) return saved;
-      return Object.keys(s.schedules || {}).length >= 2 ? 8 : 4;
-    })();
-
-    return base
-      .replace("[이름]", s.name + nameSuffix)
-      .replace("[과목]", subject)
-      .replace("(날짜/요일/시간 입력)", firstLesson)
-      .replace("(금액)원", fee)
-      .replace("(횟수)회", `${sessions}회`)
-      .replace("다음주 (요일)에 뵙겠습니다.", closingDay);
+    const closingDay = lessonDayKo
+      ? `다음주 ${lessonDayKo}요일에 뵙겠습니다.`
+      : "다음주 (요일)에 뵙겠습니다.";
+    return text
+      .replace(/\{\{이름\}\}/g, name)
+      .replace(/\{\{강사\}\}/g, teacher)
+      .replace(/\{\{원비\}\}/g, fee)
+      .replace(/\{\{과목\}\}/g, subject)
+      .replace(/\{\{횟수\}\}/g, `${sessions}회`)
+      .replace(/\{\{수업일시\}\}/g, firstLesson)
+      .replace(/\{\{수업일정\}\}/g, scheduleStr)
+      .replace(/\{\{마무리\}\}/g, closingDay);
   };
 
   const toggleOne = (id) => {
@@ -10255,22 +10121,22 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
     );
   };
 
-  // new_lesson 템플릿 활성화 중 선택 변경 시 자동 갱신
+  // 템플릿 또는 선택 학생 변경 시 자동 갱신 (직접 입력 제외)
   useEffect(() => {
-    if (templateId === "new_lesson") {
-      setMessage(buildNewLessonMsg(selectedIds));
+    if (templateId === "custom") return;
+    const t = BULK_SMS_TEMPLATES.find((t) => t.id === templateId);
+    if (!t || !t.text) { setMessage(""); return; }
+    let text = applyTemplateGreetings(t.text);
+    if (selectedIds.length === 1) {
+      const s = students.find((st) => st.id === selectedIds[0]);
+      if (s) text = applyStudentVars(text, s);
     }
+    setMessage(text);
   }, [selectedIds, templateId]); // eslint-disable-line
 
   const handleTemplateChange = (tid) => {
     setTemplateId(tid);
-    if (tid === "new_lesson") {
-      setMessage(buildNewLessonMsg(selectedIds));
-    } else {
-      const t = BULK_SMS_TEMPLATES.find((t) => t.id === tid);
-      if (t && t.text) setMessage(applyTemplateGreetings(t.text));
-      else setMessage("");
-    }
+    if (tid === "custom") setMessage("");
   };
 
   const handleSend = async () => {
@@ -11596,7 +11462,7 @@ const MonthlyClosingView = ({ teachers, students, showToast }) => {
       );
       if (!recs.length) return null;
       const sessions = recs.reduce((sum, h) => sum + (h.status === "present" ? (h.count || 1) : (h.status === "canceled" ? 0.5 : 0)), 0);
-      return { name: s.name, studentId: s.id, sessions, tuitionFee: Number(s.tuitionFee || 0) };
+      return { name: s.name, studentId: s.id, sessions, standardSessions: getEffectiveSessions(s), tuitionFee: Number(s.tuitionFee || 0) };
     }).filter(Boolean),
   [students, periodStart, periodEnd]);
 
@@ -11611,12 +11477,14 @@ const MonthlyClosingView = ({ teachers, students, showToast }) => {
       }
       const { type, value } = override;
       if (value !== "" && value != null && Number(value) >= 0) {
-        if (type === "percent") return Math.round(row.tuitionFee * (Number(value) / 100));
+        if (type === "percent") return Math.round((row.tuitionFee / (row.standardSessions || 4)) * row.sessions * (Number(value) / 100));
         return row.sessions * Number(value);
       }
     }
     if (teacher.feeType === "revenueShare") {
-      return Math.round(row.tuitionFee * (Number(teacher.feeRate || 0) / 100));
+      const rate = Number(teacher.feeRate || 0) / 100;
+      const base = row.standardSessions || 4;
+      return Math.round((row.tuitionFee / base) * row.sessions * rate);
     }
     return row.sessions * Number(teacher.feeRate || 0);
   };
@@ -12011,6 +11879,7 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
             studentId: s.id,
             sessions,
             totalStudentSessions,
+            standardSessions: getEffectiveSessions(s),
             tuitionFee: Number(s.tuitionFee || 0),
           };
         })
@@ -12035,10 +11904,12 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
         return row.sessions * Number(value); // fixed
       }
     }
-    // 기본 단가 (revenueShare는 calcFee에서 전체 합산으로 처리)
+    // 기본 단가 (revenueShare: 회당 단가 × 실제 수업 횟수 × 비율)
     if (teacher.feeType === "revenueShare") {
       const rate = Number(teacher.feeRate || 0) / 100;
-      return Math.round(row.tuitionFee * rate);
+      const base = row.standardSessions || row.totalStudentSessions || 4;
+      const perSession = row.tuitionFee / base;
+      return Math.round(perSession * row.sessions * rate);
     }
     return row.sessions * Number(teacher.feeRate || 0);
   };
@@ -12225,7 +12096,13 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
         ];
       })
       .filter(Boolean);
-    const ws = window.XLSX.utils.aoa_to_sheet([...header, ...dataRows]);
+    const totalGross = dataRows.reduce((s, r) => s + r[7], 0);
+    const totalIt = dataRows.reduce((s, r) => s + r[8], 0);
+    const totalLt = dataRows.reduce((s, r) => s + r[9], 0);
+    const totalTax = dataRows.reduce((s, r) => s + r[10], 0);
+    const totalNet = dataRows.reduce((s, r) => s + r[11], 0);
+    const totalRow = ["", "합  계", "", "", "", "", "", totalGross, totalIt, totalLt, totalTax, totalNet];
+    const ws = window.XLSX.utils.aoa_to_sheet([...header, ...dataRows, [], totalRow]);
     window.XLSX.utils.book_append_sheet(wb, ws, "세무자료");
     window.XLSX.writeFile(wb, `세무자료_${selectedYear}년${selectedMonth}월.xlsx`);
   };
@@ -12612,29 +12489,50 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
                 </tr>
               </thead>
               <tbody>
-                {teacherList
-                  .map((t) => {
-                    const rows2 = calcSessions(t.name);
-                    const sess = rows2.reduce((s, r) => s + r.sessions, 0);
-                    if (!sess) return null;
-                    const gross = calcFee(t, rows2);
-                    if (!gross) return null;
-                    const it = Math.round(gross * 0.03);
-                    const lt = Math.round(gross * 0.003);
-                    return (
-                      <tr key={t.id} className="border-t hover:bg-slate-50 active:bg-slate-100 transition-colors">
-                        <td className="px-4 py-3 font-medium">{t.name}</td>
-                        <td className="px-4 py-3 text-slate-500">{t.part || "—"}</td>
-                        <td className="px-4 py-3 text-right">{gross.toLocaleString()}</td>
-                        <td className="px-4 py-3 text-right text-rose-600">{it.toLocaleString()}</td>
-                        <td className="px-4 py-3 text-right text-rose-500">{lt.toLocaleString()}</td>
-                        <td className="px-4 py-3 text-right font-bold text-emerald-700">
-                          {(gross - it - lt).toLocaleString()}
-                        </td>
-                      </tr>
-                    );
-                  })
-                  .filter(Boolean)}
+                {(() => {
+                  const taxRows = teacherList
+                    .map((t) => {
+                      const rows2 = calcSessions(t.name);
+                      const sess = rows2.reduce((s, r) => s + r.sessions, 0);
+                      if (!sess) return null;
+                      const gross = calcFee(t, rows2);
+                      if (!gross) return null;
+                      const it = Math.round(gross * 0.03);
+                      const lt = Math.round(gross * 0.003);
+                      return { t, gross, it, lt };
+                    })
+                    .filter(Boolean);
+                  const sumGross = taxRows.reduce((s, r) => s + r.gross, 0);
+                  const sumIt = taxRows.reduce((s, r) => s + r.it, 0);
+                  const sumLt = taxRows.reduce((s, r) => s + r.lt, 0);
+                  const sumNet = taxRows.reduce((s, r) => s + (r.gross - r.it - r.lt), 0);
+                  return (
+                    <>
+                      {taxRows.map(({ t, gross, it, lt }) => (
+                        <tr key={t.id} className="border-t hover:bg-slate-50 active:bg-slate-100 transition-colors">
+                          <td className="px-4 py-3 font-medium">{t.name}</td>
+                          <td className="px-4 py-3 text-slate-500">{t.part || "—"}</td>
+                          <td className="px-4 py-3 text-right">{gross.toLocaleString()}</td>
+                          <td className="px-4 py-3 text-right text-rose-600">{it.toLocaleString()}</td>
+                          <td className="px-4 py-3 text-right text-rose-500">{lt.toLocaleString()}</td>
+                          <td className="px-4 py-3 text-right font-bold text-emerald-700">
+                            {(gross - it - lt).toLocaleString()}
+                          </td>
+                        </tr>
+                      ))}
+                      {taxRows.length > 0 && (
+                        <tr className="border-t-2 border-slate-300 bg-slate-50 font-bold">
+                          <td className="px-4 py-3">합  계</td>
+                          <td className="px-4 py-3"></td>
+                          <td className="px-4 py-3 text-right">{sumGross.toLocaleString()}</td>
+                          <td className="px-4 py-3 text-right text-rose-600">{sumIt.toLocaleString()}</td>
+                          <td className="px-4 py-3 text-right text-rose-500">{sumLt.toLocaleString()}</td>
+                          <td className="px-4 py-3 text-right text-emerald-700">{sumNet.toLocaleString()}</td>
+                        </tr>
+                      )}
+                    </>
+                  );
+                })()}
               </tbody>
             </table>
             {teacherList.every((t) => {
@@ -12833,6 +12731,8 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
   const [selectedDay, setSelectedDay] = useState("월");
   const [viewMode, setViewMode] = useState("daily");
   const [selectedPart, setSelectedPart] = useState("전체"); // 파트 필터
+  const [sheetTeacherFilter, setSheetTeacherFilter] = useState([]); // 출강표 강사 필터 (빈 배열 = 전체)
+  const [printOrientation, setPrintOrientation] = useState("landscape"); // 출강표 인쇄 방향
 
   const printRef = useRef(null);
 
@@ -12887,14 +12787,19 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
   const handleDownloadImage = async () => {
     if (!printRef.current) return;
     try {
-      const canvas = await html2canvas(printRef.current, {
+      // 출강표는 overflow-auto 컨테이너 대신 내부 table을 직접 캡처 (가로 잘림 방지)
+      const target = viewMode === "sheet"
+        ? (printRef.current.querySelector("table") || printRef.current)
+        : printRef.current;
+      const canvas = await html2canvas(target, {
         scale: 2,
         useCORS: true,
         backgroundColor: "#ffffff",
       });
       const link = document.createElement("a");
       link.href = canvas.toDataURL("image/png");
-      link.download = `시간표_${selectedPart}_${selectedDay}.png`;
+      const teacherSuffix = viewMode === "sheet" && sheetTeacherFilter.length > 0 ? `_${sheetTeacherFilter.join("_")}` : "";
+      link.download = `시간표_${viewMode === "sheet" ? "출강표" : `${selectedPart}_${selectedDay}`}${teacherSuffix}.png`;
       link.click();
     } catch (err) {
       console.error(err);
@@ -12902,7 +12807,16 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
     }
   };
 
-  const handlePrint = () => window.print();
+  const handlePrint = () => {
+    // 출강표 인쇄 방향 동적 적용
+    const styleId = "print-orientation-override";
+    let el = document.getElementById(styleId);
+    if (!el) { el = document.createElement("style"); el.id = styleId; document.head.appendChild(el); }
+    el.textContent = printOrientation === "portrait"
+      ? `@media print { @page { size: A4 portrait; margin: 6mm; } #print-sheet-root { zoom: 0.62; } }`
+      : `@media print { @page { size: A4 landscape; margin: 8mm; } #print-sheet-root { zoom: 1; } }`;
+    window.print();
+  };
 
   const getSubjectColor = (subject) => {
     const part = getPartBySubject(subject);
@@ -13070,6 +12984,59 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
 
         {/* 2열: 파트 필터 & 보기 모드 & 요일 선택 */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 bg-slate-50/50 p-2 rounded-xl border border-slate-100">
+          {/* 출강표 모드: 강사 멀티 선택 */}
+          {viewMode === "sheet" && !isTeacherMode && (() => {
+            const availTeachers = teachers.filter((t) =>
+              students.some((s) => s.teacher === t.name && s.status === "재원")
+            );
+            const toggle = (name) =>
+              setSheetTeacherFilter((prev) =>
+                prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name]
+              );
+            return (
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-slate-500 font-medium whitespace-nowrap">강사 선택</span>
+                <button
+                  onClick={() => setSheetTeacherFilter([])}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
+                    sheetTeacherFilter.length === 0
+                      ? "bg-indigo-600 text-white border-indigo-600"
+                      : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
+                  }`}
+                >
+                  전체
+                </button>
+                {availTeachers.map((t) => (
+                  <button
+                    key={t.name}
+                    onClick={() => toggle(t.name)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
+                      sheetTeacherFilter.includes(t.name)
+                        ? "bg-indigo-600 text-white border-indigo-600"
+                        : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
+                    }`}
+                  >
+                    {t.name} T
+                  </button>
+                ))}
+                <span className="text-slate-200 mx-1">|</span>
+                <span className="text-xs text-slate-500 font-medium whitespace-nowrap">용지</span>
+                <div className="flex bg-white border border-slate-200 p-0.5 rounded-lg">
+                  <button
+                    onClick={() => setPrintOrientation("landscape")}
+                    className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${printOrientation === "landscape" ? "bg-slate-100 text-indigo-600" : "text-slate-400 hover:text-slate-600"}`}
+                    title="A4 가로 출력"
+                  >가로</button>
+                  <button
+                    onClick={() => setPrintOrientation("portrait")}
+                    className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${printOrientation === "portrait" ? "bg-slate-100 text-indigo-600" : "text-slate-400 hover:text-slate-600"}`}
+                    title="A4 세로 출력"
+                  >세로</button>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* 파트 선택 버튼들 (출강표 모드에서는 숨김) */}
           {viewMode !== "sheet" && (
             <div className="flex gap-1 overflow-x-auto max-w-full no-scrollbar pb-1 md:pb-0">
@@ -13363,14 +13330,15 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
           return h * 60 + m;
         };
 
-        // 파트 필터 없이 재원 학생이 있는 강사 전체
-        const sheetTeachers = teachers.filter((t) =>
-          students.some((s) =>
+        // 재원 학생이 있는 강사 + 강사 필터 적용 (빈 배열 = 전체)
+        const sheetTeachers = teachers.filter((t) => {
+          if (sheetTeacherFilter.length > 0 && !sheetTeacherFilter.includes(t.name)) return false;
+          return students.some((s) =>
             s.teacher === t.name &&
             s.status === "재원" &&
             SHEET_DAYS.some((d) => getLessonTime(s, d))
-          )
-        );
+          );
+        });
 
         // 강사·요일별 수업 목록 (시간순)
         const getCell = (teacherName, day) =>
@@ -13389,15 +13357,16 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
         }
 
         return (
-          <div ref={printRef} className="flex-1 overflow-auto p-4 bg-white">
-            <table className="w-full text-xs border-collapse min-w-[600px]">
+          <div ref={printRef} id="print-sheet-root" className="flex-1 overflow-auto p-4 bg-white">
+            <table className="w-full text-sm border-collapse min-w-[600px]" style={{ tableLayout: "fixed" }}>
               <thead>
                 <tr className="bg-slate-100">
-                  <th className="border border-slate-300 px-3 py-2.5 text-center font-bold text-slate-600 w-24 text-sm">강사</th>
+                  <th className="border border-slate-300 px-3 py-2.5 text-center font-bold text-slate-600 text-sm" style={{ width: "80px" }}>강사</th>
                   {SHEET_DAYS.map((day) => (
                     <th
                       key={day}
-                      className={`border border-slate-300 px-3 py-2.5 text-center font-bold text-sm ${
+                      style={{ width: `calc((100% - 80px) / 7)` }}
+                      className={`border border-slate-300 px-2 py-2.5 text-center font-bold text-sm ${
                         day === "일" ? "text-rose-600" : day === "토" ? "text-blue-600" : "text-slate-700"
                       }`}
                     >
@@ -13409,7 +13378,7 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
               <tbody>
                 {sheetTeachers.map((teacher, ti) => (
                   <tr key={teacher.name} className={ti % 2 === 0 ? "bg-white" : "bg-slate-50/60"}>
-                    <td className="border border-slate-300 px-3 py-2 text-center font-bold text-slate-700 text-xs whitespace-nowrap align-middle bg-slate-50">
+                    <td className="border border-slate-300 px-3 py-2 text-center font-bold text-slate-700 text-sm whitespace-nowrap align-middle bg-slate-50">
                       {teacher.name} T
                     </td>
                     {SHEET_DAYS.map((day) => {
@@ -13431,15 +13400,15 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
                         }
                         items.push(
                           <div key={i} className="flex items-baseline gap-1 py-0.5 whitespace-nowrap">
-                            <span className="text-slate-400 tabular-nums text-xs">
+                            <span className="text-slate-400 tabular-nums text-xs leading-snug">
                               {String(Math.floor(l.min / 60)).padStart(2, "0")}:{String(l.min % 60).padStart(2, "0")}
                             </span>
-                            <span className="font-medium text-slate-800">{l.name}</span>
+                            <span className="font-medium text-slate-800 text-sm">{l.name}</span>
                           </div>
                         );
                       });
                       return (
-                        <td key={day} className="border border-slate-300 px-2 py-1.5 align-top min-w-[90px]">
+                        <td key={day} className="border border-slate-300 px-2 py-1.5 align-top">
                           {items}
                         </td>
                       );

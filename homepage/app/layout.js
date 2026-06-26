@@ -35,13 +35,13 @@ export const metadata = {
     siteName: 'JNC 음악학원',
     title: 'JNC 음악학원 | 목동 · 양천구 클래식 · 실용음악 전문',
     description: '2013년 개원, 누적 수강생 2000명+. 목동·양천구 음악학원. 취미부터 입시까지 1:1 맞춤 레슨.',
-    images: [{ url: '/og-image.png', width: 1200, height: 630, alt: 'JNC 음악학원' }],
+    images: [{ url: '/opengraph-image', width: 1200, height: 630, alt: 'JnC 음악학원' }],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'JNC 음악학원 | 목동 · 양천구 클래식 · 실용음악 전문',
     description: '2013년 개원, 누적 수강생 2000명+. 취미부터 입시까지 1:1 맞춤 레슨.',
-    images: ['/og-image.png'],
+    images: ['/opengraph-image'],
   },
   verification: { google: 'kD5yHt67QkPAjJTl5aAcoEb6nlOXZAF3q2TnBgYFOw0', naver: 'db7fcca47bbb3561cf224a430b7a6c9f849c62c3' },
   alternates: { canonical: 'https://jncmusic.kr' },
@@ -107,7 +107,10 @@ export default function RootLayout({ children }) {
                   itemOffered: { '@type': 'Course', name },
                 })),
               },
-              sameAs: ['https://www.instagram.com/jnc_music_academy/'],
+              sameAs: [
+                'https://www.instagram.com/jnc_music_academy/',
+                'https://blog.naver.com/jncmusicacademy',
+              ],
             }),
           }}
         />

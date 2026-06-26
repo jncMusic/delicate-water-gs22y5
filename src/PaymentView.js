@@ -238,11 +238,6 @@ export const BulkMessageModal = ({
     return init;
   });
   const [activeIdx, setActiveIdx] = useState(0);
-  const [sendChannels, setSendChannels] = useState(() =>
-    Object.fromEntries(
-      students.map((s) => [s.id, { sms: true, kyuljesaengnim: false }])
-    )
-  );
 
   const handleStyleChange = (style) => {
     setMsgStyle(style);
@@ -301,39 +296,58 @@ export const BulkMessageModal = ({
     }
   };
 
-  const handleSendAll = async (s, kyuljeOverride = {}) => {
-    const ch = sendChannels[s.id] || { sms: true, kyuljesaengnim: false };
-    const channelArr = [];
-    let kyuljesaengnimExtra = {};
-    if (ch.sms && s.phone) {
-      setSending((prev) => ({ ...prev, [s.id]: true }));
-      try {
-        await sendAligoSms(s.phone, messages[s.id]);
-        channelArr.push("sms");
-        showToast(`${s.name} 문자 발송 완료`, "success");
-      } catch (e) {
-        showToast(`${s.name} 문자 발송 실패: ${e.message}`, "error");
-      } finally {
-        setSending((prev) => ({ ...prev, [s.id]: false }));
+  // 발송 이력 저장 (handleMarkSent와 달리 채널별 중복 발송 허용)
+  const logSent = async (s, channels, extra = {}) => {
+    try {
+      if (onSaveLog) {
+        await onSaveLog({
+          studentId: s.id,
+          studentName: s.name,
+          phone: s.phone || "",
+          sentAt: today,
+          channels,
+          messageType: "결제안내",
+          sentBy: user?.name || "원장",
+          ...extra,
+        });
       }
-    } else if (ch.sms && !s.phone) {
+      setSent((prev) => ({ ...prev, [s.id]: true }));
+    } catch (e) {
+      showToast("저장 오류: " + e.message, "error");
+    }
+  };
+
+  // 📱 문자만 발송
+  const handleSendSms = async (s) => {
+    if (!s.phone) {
       showToast(`${s.name}: 연락처가 없습니다.`, "warning");
+      return;
     }
-    if (ch.kyuljesaengnim) {
-      try {
-        const result = await sendKyuljesaengnim(s, kyuljeOverride);
-        channelArr.push("결제선생");
-        kyuljesaengnimExtra = {
-          billId: result.billId,
-          shortURL: result.shortURL,
-        };
-        const urlNote = result.shortURL ? ` (링크: ${result.shortURL})` : "";
-        showToast(`${s.name} 결제선생 발송 완료${urlNote}`, "success");
-      } catch (e) {
-        showToast(`${s.name} 결제선생 발송 실패: ${e.message}`, "error");
-      }
+    setSending((prev) => ({ ...prev, [s.id]: true }));
+    try {
+      await sendAligoSms(s.phone, messages[s.id]);
+      showToast(`${s.name} 문자 발송 완료`, "success");
+      await logSent(s, ["sms"]);
+    } catch (e) {
+      showToast(`${s.name} 문자 발송 실패: ${e.message}`, "error");
+    } finally {
+      setSending((prev) => ({ ...prev, [s.id]: false }));
     }
-    if (channelArr.length) await handleMarkSent(s, channelArr, kyuljesaengnimExtra);
+  };
+
+  // 💳 결제선생만 발송 (미리보기 확정 후 호출)
+  const handleSendKyulje = async (s, override = {}) => {
+    try {
+      const result = await sendKyuljesaengnim(s, override);
+      const urlNote = result.shortURL ? ` (링크: ${result.shortURL})` : "";
+      showToast(`${s.name} 결제선생 발송 완료${urlNote}`, "success");
+      await logSent(s, ["결제선생"], {
+        billId: result.billId,
+        shortURL: result.shortURL,
+      });
+    } catch (e) {
+      showToast(`${s.name} 결제선생 발송 실패: ${e.message}`, "error");
+    }
   };
 
   const getLastNotif = (studentId) => {
@@ -439,82 +453,46 @@ export const BulkMessageModal = ({
                     ) : null;
                   })()}
                 </div>
-                <div className="flex items-center gap-3">
-                  <div className="flex gap-3 text-sm border rounded-lg px-3 py-1.5 bg-slate-50">
-                    <label className="flex items-center gap-1 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={sendChannels[activeStudent.id]?.sms ?? true}
-                        onChange={(e) =>
-                          setSendChannels((prev) => ({
-                            ...prev,
-                            [activeStudent.id]: {
-                              ...prev[activeStudent.id],
-                              sms: e.target.checked,
-                            },
-                          }))
-                        }
-                        className="accent-blue-600"
-                      />
-                      📱 문자
-                    </label>
-                    <label className="flex items-center gap-1 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={
-                          sendChannels[activeStudent.id]?.kyuljesaengnim ?? false
-                        }
-                        onChange={(e) =>
-                          setSendChannels((prev) => ({
-                            ...prev,
-                            [activeStudent.id]: {
-                              ...prev[activeStudent.id],
-                              kyuljesaengnim: e.target.checked,
-                            },
-                          }))
-                        }
-                        className="accent-emerald-600"
-                      />
-                      💳 결제선생
-                    </label>
-                  </div>
+                <div className="flex items-center gap-2 flex-wrap">
                   <button
                     onClick={() => handleCopySingle(activeStudent.id)}
                     className="px-3 py-1.5 text-xs border rounded-lg font-bold flex items-center gap-1 hover:bg-slate-50"
                   >
                     <Copy size={13} /> 복사
                   </button>
+                  {/* 📱 문자 발송 — 누르면 바로 문자 발송 */}
                   <button
-                    onClick={() => {
-                      const ch = sendChannels[activeStudent.id] || { sms: true, kyuljesaengnim: false };
-                      if (ch.kyuljesaengnim) setKyuljePreviewStudent(activeStudent);
-                      else handleSendAll(activeStudent);
-                    }}
-                    disabled={!!sent[activeStudent.id] || !!sending[activeStudent.id]}
+                    onClick={() => handleSendSms(activeStudent)}
+                    disabled={!activeStudent.phone || !!sending[activeStudent.id]}
+                    title={!activeStudent.phone ? "연락처가 없습니다" : "문자 발송"}
                     className={`px-3 py-1.5 text-xs rounded-lg font-bold flex items-center gap-1 transition-colors ${
-                      sent[activeStudent.id]
-                        ? "bg-emerald-100 text-emerald-700 border border-emerald-200 cursor-default"
+                      !activeStudent.phone
+                        ? "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed"
                         : sending[activeStudent.id]
                         ? "bg-blue-100 text-blue-600 border border-blue-200 cursor-wait"
-                        : "bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm"
+                        : "bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
                     }`}
                   >
-                    {sent[activeStudent.id]
-                      ? "✓ 발송완료"
-                      : sending[activeStudent.id]
-                      ? "발송 중..."
-                      : "발송하기"}
+                    📱 {sending[activeStudent.id] ? "발송 중..." : "문자 발송"}
+                  </button>
+                  {/* 💳 결제선생 발송 — 누르면 미리보기 후 결제선생 발송 */}
+                  <button
+                    onClick={() => setKyuljePreviewStudent(activeStudent)}
+                    className="px-3 py-1.5 text-xs rounded-lg font-bold flex items-center gap-1 transition-colors bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm"
+                  >
+                    💳 결제선생 발송
                   </button>
                   <button
                     onClick={() => handleMarkSent(activeStudent)}
                     disabled={!!sent[activeStudent.id]}
+                    title="발송하지 않고 발송완료로만 표시"
                     className={`px-3 py-1.5 text-xs rounded-lg font-bold flex items-center gap-1 transition-colors ${
                       sent[activeStudent.id]
                         ? "bg-emerald-100 text-emerald-700 border border-emerald-200 cursor-default"
-                        : "bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm"
+                        : "bg-white text-slate-600 border hover:bg-slate-50"
                     }`}
                   >
-                    {sent[activeStudent.id] ? "✓ 완료" : "완료 처리"}
+                    {sent[activeStudent.id] ? "✓ 발송완료" : "완료 처리"}
                   </button>
                 </div>
               </div>
@@ -556,7 +534,7 @@ export const BulkMessageModal = ({
           onClose={() => setKyuljePreviewStudent(null)}
           onConfirm={async (override) => {
             setKyuljeSending(true);
-            await handleSendAll(kyuljePreviewStudent, override);
+            await handleSendKyulje(kyuljePreviewStudent, override);
             setKyuljeSending(false);
             setKyuljePreviewStudent(null);
           }}
@@ -623,6 +601,30 @@ export const PaymentView = ({
       showToast(`${student.name} 결제선생 발송 완료`, "success");
     } catch (e) {
       showToast("결제선생 발송 실패: " + e.message, "error");
+    }
+  };
+
+  // ── 결제선생 재발송: 기존 청구서 파기 후 새 청구서 발송 ──────────
+  const [kyuljeResending, setKyuljeResending] = useState(null); // studentId
+  const handleKyuljeResend = async (student, kyuljeLog) => {
+    setKyuljeResending(student.id);
+    try {
+      if (kyuljeLog?.billId) {
+        await destroyBill(kyuljeLog.billId, String(student.tuitionFee || 0));
+        if (onDeleteMessageLog) await onDeleteMessageLog(kyuljeLog);
+      }
+      const result = await sendKyuljesaengnim(student, {});
+      if (onSaveMessageLog)
+        await onSaveMessageLog({
+          studentId: student.id, studentName: student.name, phone: student.phone || "",
+          sentAt: toLocalDateStr(), channels: ["결제선생"], messageType: "결제안내",
+          sentBy: user?.name || "원장", billId: result.billId, shortURL: result.shortURL,
+        });
+      showToast(`${student.name} 재발송 완료`, "success");
+    } catch (e) {
+      showToast("재발송 실패: " + e.message, "error");
+    } finally {
+      setKyuljeResending(null);
     }
   };
 
@@ -855,9 +857,17 @@ export const PaymentView = ({
       );
       if (!recentRecord) return false;
       const { isCompleted, isOverdue } = getStudentProgress(s);
-      return isCompleted || isOverdue;
+      if (!isCompleted && !isOverdue) return false;
+      if (searchTerm) {
+        return (
+          s.name.includes(searchTerm) ||
+          (s.subject && s.subject.includes(searchTerm)) ||
+          (s.teacher && s.teacher.includes(searchTerm))
+        );
+      }
+      return true;
     });
-  }, [students]);
+  }, [students, searchTerm]);
 
   // ── 오늘 결제 완료 목록 ───────────────────────────────────────
   const todayPaidList = useMemo(() => {
@@ -974,8 +984,19 @@ export const PaymentView = ({
           : null;
         return { log, student, paidAfter };
       })
+      .filter(({ log, student }) => {
+        if (!searchTerm) return true;
+        const name = student?.name || log.studentName || "";
+        const subject = student?.subject || "";
+        const teacher = student?.teacher || "";
+        return (
+          name.includes(searchTerm) ||
+          subject.includes(searchTerm) ||
+          teacher.includes(searchTerm)
+        );
+      })
       .sort((a, b) => b.log.sentAt.localeCompare(a.log.sentAt));
-  }, [messageLogs, students]);
+  }, [messageLogs, students, searchTerm]);
 
   // ── 발송센터(send) 탭 필터링 목록 ────────────────────────────
   const sendList = useMemo(() => {
@@ -1266,7 +1287,7 @@ export const PaymentView = ({
   // ── 탭 메타 정보 ─────────────────────────────────────────────
   const TABS = [
     { id: "today", label: "수납현황", icon: <Bell size={14} />, badge: thisWeekCycleComplete.length || null },
-    { id: "send", label: "발송센터", icon: <Send size={14} />, badge: sendList.filter(s => getNotifStatus(s.id) === "none").length || null },
+    { id: "send", label: "발송센터", icon: <Send size={14} />, badge: sendList.filter(s => getNotifStatus(s.id, getLastPaymentDate(s)) === "none").length || null },
     { id: "confirm", label: "결제확인", icon: <CreditCard size={14} />, badge: processableStudents.length || null },
     { id: "manage", label: "수납관리", icon: <Users size={14} />, badge: null },
     { id: "kyulje", label: "결제선생", icon: <CreditCard size={14} />, badge: kyuljeLogsData.length || null },
@@ -1708,8 +1729,11 @@ export const PaymentView = ({
                 <span className="bg-blue-200 text-blue-800 text-xs px-1.5 py-0.5 rounded-full">{weeklyKyuljeHistory.length}건</span>
                 {weeklyKyuljeHistory.length > 0 && (
                   <>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">
+                      💳 결제선생 {weeklyKyuljeHistory.filter(r => r.paidAfter && r.paidAfter.method === "결제선생").length}건
+                    </span>
                     <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">
-                      결제 {weeklyKyuljeHistory.filter(r => r.paidAfter).length}건
+                      타수단 {weeklyKyuljeHistory.filter(r => r.paidAfter && r.paidAfter.method !== "결제선생").length}건
                     </span>
                     <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">
                       미납 {weeklyKyuljeHistory.filter(r => !r.paidAfter).length}건
@@ -1742,9 +1766,15 @@ export const PaymentView = ({
                           <td className="py-3 px-4 text-xs text-slate-500">{log.sentAt}</td>
                           <td className="py-3 px-4">
                             {paidAfter ? (
-                              <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">
-                                ✅ {paidAfter.date} · {Number(paidAfter.amount || 0).toLocaleString()}원
-                              </span>
+                              paidAfter.method === "결제선생" ? (
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">
+                                  💳 결제선생 {paidAfter.date} · {Number(paidAfter.amount || 0).toLocaleString()}원
+                                </span>
+                              ) : (
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">
+                                  ✅ {paidAfter.method || "수단미상"} {paidAfter.date} · {Number(paidAfter.amount || 0).toLocaleString()}원
+                                </span>
+                              )
                             ) : (
                               <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">
                                 ⏳ 미납
@@ -2025,6 +2055,12 @@ export const PaymentView = ({
                                     title="발송한 결제선생 청구서 열기"
                                   >청구서</a>
                                 )}
+                                <button
+                                  onClick={async (e) => { e.stopPropagation(); await handleKyuljeResend(s, kyuljeLog); }}
+                                  disabled={kyuljeResending === s.id}
+                                  className="px-2 py-1 text-xs bg-amber-50 text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-100 font-medium disabled:opacity-50"
+                                  title="기존 청구서 파기 후 재발송"
+                                >{kyuljeResending === s.id ? "..." : "재발송"}</button>
                                 {deleteConfirm?.id === sendDeleteKey ? (
                                   <span className="flex items-center gap-1">
                                     <button
@@ -2363,7 +2399,7 @@ export const PaymentView = ({
             if (bs?.state === "D") return { text: "파기됨", cls: "bg-rose-100 text-rose-700" };
             if (bs?.state === "F") return { text: "결제(카드)", cls: "bg-emerald-100 text-emerald-700" };
             if (bs?.state === "C") return { text: "승인취소", cls: "bg-orange-100 text-orange-700" };
-            if (paidAfter) return { text: `수납 ${paidAfter.date.slice(5).replace("-","/")} ${Number(paidAfter.amount||0).toLocaleString()}원`, cls: "bg-blue-100 text-blue-700" };
+            if (paidAfter) return { text: `수납${paidAfter.method && paidAfter.method !== "결제선생" ? `(${paidAfter.method})` : ""} ${paidAfter.date.slice(5).replace("-","/")} ${Number(paidAfter.amount||0).toLocaleString()}원`, cls: paidAfter.method && paidAfter.method !== "결제선생" ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700" };
             if (bs?.state === "W") return { text: "미결제", cls: "bg-amber-100 text-amber-700" };
             if (!log.billId) return { text: "발송완료", cls: "bg-indigo-50 text-indigo-500" };
             return { text: "조회 중...", cls: "bg-slate-100 text-slate-400" };

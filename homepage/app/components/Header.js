@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Music, X, Menu, ExternalLink } from 'lucide-react';
+import { Music, X, Menu, ExternalLink, ChevronDown } from 'lucide-react';
+import { INSTRUMENTS } from '../lib/instruments';
 
 const NAV_ITEMS = [
   { label: '학원 소개', href: '#about' },
@@ -12,11 +13,17 @@ const NAV_ITEMS = [
   { label: '오시는 길', href: '#location' },
 ];
 
+const CLASSIC = INSTRUMENTS.filter((i) => i.category === 'classic');
+const PRACTICAL = INSTRUMENTS.filter((i) => i.category === 'practical');
+
 export default function Header() {
-  const [scrolled, setScrolled]           = useState(false);
-  const [activeSection, setActiveSection] = useState('');
+  const [scrolled, setScrolled]             = useState(false);
+  const [activeSection, setActiveSection]   = useState('');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [showDashboard, setShowDashboard] = useState(false);
+  const [showDashboard, setShowDashboard]   = useState(false);
+  const [instrOpen, setInstrOpen]           = useState(false);
+  const [mobileInstrOpen, setMobileInstrOpen] = useState(false);
+  const instrRef = useRef(null);
   const iframeRef = useRef(null);
 
   useEffect(() => {
@@ -35,6 +42,17 @@ export default function Header() {
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // 드롭다운 외부 클릭 시 닫기
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (instrRef.current && !instrRef.current.contains(e.target)) {
+        setInstrOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   useEffect(() => {
@@ -107,6 +125,57 @@ export default function Header() {
               {item.label}
             </a>
           ))}
+
+          {/* 악기 소개 드롭다운 */}
+          <div className="relative" ref={instrRef}>
+            <button
+              onClick={() => setInstrOpen((v) => !v)}
+              className={`flex items-center gap-1 px-4 py-2 text-sm font-medium rounded-lg transition-all ${
+                instrOpen ? 'text-[#d4a843] bg-white/10' : 'text-white/80 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              악기 소개
+              <ChevronDown
+                size={14}
+                className={`transition-transform duration-200 ${instrOpen ? 'rotate-180' : ''}`}
+              />
+            </button>
+
+            {instrOpen && (
+              <div className="absolute top-full right-0 mt-2 w-64 bg-[#0d1b3e] border border-white/10 rounded-xl shadow-2xl shadow-black/50 overflow-hidden">
+                <div className="p-3">
+                  <p className="text-white/40 text-[10px] font-bold uppercase tracking-widest px-2 mb-2">클래식</p>
+                  <div className="grid grid-cols-2 gap-1 mb-3">
+                    {CLASSIC.map((inst) => (
+                      <a
+                        key={inst.id}
+                        href={`/instruments/${inst.id}`}
+                        onClick={() => setInstrOpen(false)}
+                        className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-white/80 hover:text-[#d4a843] hover:bg-white/10 transition-colors text-sm"
+                      >
+                        <span className="text-base leading-none">{inst.icon}</span>
+                        {inst.name}
+                      </a>
+                    ))}
+                  </div>
+                  <p className="text-white/40 text-[10px] font-bold uppercase tracking-widest px-2 mb-2">실용음악</p>
+                  <div className="grid grid-cols-2 gap-1">
+                    {PRACTICAL.map((inst) => (
+                      <a
+                        key={inst.id}
+                        href={`/instruments/${inst.id}`}
+                        onClick={() => setInstrOpen(false)}
+                        className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-white/80 hover:text-[#d4a843] hover:bg-white/10 transition-colors text-sm"
+                      >
+                        <span className="text-base leading-none">{inst.icon}</span>
+                        {inst.name}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </nav>
 
         <div className="flex items-center gap-3">
@@ -126,6 +195,7 @@ export default function Header() {
         </div>
       </div>
 
+      {/* 모바일 메뉴 */}
       {mobileMenuOpen && (
         <div className="md:hidden bg-[#0d1b3e]/98 backdrop-blur-md border-t border-white/10 px-4 pb-4 pt-2 space-y-1">
           {NAV_ITEMS.map((item) => (
@@ -138,6 +208,52 @@ export default function Header() {
               {item.label}
             </a>
           ))}
+
+          {/* 모바일 악기 소개 토글 */}
+          <button
+            onClick={() => setMobileInstrOpen((v) => !v)}
+            className="flex items-center justify-between w-full px-4 py-3 text-white/80 hover:text-white hover:bg-white/10 rounded-lg text-sm font-medium transition-colors"
+          >
+            <span>악기 소개</span>
+            <ChevronDown
+              size={14}
+              className={`transition-transform duration-200 ${mobileInstrOpen ? 'rotate-180' : ''}`}
+            />
+          </button>
+
+          {mobileInstrOpen && (
+            <div className="px-4 pb-2">
+              <p className="text-white/40 text-[10px] font-bold uppercase tracking-widest mb-2 mt-1">클래식</p>
+              <div className="grid grid-cols-3 gap-1 mb-3">
+                {CLASSIC.map((inst) => (
+                  <a
+                    key={inst.id}
+                    href={`/instruments/${inst.id}`}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex items-center gap-1.5 px-2 py-2 rounded-lg text-white/80 hover:text-[#d4a843] hover:bg-white/10 transition-colors text-xs"
+                  >
+                    <span>{inst.icon}</span>
+                    {inst.name}
+                  </a>
+                ))}
+              </div>
+              <p className="text-white/40 text-[10px] font-bold uppercase tracking-widest mb-2">실용음악</p>
+              <div className="grid grid-cols-3 gap-1">
+                {PRACTICAL.map((inst) => (
+                  <a
+                    key={inst.id}
+                    href={`/instruments/${inst.id}`}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex items-center gap-1.5 px-2 py-2 rounded-lg text-white/80 hover:text-[#d4a843] hover:bg-white/10 transition-colors text-xs"
+                  >
+                    <span>{inst.icon}</span>
+                    {inst.name}
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
           <button
             onClick={openDashboard}
             className="w-full mt-2 bg-[#d4a843] text-[#0d1b3e] font-bold py-3 rounded-lg text-sm"

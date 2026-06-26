@@ -6,7 +6,11 @@ import {
 import Header from './components/Header';
 import GallerySection from './components/GallerySection';
 import PracticeRoomSection from './components/PracticeRoomSection';
+import BlogSection from './components/BlogSection';
 import { COURSES } from './lib/courses';
+import { INSTRUMENTS } from './lib/instruments';
+
+const INSTRUMENT_ID_MAP = Object.fromEntries(INSTRUMENTS.map((i) => [i.name, i.id]));
 
 // =================================================================
 // 상수 데이터
@@ -183,14 +187,25 @@ export default function HomePage() {
                   </div>
 
                   <div className="flex flex-wrap gap-2 mb-6">
-                    {course.instruments.map((inst) => (
-                      <span
-                        key={inst}
-                        className="text-sm font-semibold bg-white/10 text-white px-3 py-1.5 rounded-full border border-white/10 group-hover:bg-[#d4a843]/20 group-hover:border-[#d4a843]/30 group-hover:text-[#d4a843] transition-colors"
-                      >
-                        {inst}
-                      </span>
-                    ))}
+                    {course.instruments.map((inst) => {
+                      const id = INSTRUMENT_ID_MAP[inst];
+                      return id ? (
+                        <a
+                          key={inst}
+                          href={`/instruments/${id}`}
+                          className="text-sm font-semibold bg-white/10 text-white px-3 py-1.5 rounded-full border border-white/10 hover:bg-[#d4a843]/20 hover:border-[#d4a843]/30 hover:text-[#d4a843] transition-colors cursor-pointer underline-offset-2 hover:underline"
+                        >
+                          {inst} →
+                        </a>
+                      ) : (
+                        <span
+                          key={inst}
+                          className="text-sm font-semibold bg-white/10 text-white px-3 py-1.5 rounded-full border border-white/10"
+                        >
+                          {inst}
+                        </span>
+                      );
+                    })}
                   </div>
 
                   <p className="text-white/60 text-sm leading-relaxed mb-6">{course.description}</p>
@@ -230,6 +245,9 @@ export default function HomePage() {
 
         {/* ── 갤러리 (클라이언트 컴포넌트) ── */}
         <GallerySection />
+
+        {/* ── 학원 소식 (네이버 블로그 연동) ── */}
+        <BlogSection />
 
         {/* ── 강사 소개 ── */}
         <section id="teachers" className="py-24 px-4 sm:px-6 lg:px-8 bg-slate-50">
@@ -371,7 +389,7 @@ export default function HomePage() {
             <div className="grid lg:grid-cols-2 gap-10 items-start">
               <div className="rounded-2xl overflow-hidden shadow-xl aspect-video lg:aspect-auto lg:h-80">
                 <iframe
-                  src="https://maps.google.com/maps?q=서울특별시+양천구+목동서로+35+목동프라자&output=embed&z=17&hl=ko"
+                  src="https://maps.google.com/maps?q=서울시+양천구+목동서로+35&output=embed&z=17&hl=ko"
                   width="100%"
                   height="100%"
                   style={{ border: 0, minHeight: '320px' }}
@@ -393,7 +411,7 @@ export default function HomePage() {
                       서울시 양천구 목동서로 35<br />목동프라자 3층
                     </div>
                     <a
-                      href="https://map.naver.com/v5/search/서울시+양천구+목동서로+35+목동프라자"
+                      href="https://map.naver.com/v5/search/서울시+양천구+목동서로+35"
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-xs text-[#d4a843] hover:underline mt-1.5 inline-block"

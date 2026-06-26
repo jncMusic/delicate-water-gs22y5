@@ -17,3 +17,20 @@ body {
 button, input, select, textarea {
   font-family: inherit;
 }
+
+/* 4. 출강표 인쇄: 가로 방향, 여백 최소화, 표 전체 너비 맞춤 */
+@media print {
+  @page { size: A4 landscape; margin: 8mm; }
+  body > * { display: none !important; }
+  #print-sheet-root { display: block !important; }
+  #print-sheet-root table {
+    width: 100%;
+    font-size: 9px;
+    border-collapse: collapse;
+  }
+  #print-sheet-root th,
+  #print-sheet-root td {
+    border: 1px solid #cbd5e1 !important;
+    padding: 3px 4px !important;
+  }
+}
