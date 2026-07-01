@@ -11523,6 +11523,7 @@ export default function App() {
             <MonthlyClosingView
               teachers={teachers}
               students={students}
+              consultations={consultations}
               showToast={showToast}
             />
           )}
@@ -11535,7 +11536,7 @@ export default function App() {
 // =================================================================
 // [MonthlyClosingView] - 월마감 자료 (관리자 전용)
 // =================================================================
-const MonthlyClosingView = ({ teachers, students, showToast }) => {
+const MonthlyClosingView = ({ teachers, students, consultations = [], showToast }) => {
   const today = new Date();
   const [selYear, setSelYear] = useState(today.getFullYear());
   const [selMonth, setSelMonth] = useState(today.getMonth() + 1);
@@ -11675,6 +11676,8 @@ const MonthlyClosingView = ({ teachers, students, showToast }) => {
       ["강사료 합계", totalFee],
       ["수납 기준 순수익", collectionTotal - totalFee],
       ["수업 기준 순수익", lessonTotal - totalFee],
+      ["신규 원생수", newStudentsCount],
+      ["신규 상담수", newConsultCount],
     ];
     window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(summaryData), "요약");
 
@@ -11712,12 +11715,31 @@ const MonthlyClosingView = ({ teachers, students, showToast }) => {
     showToast("월마감 엑셀 파일이 저장되었습니다.", "success");
   };
 
-  const SummaryCard = ({ label, value, sub, color = "text-slate-800" }) => (
+  const SummaryCard = ({ label, value, sub, color = "text-slate-800", suffix = "원" }) => (
     <div className="bg-white rounded-xl border border-slate-200 p-5 flex flex-col gap-1 shadow-sm">
       <div className="text-xs text-slate-500 font-medium">{label}</div>
-      <div className={`text-2xl font-bold ${color}`}>{Number(value).toLocaleString()}원</div>
+      <div className={`text-2xl font-bold ${color}`}>{Number(value).toLocaleString()}{suffix}</div>
       {sub && <div className="text-xs text-slate-400">{sub}</div>}
     </div>
+  );
+
+  // 정산기간 내 신규 등록 원생 수 (등록일 기준, 퇴원 제외)
+  const newStudentsCount = useMemo(
+    () =>
+      students.filter(
+        (s) =>
+          (s.registrationDate || (s.createdAt ? s.createdAt.slice(0, 10) : "")) >= periodStart &&
+          (s.registrationDate || (s.createdAt ? s.createdAt.slice(0, 10) : "")) <= periodEnd &&
+          s.status !== "퇴원"
+      ).length,
+    [students, periodStart, periodEnd]
+  );
+
+  // 정산기간 내 신규 상담 접수 수 (상담일 기준)
+  const newConsultCount = useMemo(
+    () =>
+      consultations.filter((c) => (c.date || "") >= periodStart && (c.date || "") <= periodEnd).length,
+    [consultations, periodStart, periodEnd]
   );
 
   return (
@@ -11766,6 +11788,8 @@ const MonthlyClosingView = ({ teachers, students, showToast }) => {
         <SummaryCard label="수납 기준 매출" value={collectionTotal} sub={`${collectionRows.length}건`} color="text-indigo-700" />
         <SummaryCard label="수업 기준 매출" value={lessonTotal} sub={`${lessonRows.length}명`} color="text-indigo-700" />
         <SummaryCard label="강사료 합계" value={totalFee} sub={`${teacherFeeRows.length}명`} color="text-rose-600" />
+        <SummaryCard label="신규 원생수" value={newStudentsCount} suffix="명" color="text-emerald-600" />
+        <SummaryCard label="신규 상담수" value={newConsultCount} suffix="건" color="text-violet-600" />
         <div className="bg-indigo-50 rounded-xl border border-indigo-200 p-5 flex flex-col gap-1 shadow-sm col-span-2 sm:col-span-1">
           <div className="text-xs text-indigo-500 font-bold">수납 기준 순수익</div>
           <div className={`text-2xl font-bold ${collectionTotal - totalFee >= 0 ? "text-emerald-700" : "text-rose-600"}`}>
