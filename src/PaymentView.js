@@ -880,10 +880,10 @@ export const PaymentView = ({
       d.setDate(d.getDate());
     } else if (recentPaidPeriod === "week") {
       d.setDate(d.getDate() - 6);
-    } else {
+    } else if (recentPaidPeriod === "month") {
       d.setDate(d.getDate() - 29);
     }
-    const startStr = toLocalDateStr(d);
+    const startStr = recentPaidPeriod === "all" ? "0000-00-00" : toLocalDateStr(d);
     const todayStr = toLocalDateStr();
     const results = [];
     students.filter((s) => s.status === "재원").forEach((s) => {
@@ -988,6 +988,25 @@ export const PaymentView = ({
       .sort((a, b) => b.log.sentAt.localeCompare(a.log.sentAt));
   }, [messageLogs, students, searchTerm]);
 
+  // ── 발송센터 탭 배지: 화면 필터(sentFilter/filterWeek)와 무관하게
+  // "발송이 필요한 전체 인원" 수를 항상 정확히 표시 (검색어만 반영)
+  const sendNeededCount = useMemo(() => {
+    return students.filter((s) => {
+      const { isOverdue, isCompleted } = getStudentProgress(s);
+      if (!(isCompleted || isOverdue)) return false;
+      if (s.status !== "재원") return false;
+      if (searchTerm) {
+        const matchesSearch =
+          s.name.includes(searchTerm) ||
+          (s.subject && s.subject.includes(searchTerm)) ||
+          (s.teacher && s.teacher.includes(searchTerm));
+        if (!matchesSearch) return false;
+      }
+      if (selectedTeacher && s.teacher !== selectedTeacher) return false;
+      return getNotifStatus(s.id, getLastPaymentDate(s)) === "none";
+    }).length || null;
+  }, [students, searchTerm, selectedTeacher, messageLogs]);
+
   // ── 발송센터(send) 탭 필터링 목록 ────────────────────────────
   const sendList = useMemo(() => {
     const today = new Date();
@@ -1007,7 +1026,9 @@ export const PaymentView = ({
         (s.subject && s.subject.includes(searchTerm)) ||
         (s.teacher && s.teacher.includes(searchTerm));
       const matchesTeacher = !selectedTeacher || s.teacher === selectedTeacher;
-      const notifStatus = getNotifStatus(s.id);
+      // 이번 사이클(마지막 결제일 이후) 기준 — 지난 사이클 발송 이력 때문에
+      // 이번 미발송자가 필터에서 누락되지 않도록 cycle-scoped 상태 사용
+      const notifStatus = getNotifStatus(s.id, getLastPaymentDate(s));
       const matchesSent =
         sentFilter === "none" ? notifStatus === "none" :
         sentFilter === "sms-only" ? notifStatus === "sms-only" :
@@ -1277,7 +1298,7 @@ export const PaymentView = ({
   // ── 탭 메타 정보 ─────────────────────────────────────────────
   const TABS = [
     { id: "today", label: "수납현황", icon: <Bell size={14} />, badge: thisWeekCycleComplete.length || null },
-    { id: "send", label: "발송센터", icon: <Send size={14} />, badge: sendList.filter(s => getNotifStatus(s.id, getLastPaymentDate(s)) === "none").length || null },
+    { id: "send", label: "발송센터", icon: <Send size={14} />, badge: sendNeededCount },
     { id: "confirm", label: "결제확인", icon: <CreditCard size={14} />, badge: processableStudents.length || null },
     { id: "manage", label: "수납관리", icon: <Users size={14} />, badge: null },
     { id: "kyulje", label: "결제선생", icon: <CreditCard size={14} />, badge: kyuljeLogsData.length || null },
@@ -1796,7 +1817,7 @@ export const PaymentView = ({
                 <span className="font-bold text-emerald-700 text-sm">최근 결제자</span>
                 <span className="bg-emerald-200 text-emerald-800 text-xs px-1.5 py-0.5 rounded-full">{recentPaidList.length}건</span>
                 <div className="ml-auto flex rounded-lg overflow-hidden border border-emerald-200 text-xs">
-                  {[["today", "오늘"], ["week", "7일"], ["month", "30일"]].map(([val, label]) => (
+                  {[["today", "오늘"], ["week", "7일"], ["month", "30일"], ["all", "전체"]].map(([val, label]) => (
                     <button
                       key={val}
                       onClick={() => setRecentPaidPeriod(val)}

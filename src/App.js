@@ -12041,7 +12041,13 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
       }
       const { type, value } = override;
       if (value !== "" && value != null && Number(value) >= 0) {
-        if (type === "percent") return Math.round(row.tuitionFee * (Number(value) / 100));
+        // percent: revenueShare와 동일하게 회당 단가 × 실제 수업 횟수 기준으로 계산
+        // (수강료 × 비율%만 하면 실제 출석 횟수가 반영되지 않는 버그가 있었음)
+        if (type === "percent") {
+          const base = row.standardSessions || row.totalStudentSessions || 4;
+          const perSession = row.tuitionFee / base;
+          return Math.round(perSession * row.sessions * (Number(value) / 100));
+        }
         return row.sessions * Number(value); // fixed
       }
     }
