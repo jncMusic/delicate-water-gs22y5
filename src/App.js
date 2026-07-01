@@ -1901,7 +1901,13 @@ const DashboardView = ({
   onNavigateToConsultation,
   onNavigate,
   showToast,
+  operationNotes = [],
+  onAddNote,
+  onToggleNote,
+  onDeleteNote,
 }) => {
+  const [newNoteText, setNewNoteText] = useState("");
+  const [showDoneNotes, setShowDoneNotes] = useState(false);
   // 1. 내 담당 학생 필터링
   const myStudents = useMemo(() => {
     return user.role === "teacher"
@@ -1935,23 +1941,30 @@ const DashboardView = ({
     return { paymentDueCount, totalRevenue, newStudentsCount, pendingConsults };
   }, [myStudents, consultations, user]);
 
-  // 4. 주간 결산 (관리자 전용)
+  // 4. 주간 결산 (관리자 전용, 주 단위 탐색 가능)
+  const [weekOffset, setWeekOffset] = useState(0); // 0=이번 주, -1=지난 주 ...
   const weeklyStats = useMemo(() => {
     if (user.role !== "admin") return null;
     const today = new Date();
     const dayOfWeek = (today.getDay() + 6) % 7; // 0=월 … 6=일
     const weekStart = new Date(today);
-    weekStart.setDate(today.getDate() - dayOfWeek);
+    weekStart.setDate(today.getDate() - dayOfWeek + weekOffset * 7);
     weekStart.setHours(0, 0, 0, 0);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
     const weekStartStr = weekStart.toISOString().split("T")[0];
-    const todayStr = today.toISOString().split("T")[0];
+    // 이번 주(offset 0)는 오늘까지만, 지난 주는 주 전체(일요일까지) 집계
+    const weekEndStr =
+      weekOffset === 0
+        ? today.toISOString().split("T")[0]
+        : weekEnd.toISOString().split("T")[0];
 
     // 주간 결제액 & 건수
     let weeklyPaymentTotal = 0;
     let weeklyPaymentCount = 0;
     students.forEach((s) => {
       (s.paymentHistory || []).forEach((p) => {
-        if (p.date >= weekStartStr && p.date <= todayStr) {
+        if (p.date >= weekStartStr && p.date <= weekEndStr) {
           weeklyPaymentTotal += Number(p.amount) || 0;
           weeklyPaymentCount++;
         }
@@ -1961,23 +1974,21 @@ const DashboardView = ({
     // 주간 신규 등록수
     const weeklyNewStudents = students.filter((s) => {
       const regDate = (s.registrationDate || s.createdAt || "").slice(0, 10);
-      return regDate >= weekStartStr && regDate <= todayStr;
+      return regDate >= weekStartStr && regDate <= weekEndStr;
     }).length;
 
     // 주간 상담 접수수
     const weeklyConsultations = consultations.filter((c) => {
       const cDate = (c.createdAt || c.date || "").slice(0, 10);
-      return cDate >= weekStartStr && cDate <= todayStr;
+      return cDate >= weekStartStr && cDate <= weekEndStr;
     }).length;
 
     // 주간 범위 레이블
     const fmt = (d) => `${d.getMonth() + 1}/${d.getDate()}`;
-    const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekStart.getDate() + 6);
     const weekLabel = `${fmt(weekStart)}(월) ~ ${fmt(weekEnd)}(일)`;
 
     return { weeklyPaymentTotal, weeklyPaymentCount, weeklyNewStudents, weeklyConsultations, weekLabel };
-  }, [students, consultations, user]);
+  }, [students, consultations, user, weekOffset]);
 
   // 오늘 회차 완료 학생 (관리자 — 결제 안내 자동화)
   // 결제 이력 기반 잔여 회차로 판단 (단순 모듈로 방식 대신)
@@ -2034,6 +2045,44 @@ const DashboardView = ({
         return reg && reg.slice(0, 7) <= ym && s.status === "재원";
       }).length;
       return { month: ym, new: newCount, active: activeCount };
+    });
+  }, [students, user]);
+
+  // 5-1. 주차별 재원생 수 추이 (관리자 전용, 최근 12주)
+  const weeklyTrendData = useMemo(() => {
+    if (user.role !== "admin") return [];
+    const today = new Date();
+    const dayOfWeek = (today.getDay() + 6) % 7; // 0=월 … 6=일
+    const thisWeekStart = new Date(today);
+    thisWeekStart.setDate(today.getDate() - dayOfWeek);
+    thisWeekStart.setHours(0, 0, 0, 0);
+
+    const weeks = [];
+    for (let i = 11; i >= 0; i--) {
+      const start = new Date(thisWeekStart);
+      start.setDate(thisWeekStart.getDate() - i * 7);
+      const end = new Date(start);
+      end.setDate(start.getDate() + 6);
+      weeks.push({ start, end });
+    }
+    return weeks.map(({ start, end }) => {
+      const startStr = start.toISOString().split("T")[0];
+      const endStr = end.toISOString().split("T")[0];
+      const newCount = students.filter((s) => {
+        const reg = (s.registrationDate || s.createdAt || "").slice(0, 10);
+        return reg >= startStr && reg <= endStr;
+      }).length;
+      // 해당 주까지 등록한 현재 재원생 수 (현재 재원 기준 하한선)
+      const activeCount = students.filter((s) => {
+        const reg = s.registrationDate || s.createdAt || "";
+        return reg && reg.slice(0, 10) <= endStr && s.status === "재원";
+      }).length;
+      return {
+        label: `${start.getMonth() + 1}/${start.getDate()}`,
+        weekStartStr: startStr,
+        new: newCount,
+        active: activeCount,
+      };
     });
   }, [students, user]);
 
@@ -2160,9 +2209,26 @@ const DashboardView = ({
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-slate-700 flex items-center gap-2">
-              <TrendingUp size={18} className="text-indigo-500" /> 이번 주 결산
+              <TrendingUp size={18} className="text-indigo-500" /> {weekOffset === 0 ? "이번 주 결산" : "주간 결산"}
             </h3>
-            <span className="text-xs text-slate-400 bg-slate-50 px-2 py-1 rounded-lg">{weeklyStats.weekLabel}</span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setWeekOffset((v) => v - 1)}
+                className="p-1 rounded-lg hover:bg-slate-100 active:bg-slate-200 text-slate-500"
+                title="이전 주"
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <span className="text-xs text-slate-400 bg-slate-50 px-2 py-1 rounded-lg">{weeklyStats.weekLabel}</span>
+              <button
+                onClick={() => setWeekOffset((v) => Math.min(0, v + 1))}
+                disabled={weekOffset === 0}
+                className="p-1 rounded-lg hover:bg-slate-100 active:bg-slate-200 text-slate-500 disabled:opacity-30 disabled:cursor-not-allowed"
+                title="다음 주"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
           </div>
           <div className="grid grid-cols-3 gap-4">
             <div className="bg-indigo-50 rounded-xl p-4">
@@ -2173,14 +2239,116 @@ const DashboardView = ({
             <div className="bg-emerald-50 rounded-xl p-4">
               <p className="text-xs text-emerald-600 font-bold mb-1">신규 등록</p>
               <p className="text-xl font-bold text-emerald-700">{weeklyStats.weeklyNewStudents}명</p>
-              <p className="text-xs text-slate-400 mt-1">이번 주 신규</p>
+              <p className="text-xs text-slate-400 mt-1">{weekOffset === 0 ? "이번 주 신규" : "해당 주 신규"}</p>
             </div>
             <div className="bg-amber-50 rounded-xl p-4">
               <p className="text-xs text-amber-600 font-bold mb-1">상담 접수</p>
               <p className="text-xl font-bold text-amber-700">{weeklyStats.weeklyConsultations}건</p>
-              <p className="text-xs text-slate-400 mt-1">이번 주 상담</p>
+              <p className="text-xs text-slate-400 mt-1">{weekOffset === 0 ? "이번 주 상담" : "해당 주 상담"}</p>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* 3-1. 운영 메모/할일 (관리자 전용) */}
+      {user.role === "admin" && (
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-bold text-slate-700 flex items-center gap-2">
+              <ListTodo size={18} className="text-violet-500" /> 운영 메모 / 할일
+            </h3>
+            <span className="text-xs text-slate-400 bg-slate-50 px-2 py-1 rounded-lg">
+              미완료 {operationNotes.filter((n) => !n.done).length}건
+            </span>
+          </div>
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!newNoteText.trim()) return;
+              onAddNote?.(newNoteText);
+              setNewNoteText("");
+            }}
+            className="flex items-center gap-2 mb-3"
+          >
+            <input
+              type="text"
+              value={newNoteText}
+              onChange={(e) => setNewNoteText(e.target.value)}
+              placeholder="개선/할일 메모를 입력하세요..."
+              className="flex-1 px-3 py-2 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-violet-400"
+            />
+            <button
+              type="submit"
+              disabled={!newNoteText.trim()}
+              className="px-4 py-2 bg-violet-600 text-white rounded-lg text-sm font-bold hover:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+            >
+              추가
+            </button>
+          </form>
+
+          <div className="space-y-1.5">
+            {operationNotes.filter((n) => !n.done).length === 0 && (
+              <p className="text-sm text-slate-400 text-center py-4">할일이 없습니다. 👍</p>
+            )}
+            {operationNotes
+              .filter((n) => !n.done)
+              .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""))
+              .map((n) => (
+                <div key={n.id} className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-50 group">
+                  <button
+                    onClick={() => onToggleNote?.(n.id, n.done)}
+                    className="w-5 h-5 rounded-md border-2 border-slate-300 hover:border-violet-500 shrink-0"
+                    title="완료 처리"
+                  />
+                  <span className="flex-1 text-sm text-slate-700">{n.text}</span>
+                  <button
+                    onClick={() => onDeleteNote?.(n.id)}
+                    className="text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                    title="삭제"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              ))}
+          </div>
+
+          {operationNotes.some((n) => n.done) && (
+            <div className="mt-3 pt-3 border-t border-slate-100">
+              <button
+                onClick={() => setShowDoneNotes((v) => !v)}
+                className="text-xs text-slate-400 hover:text-slate-600 font-medium"
+              >
+                완료된 항목 {operationNotes.filter((n) => n.done).length}건 {showDoneNotes ? "숨기기 ▲" : "보기 ▼"}
+              </button>
+              {showDoneNotes && (
+                <div className="space-y-1.5 mt-2">
+                  {operationNotes
+                    .filter((n) => n.done)
+                    .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""))
+                    .map((n) => (
+                      <div key={n.id} className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-50 group">
+                        <button
+                          onClick={() => onToggleNote?.(n.id, n.done)}
+                          className="w-5 h-5 rounded-md bg-violet-500 border-2 border-violet-500 flex items-center justify-center shrink-0"
+                          title="완료 취소"
+                        >
+                          <CheckSquare size={13} className="text-white" />
+                        </button>
+                        <span className="flex-1 text-sm text-slate-400 line-through">{n.text}</span>
+                        <button
+                          onClick={() => onDeleteNote?.(n.id)}
+                          className="text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                          title="삭제"
+                        >
+                          <X size={16} />
+                        </button>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -2383,7 +2551,7 @@ const DashboardView = ({
             const maxNew = Math.max(...trendData.map((d) => d.new), 1);
             return (
               <div>
-                <div className="flex items-end gap-1.5 h-28 mb-1">
+                <div className="flex gap-1.5 h-28 mb-1">
                   {trendData.map((d) => (
                     <div key={d.month} className="flex-1 flex flex-col items-center justify-end gap-0.5">
                       {d.new > 0 && (
@@ -2439,6 +2607,51 @@ const DashboardView = ({
               * 재원생 수는 현재 재원 중인 학생 기준으로, 이미 퇴원한 학생은 반영되지 않습니다.
             </p>
           </div>
+        </div>
+      )}
+
+      {/* 5-1. 주차별 재원생 수 추이 (관리자 전용) */}
+      {user.role === "admin" && (
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+          <div className="flex justify-between items-center mb-5">
+            <h3 className="font-bold text-slate-800 flex items-center text-lg">
+              <TrendingUp className="mr-2 text-indigo-600" size={22} /> 주차별 재원생 추이
+            </h3>
+            <span className="text-xs text-slate-400">최근 12주 · 매주 월요일 기준</span>
+          </div>
+
+          {/* 막대 그래프 */}
+          {(() => {
+            const maxActive = Math.max(...weeklyTrendData.map((d) => d.active), 1);
+            return (
+              <div>
+                <div className="flex gap-1.5 h-28 mb-1">
+                  {weeklyTrendData.map((d) => (
+                    <div key={d.weekStartStr} className="flex-1 flex flex-col items-center justify-end gap-0.5">
+                      <span className="text-[9px] font-bold text-slate-500">{d.active}</span>
+                      <div
+                        className="w-full rounded-t-md bg-emerald-200 hover:bg-emerald-400 transition-colors cursor-default"
+                        style={{ height: `${Math.max((d.active / maxActive) * 100, 4)}%` }}
+                        title={`${d.label} 주: 재원 ${d.active}명, 신규 ${d.new}명`}
+                      />
+                    </div>
+                  ))}
+                </div>
+                {/* X축 레이블 */}
+                <div className="flex gap-1.5 mb-5">
+                  {weeklyTrendData.map((d) => (
+                    <div key={d.weekStartStr} className="flex-1 text-center text-[9px] text-slate-400">
+                      {d.label}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
+          <p className="text-xs text-slate-400">
+            * 재원생 수는 현재 재원 중인 학생 기준 누적치(하한선)이며, 막대 위 숫자를 hover하면 해당 주 신규 등록 수도 함께 표시됩니다.
+          </p>
         </div>
       )}
 
@@ -10488,6 +10701,7 @@ export default function App() {
   const [adminPassword, setAdminPassword] = useState("1123"); // 기본값, Firestore에서 덮어씌움
   const [messageLogs, setMessageLogs] = useState([]);
   const [paymentUrl, setPaymentUrl] = useState(""); // settings/messaging에서 로드
+  const [operationNotes, setOperationNotes] = useState([]); // 운영 메모/할일
 
   // UI 상태
   const [registerFromConsultation, setRegisterFromConsultation] =
@@ -10598,6 +10812,12 @@ export default function App() {
         doc(db, "artifacts", safeAppId, "public", "data", "settings", "messaging"),
         (d) => { if (d.exists()) setPaymentUrl(d.data().paymentUrl || ""); }
       ));
+
+      // 7. 운영 메모/할일
+      unsubscribes.push(onSnapshot(
+        collection(db, "artifacts", safeAppId, "public", "data", "operationNotes"),
+        (s) => setOperationNotes(s.docs.map((d) => ({ ...d.data(), id: d.id })))
+      ));
     });
     // cleanup: StrictMode에서 리스너 중복 등록 방지
     return () => unsubscribes.forEach((unsub) => unsub());
@@ -10606,6 +10826,43 @@ export default function App() {
   const showToast = (text, type = "success") => {
     setMessage({ text, type });
     setTimeout(() => setMessage(null), 3000);
+  };
+
+  // 운영 메모/할일 CRUD
+  const handleAddNote = async (text) => {
+    if (!text.trim()) return;
+    try {
+      await addDoc(
+        collection(db, "artifacts", APP_ID, "public", "data", "operationNotes"),
+        {
+          text: text.trim(),
+          done: false,
+          createdAt: new Date().toISOString(),
+          createdBy: currentUser?.name || "원장",
+        }
+      );
+    } catch (e) {
+      showToast("메모 추가 실패: " + e.message, "error");
+    }
+  };
+
+  const handleToggleNote = async (id, done) => {
+    try {
+      await updateDoc(
+        doc(db, "artifacts", APP_ID, "public", "data", "operationNotes", id),
+        { done: !done }
+      );
+    } catch (e) {
+      showToast("메모 수정 실패: " + e.message, "error");
+    }
+  };
+
+  const handleDeleteNote = async (id) => {
+    try {
+      await deleteDoc(doc(db, "artifacts", APP_ID, "public", "data", "operationNotes", id));
+    } catch (e) {
+      showToast("메모 삭제 실패: " + e.message, "error");
+    }
   };
 
   const seedData = async () => {
@@ -11397,6 +11654,10 @@ export default function App() {
               }}
               onNavigate={(tab) => setActiveTab(tab)}
               showToast={showToast}
+              operationNotes={operationNotes}
+              onAddNote={handleAddNote}
+              onToggleNote={handleToggleNote}
+              onDeleteNote={handleDeleteNote}
             />
           )}
           {activeTab === "timetable" && (
