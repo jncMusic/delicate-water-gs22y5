@@ -37,6 +37,7 @@ import {
   writeBatch,
   deleteDoc,
   getDocs,
+  getDoc,
   setDoc,
   query, // 🔥 쿼리 관련 기능 추가 (안전 대비)
   where, // 🔥 쿼리 관련 기능 추가 (안전 대비)
@@ -1902,6 +1903,7 @@ const DashboardView = ({
   onNavigate,
   showToast,
   operationNotes = [],
+  weeklySnapshots = [],
   onAddNote,
   onToggleNote,
   onDeleteNote,
@@ -2070,6 +2072,11 @@ const DashboardView = ({
       weekCount = Math.max(diffWeeks, 1);
     }
 
+    const snapshotMap = {};
+    weeklySnapshots.forEach((snap) => {
+      if (snap.weekStartStr) snapshotMap[snap.weekStartStr] = snap.activeCount;
+    });
+
     const weeks = [];
     for (let i = weekCount - 1; i >= 0; i--) {
       const start = new Date(thisWeekStart);
@@ -2085,19 +2092,23 @@ const DashboardView = ({
         const reg = (s.registrationDate || s.createdAt || "").slice(0, 10);
         return reg >= startStr && reg <= endStr;
       }).length;
-      // 해당 주까지 등록한 현재 재원생 수 (현재 재원 기준 하한선)
-      const activeCount = students.filter((s) => {
-        const reg = s.registrationDate || s.createdAt || "";
-        return reg && reg.slice(0, 10) <= endStr && s.status === "재원";
-      }).length;
+      // 실제 저장된 스냅샷이 있으면 그 값을 사용(정확), 없으면 현재 재원 기준 추정치(하한선)
+      const hasSnapshot = Object.prototype.hasOwnProperty.call(snapshotMap, startStr);
+      const activeCount = hasSnapshot
+        ? snapshotMap[startStr]
+        : students.filter((s) => {
+            const reg = s.registrationDate || s.createdAt || "";
+            return reg && reg.slice(0, 10) <= endStr && s.status === "재원";
+          }).length;
       return {
         label: `${start.getMonth() + 1}/${start.getDate()}`,
         weekStartStr: startStr,
         new: newCount,
         active: activeCount,
+        isEstimate: !hasSnapshot,
       };
     });
-  }, [students, user, weeklyTrendRange]);
+  }, [students, user, weeklyTrendRange, weeklySnapshots]);
 
   // 5. 강사용 월간 보고서 상태
   const reportStatus = useMemo(() => {
@@ -2656,9 +2667,15 @@ const DashboardView = ({
                 <div className={`flex gap-1.5 h-28 mb-1 ${weeklyTrendData.length > 16 ? "min-w-max" : ""}`}>
                   {weeklyTrendData.map((d) => (
                     <div key={d.weekStartStr} className={`${barWidthClass} flex flex-col items-center justify-end gap-0.5`}>
-                      <span className="text-[9px] font-bold text-slate-500">{d.active}</span>
+                      <span className={`text-[9px] font-bold ${d.isEstimate ? "text-slate-400" : "text-emerald-700"}`}>
+                        {d.active}{d.isEstimate ? "*" : ""}
+                      </span>
                       <div
-                        className="w-full rounded-t-md bg-emerald-200 hover:bg-emerald-400 transition-colors cursor-default"
+                        className={`w-full rounded-t-md transition-colors cursor-default ${
+                          d.isEstimate
+                            ? "bg-slate-200 hover:bg-slate-300"
+                            : "bg-emerald-300 hover:bg-emerald-400"
+                        }`}
                         style={{
                           height: `${
                             range > 0
@@ -2666,7 +2683,7 @@ const DashboardView = ({
                               : 50
                           }%`,
                         }}
-                        title={`${d.label} 주: 재원 ${d.active}명, 신규 ${d.new}명`}
+                        title={`${d.label} 주: 재원 ${d.active}명 (${d.isEstimate ? "추정치" : "실측 스냅샷"}), 신규 ${d.new}명`}
                       />
                     </div>
                   ))}
@@ -2685,7 +2702,11 @@ const DashboardView = ({
 
           <p className="text-xs text-slate-400">
             * 막대 높이는 구간 내 최소~최대 값 기준으로 조정되어 변화 폭을 강조합니다(실제 값은 막대 위 숫자·hover 참고).
-            재원생 수는 현재 재원 중인 학생 기준 누적치(하한선)입니다.
+            <br />
+            <span className="inline-flex items-center gap-1 mt-0.5">
+              <span className="w-2 h-2 rounded-sm bg-emerald-300 inline-block" /> 진한 막대 = 그 주에 실제 저장된 재원생 수(정확) ·{" "}
+              <span className="w-2 h-2 rounded-sm bg-slate-200 inline-block ml-1" /> 옅은 막대(숫자 옆 *) = 스냅샷 저장 이전 주라 현재 재원생 기준으로 역산한 추정치(하한선)
+            </span>
           </p>
         </div>
       )}
@@ -10737,6 +10758,7 @@ export default function App() {
   const [messageLogs, setMessageLogs] = useState([]);
   const [paymentUrl, setPaymentUrl] = useState(""); // settings/messaging에서 로드
   const [operationNotes, setOperationNotes] = useState([]); // 운영 메모/할일
+  const [weeklySnapshots, setWeeklySnapshots] = useState([]); // 주차별 재원생 수 스냅샷
 
   // UI 상태
   const [registerFromConsultation, setRegisterFromConsultation] =
@@ -10853,10 +10875,45 @@ export default function App() {
         collection(db, "artifacts", safeAppId, "public", "data", "operationNotes"),
         (s) => setOperationNotes(s.docs.map((d) => ({ ...d.data(), id: d.id })))
       ));
+
+      // 8. 주차별 재원생 수 스냅샷
+      unsubscribes.push(onSnapshot(
+        collection(db, "artifacts", safeAppId, "public", "data", "weeklySnapshots"),
+        (s) => setWeeklySnapshots(s.docs.map((d) => ({ ...d.data(), id: d.id })))
+      ));
     });
     // cleanup: StrictMode에서 리스너 중복 등록 방지
     return () => unsubscribes.forEach((unsub) => unsub());
   }, []);
+
+  // 이번 주 재원생 수 스냅샷 자동 저장 (관리자가 접속했는데 이번 주 기록이 아직 없으면 1회 저장)
+  const weeklySnapshotCheckedRef = useRef(false);
+  useEffect(() => {
+    if (!db || weeklySnapshotCheckedRef.current) return;
+    if (currentUser?.role !== "admin" || students.length === 0) return;
+    weeklySnapshotCheckedRef.current = true;
+
+    const today = new Date();
+    const dayOfWeek = (today.getDay() + 6) % 7; // 0=월 … 6=일
+    const weekStart = new Date(today);
+    weekStart.setDate(today.getDate() - dayOfWeek);
+    weekStart.setHours(0, 0, 0, 0);
+    const weekStartStr = weekStart.toISOString().split("T")[0];
+    const safeAppId = APP_ID || "jnc-music-v2";
+    const ref = doc(db, "artifacts", safeAppId, "public", "data", "weeklySnapshots", weekStartStr);
+
+    getDoc(ref)
+      .then((snap) => {
+        if (snap.exists()) return; // 이번 주 스냅샷 이미 저장됨
+        const activeCount = students.filter((s) => s.status === "재원").length;
+        return setDoc(ref, {
+          weekStartStr,
+          activeCount,
+          capturedAt: new Date().toISOString(),
+        });
+      })
+      .catch((e) => console.error("주간 스냅샷 저장 실패:", e));
+  }, [students, currentUser]);
 
   const showToast = (text, type = "success") => {
     setMessage({ text, type });
@@ -11690,6 +11747,7 @@ export default function App() {
               onNavigate={(tab) => setActiveTab(tab)}
               showToast={showToast}
               operationNotes={operationNotes}
+              weeklySnapshots={weeklySnapshots}
               onAddNote={handleAddNote}
               onToggleNote={handleToggleNote}
               onDeleteNote={handleDeleteNote}
