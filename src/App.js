@@ -2048,7 +2048,8 @@ const DashboardView = ({
     });
   }, [students, user]);
 
-  // 5-1. 주차별 재원생 수 추이 (관리자 전용, 최근 12주)
+  // 5-1. 주차별 재원생 수 추이 (관리자 전용, 기간 선택 가능)
+  const [weeklyTrendRange, setWeeklyTrendRange] = useState(12); // 12 | 24 | "all"
   const weeklyTrendData = useMemo(() => {
     if (user.role !== "admin") return [];
     const today = new Date();
@@ -2057,8 +2058,20 @@ const DashboardView = ({
     thisWeekStart.setDate(today.getDate() - dayOfWeek);
     thisWeekStart.setHours(0, 0, 0, 0);
 
+    let weekCount = weeklyTrendRange;
+    if (weeklyTrendRange === "all") {
+      // 가장 오래된 등록일까지의 주차 수 계산
+      const earliestDates = students
+        .map((s) => s.registrationDate || s.createdAt || "")
+        .filter(Boolean)
+        .sort();
+      const earliest = earliestDates.length > 0 ? new Date(earliestDates[0].slice(0, 10)) : thisWeekStart;
+      const diffWeeks = Math.floor((thisWeekStart - earliest) / (7 * 24 * 60 * 60 * 1000)) + 1;
+      weekCount = Math.max(diffWeeks, 1);
+    }
+
     const weeks = [];
-    for (let i = 11; i >= 0; i--) {
+    for (let i = weekCount - 1; i >= 0; i--) {
       const start = new Date(thisWeekStart);
       start.setDate(thisWeekStart.getDate() - i * 7);
       const end = new Date(start);
@@ -2084,7 +2097,7 @@ const DashboardView = ({
         active: activeCount,
       };
     });
-  }, [students, user]);
+  }, [students, user, weeklyTrendRange]);
 
   // 5. 강사용 월간 보고서 상태
   const reportStatus = useMemo(() => {
@@ -2613,34 +2626,55 @@ const DashboardView = ({
       {/* 5-1. 주차별 재원생 수 추이 (관리자 전용) */}
       {user.role === "admin" && (
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-          <div className="flex justify-between items-center mb-5">
+          <div className="flex justify-between items-center mb-5 flex-wrap gap-2">
             <h3 className="font-bold text-slate-800 flex items-center text-lg">
               <TrendingUp className="mr-2 text-indigo-600" size={22} /> 주차별 재원생 추이
             </h3>
-            <span className="text-xs text-slate-400">최근 12주 · 매주 월요일 기준</span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-400">매주 월요일 기준</span>
+              <div className="flex rounded-lg overflow-hidden border border-indigo-200 text-xs">
+                {[[12, "12주"], [24, "24주"], ["all", "전체"]].map(([val, label]) => (
+                  <button
+                    key={val}
+                    onClick={() => setWeeklyTrendRange(val)}
+                    className={`px-2.5 py-1 font-medium transition-colors ${weeklyTrendRange === val ? "bg-indigo-600 text-white" : "bg-white text-indigo-700 hover:bg-indigo-50"}`}
+                  >{label}</button>
+                ))}
+              </div>
+            </div>
           </div>
 
-          {/* 막대 그래프 */}
+          {/* 막대 그래프 (구간 최소~최대 기준 스케일링으로 변화 폭을 잘 보이게 표시) */}
           {(() => {
-            const maxActive = Math.max(...weeklyTrendData.map((d) => d.active), 1);
+            const activeValues = weeklyTrendData.map((d) => d.active);
+            const maxActive = Math.max(...activeValues, 1);
+            const minActive = Math.min(...activeValues, maxActive);
+            const range = maxActive - minActive;
+            const barWidthClass = weeklyTrendData.length > 16 ? "w-6 shrink-0" : "flex-1";
             return (
-              <div>
-                <div className="flex gap-1.5 h-28 mb-1">
+              <div className="overflow-x-auto pb-1">
+                <div className={`flex gap-1.5 h-28 mb-1 ${weeklyTrendData.length > 16 ? "min-w-max" : ""}`}>
                   {weeklyTrendData.map((d) => (
-                    <div key={d.weekStartStr} className="flex-1 flex flex-col items-center justify-end gap-0.5">
+                    <div key={d.weekStartStr} className={`${barWidthClass} flex flex-col items-center justify-end gap-0.5`}>
                       <span className="text-[9px] font-bold text-slate-500">{d.active}</span>
                       <div
                         className="w-full rounded-t-md bg-emerald-200 hover:bg-emerald-400 transition-colors cursor-default"
-                        style={{ height: `${Math.max((d.active / maxActive) * 100, 4)}%` }}
+                        style={{
+                          height: `${
+                            range > 0
+                              ? Math.max(((d.active - minActive) / range) * 100, 6)
+                              : 50
+                          }%`,
+                        }}
                         title={`${d.label} 주: 재원 ${d.active}명, 신규 ${d.new}명`}
                       />
                     </div>
                   ))}
                 </div>
                 {/* X축 레이블 */}
-                <div className="flex gap-1.5 mb-5">
+                <div className={`flex gap-1.5 mb-5 ${weeklyTrendData.length > 16 ? "min-w-max" : ""}`}>
                   {weeklyTrendData.map((d) => (
-                    <div key={d.weekStartStr} className="flex-1 text-center text-[9px] text-slate-400">
+                    <div key={d.weekStartStr} className={`${barWidthClass} text-center text-[9px] text-slate-400`}>
                       {d.label}
                     </div>
                   ))}
@@ -2650,7 +2684,8 @@ const DashboardView = ({
           })()}
 
           <p className="text-xs text-slate-400">
-            * 재원생 수는 현재 재원 중인 학생 기준 누적치(하한선)이며, 막대 위 숫자를 hover하면 해당 주 신규 등록 수도 함께 표시됩니다.
+            * 막대 높이는 구간 내 최소~최대 값 기준으로 조정되어 변화 폭을 강조합니다(실제 값은 막대 위 숫자·hover 참고).
+            재원생 수는 현재 재원 중인 학생 기준 누적치(하한선)입니다.
           </p>
         </div>
       )}
