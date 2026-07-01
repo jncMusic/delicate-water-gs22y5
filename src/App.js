@@ -4847,6 +4847,8 @@ const ClassLogView = ({ students, teachers, user, showToast }) => {
       const hasSchedule =
         (s.schedules && s.schedules[dayName]) ||
         (!s.schedules && s.className === dayName);
+      const regDate = (s.registrationDate || s.createdAt || "").slice(0, 10);
+      if (regDate && dateStr < regDate) return;
       if (record || (!isFuture && hasSchedule && s.status === "재원")) {
         if (selectedTeacher && s.teacher !== selectedTeacher) return;
         const time = getStudentScheduleTime(s, dayName);
