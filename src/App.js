@@ -465,7 +465,7 @@ const getSeasonalGreeting = () => {
     3:  "봄이 찾아왔지만 일교차가 크니 건강 유의하시기 바랍니다. 활기찬 봄날 되시기 바랍니다.",
     4:  "따뜻한 봄날이 이어지고 있습니다. 건강하고 활기찬 봄 보내시기 바랍니다.",
     5:  "가정의 달 5월입니다. 가족 모두 건강하고 행복한 시간 보내시기 바랍니다.",
-    6:  "더워지는 날씨에 건강 유의하시기 바랍니다. 수분 보충 자주 하시길 권해드립니다.",
+    6:  "더워지는 날씨에 건강 유의하시기 바랍니다.",
     7:  "무더운 여름철입니다. 더위에 지치지 않도록 건강 잘 챙기시기 바랍니다.",
     8:  "막바지 더위가 이어지고 있습니다. 건강 유의하시기 바랍니다.",
     9:  "선선한 바람이 불어오고 있습니다. 환절기에 건강 유의하시기 바랍니다.",
@@ -10285,7 +10285,7 @@ const getShortSeasonalGreeting = () => {
     3:  "봄이 찾아왔지만 일교차가 크니 건강 유의하시기 바랍니다.",
     4:  "따뜻한 봄날이 이어지고 있습니다. 건강하고 활기찬 봄 보내시기 바랍니다.",
     5:  "가정의 달 5월입니다. 가족 모두 건강하고 행복한 시간 보내시기 바랍니다.",
-    6:  "더워지는 날씨에 건강 유의하시기 바랍니다. 수분 보충 자주 하시길 권해드립니다.",
+    6:  "더워지는 날씨에 건강 유의하시기 바랍니다.",
     7:  "무더운 여름철입니다. 더위에 지치지 않도록 건강 잘 챙기시기 바랍니다.",
     8:  "막바지 더위가 이어지고 있습니다. 건강 유의하시기 바랍니다.",
     9:  "선선한 바람이 불어오고 있습니다. 환절기에 건강 유의하시기 바랍니다.",
@@ -13886,12 +13886,12 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
             <table className="w-full text-sm border-collapse min-w-[600px]" style={{ tableLayout: "fixed" }}>
               <thead>
                 <tr className="bg-slate-100">
-                  <th className="border border-slate-300 px-3 py-2.5 text-center font-bold text-slate-600 text-sm" style={{ width: "80px" }}>강사</th>
+                  <th className="border border-slate-300 px-3 py-2.5 text-center font-bold text-slate-600 text-sm print:text-base" style={{ width: "80px" }}>강사</th>
                   {SHEET_DAYS.map((day) => (
                     <th
                       key={day}
                       style={{ width: `calc((100% - 80px) / 7)` }}
-                      className={`border border-slate-300 px-2 py-2.5 text-center font-bold text-sm ${
+                      className={`border border-slate-300 px-2 py-2.5 text-center font-bold text-sm print:text-base ${
                         day === "일" ? "text-rose-600" : day === "토" ? "text-blue-600" : "text-slate-700"
                       }`}
                     >
@@ -13903,7 +13903,7 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
               <tbody>
                 {sheetTeachers.map((teacher, ti) => (
                   <tr key={teacher.name} className={ti % 2 === 0 ? "bg-white" : "bg-slate-50/60"}>
-                    <td className="border border-slate-300 px-3 py-2 text-center font-bold text-slate-700 text-sm whitespace-nowrap align-middle bg-slate-50">
+                    <td className="border border-slate-300 px-3 py-2 text-center font-bold text-slate-700 text-sm print:text-base whitespace-nowrap align-middle bg-slate-50">
                       {teacher.name} T
                     </td>
                     {SHEET_DAYS.map((day) => {
@@ -13916,7 +13916,7 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
                           if (gap >= 45) {
                             const fmt = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
                             items.push(
-                              <div key={`gap-${i}`} className="flex items-center gap-1 my-0.5 px-1 py-0.5 rounded bg-emerald-50 border border-emerald-200 whitespace-nowrap">
+                              <div key={`gap-${i}`} className="flex items-center gap-1 my-0.5 px-1 py-0.5 rounded bg-emerald-50 border border-emerald-200 whitespace-nowrap print:hidden">
                                 <span className="text-emerald-600 text-[9px] font-bold">▸ 신규배정 가능</span>
                                 <span className="text-emerald-500 text-[9px] tabular-nums">{fmt(prevEnd)}~{fmt(l.min)}</span>
                               </div>
@@ -13924,11 +13924,11 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
                           }
                         }
                         items.push(
-                          <div key={i} className="flex items-baseline gap-1 py-0.5 whitespace-nowrap">
-                            <span className="text-slate-400 tabular-nums text-xs leading-snug">
+                          <div key={i} className="flex items-baseline gap-1 py-0.5 print:py-1 whitespace-nowrap">
+                            <span className="text-slate-400 tabular-nums text-xs leading-snug print:text-sm">
                               {String(Math.floor(l.min / 60)).padStart(2, "0")}:{String(l.min % 60).padStart(2, "0")}
                             </span>
-                            <span className="font-medium text-slate-800 text-sm">{l.name}</span>
+                            <span className="font-medium text-slate-800 text-sm print:text-base print:font-semibold">{l.name}</span>
                           </div>
                         );
                       });

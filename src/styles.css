@@ -25,12 +25,15 @@ button, input, select, textarea {
   #print-sheet-root { display: block !important; }
   #print-sheet-root table {
     width: 100%;
-    font-size: 9px;
+    font-size: 12px;
     border-collapse: collapse;
   }
   #print-sheet-root th,
   #print-sheet-root td {
     border: 1px solid #cbd5e1 !important;
-    padding: 3px 4px !important;
+    padding: 5px 6px !important;
+  }
+  #print-sheet-root td {
+    line-height: 1.5;
   }
 }
