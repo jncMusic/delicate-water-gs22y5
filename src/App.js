@@ -1925,7 +1925,13 @@ const DashboardView = ({
 
   // 3. 주요 지표 계산
   const stats = useMemo(() => {
-    const paymentDueCount = myStudents.filter((s) => isPaymentDue(s)).length;
+    const paymentDueStudents = myStudents.filter((s) => isPaymentDue(s));
+    const paymentDueCount = paymentDueStudents.length;
+    // 현재 시점 기준 수납 예정 금액(회차 완료·미납 학생들의 원비 합계, 주 단위와 무관하게 실시간)
+    const paymentDueAmount = paymentDueStudents.reduce(
+      (sum, s) => sum + (Number(s.tuitionFee) || 0),
+      0
+    );
 
     const totalRevenue =
       user.role === "admin"
@@ -1940,7 +1946,7 @@ const DashboardView = ({
 
     const pendingConsults = consultations.filter((c) => c.status === "pending");
 
-    return { paymentDueCount, totalRevenue, newStudentsCount, pendingConsults };
+    return { paymentDueCount, paymentDueAmount, totalRevenue, newStudentsCount, pendingConsults };
   }, [myStudents, consultations, user]);
 
   // 4. 주간 결산 (관리자 전용, 주 단위 탐색 가능)
@@ -2254,7 +2260,7 @@ const DashboardView = ({
               </button>
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div className="bg-indigo-50 rounded-xl p-4">
               <p className="text-xs text-indigo-500 font-bold mb-1">결제액</p>
               <p className="text-xl font-bold text-indigo-700">₩{weeklyStats.weeklyPaymentTotal.toLocaleString()}</p>
@@ -2269,6 +2275,11 @@ const DashboardView = ({
               <p className="text-xs text-amber-600 font-bold mb-1">상담 접수</p>
               <p className="text-xl font-bold text-amber-700">{weeklyStats.weeklyConsultations}건</p>
               <p className="text-xs text-slate-400 mt-1">{weekOffset === 0 ? "이번 주 상담" : "해당 주 상담"}</p>
+            </div>
+            <div className="bg-rose-50 rounded-xl p-4">
+              <p className="text-xs text-rose-600 font-bold mb-1">수납 예정 금액</p>
+              <p className="text-xl font-bold text-rose-700">₩{stats.paymentDueAmount.toLocaleString()}</p>
+              <p className="text-xs text-slate-400 mt-1">현재 기준 · {stats.paymentDueCount}명</p>
             </div>
           </div>
         </div>
