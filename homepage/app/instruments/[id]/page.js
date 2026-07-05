@@ -155,13 +155,13 @@ export default function InstrumentPage({ params }) {
               전화 상담
             </a>
             <a
-              href="https://open.kakao.com/o/sYQKqEsg"
+              href="https://talk.naver.com/profile/w4xhyc"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center justify-center gap-2 bg-white/10 text-white font-bold px-7 py-3.5 rounded-xl hover:bg-white/20 transition-colors border border-white/20"
+              className="flex items-center justify-center gap-2 bg-white/10 text-white font-bold px-7 py-3.5 rounded-xl hover:bg-[#03c75a] hover:border-[#03c75a] transition-colors border border-white/20"
             >
               <MessageCircle size={17} />
-              카카오 문의
+              네이버 톡톡 문의
             </a>
           </div>
         </div>
