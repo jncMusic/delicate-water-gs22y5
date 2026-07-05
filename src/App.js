@@ -10506,6 +10506,7 @@ J&C 음악학원장 드림.`,
 
 const BulkSmsView = ({ students, teachers, showToast }) => {
   const [selectedIds, setSelectedIds] = useState([]);
+  const [statusFilter, setStatusFilter] = useState("재원"); // "재원" | "" (전체)
   const [filterTeacher, setFilterTeacher] = useState("");
   const [filterPart, setFilterPart] = useState("");
   const [searchName, setSearchName] = useState("");
@@ -10518,12 +10519,13 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
 
   const filteredStudents = useMemo(() => {
     return students.filter((s) => {
+      if (statusFilter && s.status !== statusFilter) return false;
       if (filterTeacher && s.teacher !== filterTeacher) return false;
       if (filterPart && s.part !== filterPart) return false;
       if (searchName && !s.name.includes(searchName)) return false;
       return true;
     });
-  }, [students, filterTeacher, filterPart, searchName]);
+  }, [students, statusFilter, filterTeacher, filterPart, searchName]);
 
   const toggleAll = () => {
     if (selectedIds.length === filteredStudents.length) {
@@ -10609,6 +10611,24 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
         {/* 왼쪽: 원생 선택 */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
           <div className="p-4 border-b bg-slate-50 flex flex-wrap gap-2 items-center">
+            <div className="flex gap-1 bg-white rounded-lg border border-slate-200 p-0.5">
+              {[
+                { label: "전체", value: "" },
+                { label: "재원생", value: "재원" },
+              ].map((opt) => (
+                <button
+                  key={opt.label}
+                  onClick={() => setStatusFilter(opt.value)}
+                  className={`text-xs px-3 py-1.5 rounded-md font-bold transition-all ${
+                    statusFilter === opt.value
+                      ? "bg-indigo-600 text-white"
+                      : "text-slate-500 hover:text-slate-700"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
               <input
