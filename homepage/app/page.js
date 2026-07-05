@@ -127,7 +127,7 @@ export default function HomePage() {
                   음악과 함께<br />성장하는 공간
                 </h2>
                 <p className="text-slate-600 text-lg leading-relaxed mb-5">
-                  JNC 음악학원은 2013년 개원 이래 목동·양천구에서 클래식(피아노·플루트·클라리넷·색소폰·오보에·트럼펫·첼로)과 실용음악(보컬·작곡·미디·기타·드럼·베이스)을 전문으로 가르치는 음악 교육 기관입니다.
+                  JNC 음악학원은 2013년 개원 이래 목동·양천구에서 클래식(피아노·바이올린·플루트·클라리넷·색소폰·오보에·트럼펫·첼로)과 실용음악(보컬·작곡·미디·기타·드럼·베이스)을 전문으로 가르치는 음악 교육 기관입니다.
                 </p>
                 <p className="text-slate-600 leading-relaxed mb-8">
                   취미로 음악을 즐기고 싶은 분부터 콩쿠르 입상·음대 입시·실용음악과 입시·지역 아티스트 활동을 목표로 하는 분까지, 학생 개개인의 목표에 맞는 1:1 맞춤 커리큘럼을 제공합니다. 유아·초등부터 직장인·성인반까지 전 연령 수강 가능합니다.
@@ -259,6 +259,44 @@ export default function HomePage() {
                 각 분야에서 활발히 활동 중인 전문 아티스트들이<br className="hidden sm:block" />
                 열정적으로 지도를 도와드립니다.
               </p>
+            </div>
+
+            {/* 원장 소개 */}
+            <div className="mb-16 bg-white border border-slate-200 rounded-3xl p-8 sm:p-12 shadow-sm">
+              <div className="grid md:grid-cols-[280px_1fr] gap-10 items-center">
+                <img
+                  src="/images/director-kang-yeol-hyeok.jpg"
+                  alt="JnC 음악학원 원장 강열혁"
+                  className="w-56 h-56 sm:w-64 sm:h-64 rounded-2xl object-cover shadow-lg ring-1 ring-slate-200 mx-auto md:mx-0"
+                />
+                <div>
+                  <p className="text-[#d4a843] text-sm font-bold tracking-widest uppercase mb-2">Director</p>
+                  <h3 className="text-2xl sm:text-3xl font-extrabold text-[#0d1b3e] mb-1">강열혁 원장</h3>
+                  <p className="text-slate-500 font-semibold mb-5">최종학력 · 연세대학교 석사</p>
+
+                  <div className="mb-4">
+                    <p className="text-[#0d1b3e] font-bold text-sm mb-2">경력</p>
+                    <ul className="space-y-1.5 text-sm text-slate-600 leading-relaxed">
+                      <li>· KNPO 국립경찰교향악단 플루트 수석 역임</li>
+                      <li>· 뉴서울 필하모닉, 밀레니엄 오케스트라 등 유명 오케스트라 객원 수석 역임</li>
+                      <li>· 서울대학교, 연세대학교, 숙명여자대학교 등 국내 유명 아마추어 오케스트라 코치 겸 객원수석 역임</li>
+                      <li>· 레슨경력 23년, 입시 경력 16년(예중·예고·음대·음악대학원·음악교육대학원) 입시전문</li>
+                      <li>· 학교 교육과정 및 국가 교육과정 전문가</li>
+                      <li>· 경인교대, 성신여자대학교 출강</li>
+                      <li>· K Flute Ensemble 단원</li>
+                    </ul>
+                  </div>
+
+                  <div>
+                    <p className="text-[#0d1b3e] font-bold text-sm mb-2">현재</p>
+                    <ul className="space-y-1.5 text-sm text-slate-600 leading-relaxed">
+                      <li>· J&amp;C Music Lab 대표 (공연기획, 교육연구)</li>
+                      <li>· J&amp;C Music Academy 목동 원장</li>
+                      <li>· Muse Wind Orchestra, KBA 한국 관악협회 사무국장</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 md:gap-6">
