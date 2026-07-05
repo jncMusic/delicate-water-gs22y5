@@ -10506,7 +10506,6 @@ J&C 음악학원장 드림.`,
 
 const BulkSmsView = ({ students, teachers, showToast }) => {
   const [selectedIds, setSelectedIds] = useState([]);
-  const [statusFilter, setStatusFilter] = useState("재원"); // "재원" | "" (전체)
   const [filterTeacher, setFilterTeacher] = useState("");
   const [filterPart, setFilterPart] = useState("");
   const [searchName, setSearchName] = useState("");
@@ -10517,15 +10516,16 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
 
   const PARTS = ["피아노", "관현악", "실용음악", "성악"];
 
+  // 공지는 재원생에게만 발송 — 휴원/퇴원 학생은 대상에서 항상 제외
   const filteredStudents = useMemo(() => {
     return students.filter((s) => {
-      if (statusFilter && s.status !== statusFilter) return false;
+      if (s.status !== "재원") return false;
       if (filterTeacher && s.teacher !== filterTeacher) return false;
       if (filterPart && s.part !== filterPart) return false;
       if (searchName && !s.name.includes(searchName)) return false;
       return true;
     });
-  }, [students, statusFilter, filterTeacher, filterPart, searchName]);
+  }, [students, filterTeacher, filterPart, searchName]);
 
   const toggleAll = () => {
     if (selectedIds.length === filteredStudents.length) {
@@ -10568,7 +10568,7 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
       return;
     }
     const targets = students.filter(
-      (s) => selectedIds.includes(s.id) && s.phone
+      (s) => selectedIds.includes(s.id) && s.phone && s.status === "재원"
     );
     if (targets.length === 0) {
       showToast("연락처가 있는 발송 대상을 선택해주세요.", "warning");
@@ -10611,24 +10611,9 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
         {/* 왼쪽: 원생 선택 */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
           <div className="p-4 border-b bg-slate-50 flex flex-wrap gap-2 items-center">
-            <div className="flex gap-1 bg-white rounded-lg border border-slate-200 p-0.5">
-              {[
-                { label: "전체", value: "" },
-                { label: "재원생", value: "재원" },
-              ].map((opt) => (
-                <button
-                  key={opt.label}
-                  onClick={() => setStatusFilter(opt.value)}
-                  className={`text-xs px-3 py-1.5 rounded-md font-bold transition-all ${
-                    statusFilter === opt.value
-                      ? "bg-indigo-600 text-white"
-                      : "text-slate-500 hover:text-slate-700"
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
+            <span className="text-xs px-3 py-1.5 rounded-md font-bold bg-indigo-50 text-indigo-700">
+              재원생만 발송 대상
+            </span>
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
               <input
