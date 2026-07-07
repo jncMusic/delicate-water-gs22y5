@@ -5046,10 +5046,25 @@ const ClassLogView = ({ students, teachers, user, showToast }) => {
     }
   };
 
+  // 모바일 아젠다 뷰용: 일자별 항목 미리 계산 (월간 그리드와 동일 로직 재사용)
+  const dayEntries = days
+    .map((day) => {
+      if (!day) return null;
+      const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      const dateObj = new Date(year, month, day);
+      return {
+        day,
+        dateStr,
+        dayOfWeek: dateObj.getDay(),
+        items: getCellContent(dateStr, dateObj.getDay()),
+      };
+    })
+    .filter(Boolean);
+
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 animate-fade-in">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-xl font-bold text-slate-800 flex items-center">
+    <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4 md:p-6 animate-fade-in">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-4 md:mb-6">
+        <h2 className="text-lg md:text-xl font-bold text-slate-800 flex items-center">
           <BookOpen className="mr-2 text-indigo-600" size={24} /> 수업 일지
         </h2>
         <div className="flex items-center gap-2">
@@ -5086,7 +5101,8 @@ const ClassLogView = ({ students, teachers, user, showToast }) => {
           </div>
         </div>
       </div>
-      <div className="border rounded-lg overflow-hidden">
+      {/* 데스크톱: 월간 그리드 */}
+      <div className="hidden md:block border rounded-lg overflow-hidden">
         <div className="grid grid-cols-7 bg-slate-50 border-b divide-x divide-slate-200">
           {["일", "월", "화", "수", "목", "금", "토"].map((day, i) => (
             <div
@@ -5156,6 +5172,57 @@ const ClassLogView = ({ students, teachers, user, showToast }) => {
             );
           })}
         </div>
+      </div>
+
+      {/* 모바일: 리스트형 아젠다 뷰 (일자별 카드, 수업 있는 날만 표시) */}
+      <div className="md:hidden space-y-2">
+        {dayEntries.filter((e) => e.items.length > 0).length === 0 ? (
+          <div className="text-center text-slate-400 text-sm py-12 border border-dashed rounded-lg">
+            이번 달 수업 기록이 없습니다.
+          </div>
+        ) : (
+          dayEntries
+            .filter((e) => e.items.length > 0)
+            .map((entry) => {
+              const dayLabel = ["일", "월", "화", "수", "목", "금", "토"][entry.dayOfWeek];
+              const isHoliday = HOLIDAYS[entry.dateStr];
+              return (
+                <div key={entry.dateStr} className="border border-slate-200 rounded-lg overflow-hidden">
+                  <div
+                    className={`flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-200 font-bold text-sm ${
+                      entry.dayOfWeek === 0
+                        ? "text-rose-500"
+                        : entry.dayOfWeek === 6
+                        ? "text-blue-500"
+                        : "text-slate-700"
+                    }`}
+                  >
+                    <span>
+                      {month + 1}월 {entry.day}일 ({dayLabel})
+                    </span>
+                    {isHoliday && (
+                      <span className="text-xs text-rose-500 font-bold">{isHoliday}</span>
+                    )}
+                  </div>
+                  <div className="divide-y divide-slate-100 bg-white">
+                    {entry.items.map((item, idx) => (
+                      <div
+                        key={idx}
+                        onClick={() => handleItemClick(item.id, entry.dateStr)}
+                        className={`px-3 py-2.5 text-sm cursor-pointer active:bg-slate-50 transition-colors ${
+                          item.status === "present"
+                            ? "text-slate-700"
+                            : "text-slate-400 line-through"
+                        }`}
+                      >
+                        {item.text}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })
+        )}
       </div>
     </div>
   );
@@ -13495,6 +13562,57 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
     });
   }, [teachers, students, selectedDay, isTeacherMode, myName, selectedPart]);
 
+  // 모바일 전용: 타임라인 그리드 대신 세로 리스트(아젠다)로 표시 — 좁은 화면에서 컬럼이 눌려 글씨가 작아지는 문제 방지
+  const renderMobileAgendaCard = (key, label, lessons, windows, highlight) => (
+    <div
+      key={key}
+      className={`rounded-xl border overflow-hidden ${
+        highlight ? "border-indigo-300 ring-1 ring-indigo-200" : "border-slate-200"
+      }`}
+    >
+      <div
+        className={`px-3 py-2 font-bold text-sm ${
+          highlight ? "bg-indigo-50 text-indigo-700" : "bg-slate-50 text-slate-700"
+        }`}
+      >
+        {label}
+      </div>
+      <div className="divide-y divide-slate-100 bg-white">
+        {lessons.length === 0 && windows.length === 0 && (
+          <div className="px-3 py-3 text-center text-slate-400 text-sm">수업 없음</div>
+        )}
+        {lessons.map((l, li) => (
+          <div
+            key={`l-${li}`}
+            className={`px-3 py-2 flex items-center justify-between gap-2 text-sm border-l-4 ${getSubjectColor(l.student.subject)}`}
+          >
+            <span className="font-semibold text-slate-800 truncate">
+              {l.student.subject || l.student.name}
+            </span>
+            <span className="font-bold text-slate-500 text-xs whitespace-nowrap">
+              {l.timeStr} ~ {getEndTimeStr(l.timeStr)}
+            </span>
+          </div>
+        ))}
+        {windows.map(({ startMin, endMin }, wi) => {
+          const sH = Math.floor(startMin / 60), sM = startMin % 60;
+          const eH = Math.floor(endMin / 60), eM = endMin % 60;
+          return (
+            <div
+              key={`w-${wi}`}
+              className="px-3 py-2 flex items-center justify-between gap-2 text-sm bg-emerald-50"
+            >
+              <span className="font-bold text-emerald-600 text-xs">▸ 신규배정 가능</span>
+              <span className="font-bold text-emerald-500 text-xs whitespace-nowrap">
+                {sH}:{String(sM).padStart(2, "0")} ~ {eH}:{String(eM).padStart(2, "0")}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4 md:p-6 h-full flex flex-col overflow-hidden animate-fade-in relative z-0">
       {/* 상단 컨트롤바 (인쇄 시 숨김) */}
@@ -13641,7 +13759,7 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
         className="flex-1 overflow-auto border rounded-xl bg-slate-50/50 relative print:overflow-visible print:bg-white print:border-none"
         ref={printRef}
       >
-        <div className="inline-block min-w-full pb-20 print:pb-0">
+        <div className="hidden md:inline-block min-w-full pb-20 print:inline-block">
           {/* 헤더 */}
           <div className="flex border-b bg-white sticky top-0 z-10 shadow-sm print:static print:shadow-none print:border-slate-300">
             <div className="w-[50px] md:w-[80px] p-2 md:p-4 text-center text-xs md:text-xs font-bold text-slate-400 border-r bg-slate-50 sticky left-0 z-20 shrink-0 flex items-center justify-center print:bg-white print:border-slate-300">
@@ -13858,6 +13976,38 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
               </div>
             )}
           </div>
+        </div>
+
+        {/* 모바일: 리스트형 아젠다 뷰 */}
+        <div className="md:hidden print:hidden p-3 space-y-3">
+          {isTeacherMode && viewMode === "weekly"
+            ? DAYS.map((day) =>
+                renderMobileAgendaCard(
+                  day,
+                  `${day}요일`,
+                  getAllStudentLessons(myName, day),
+                  getAvailableWindows(myName, day),
+                  selectedDay === day
+                )
+              )
+            : activeTeachers.length > 0
+            ? activeTeachers.map((t) => {
+                const targetName = isTeacherMode ? myName : t.name;
+                return renderMobileAgendaCard(
+                  t.id,
+                  isTeacherMode ? `${selectedDay}요일` : `${t.name} T`,
+                  getAllStudentLessons(targetName, selectedDay),
+                  getAvailableWindows(targetName, selectedDay),
+                  false
+                );
+              })
+            : (
+              <div className="text-center text-slate-400 text-sm py-10">
+                {selectedPart === "전체"
+                  ? `📅 ${selectedDay}요일 수업 없음`
+                  : `🔍 [${selectedPart}] 파트 수업 없음`}
+              </div>
+            )}
         </div>
       </div>
       )}
