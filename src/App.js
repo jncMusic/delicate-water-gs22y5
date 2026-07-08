@@ -126,11 +126,22 @@ try {
 // =================================================================
 const SMS_API_URL = process.env.REACT_APP_SMS_API_URL || "/api/send-sms";
 
+// SMS 전송용 텍스트 정리: 줄 끝 트레일링 공백/특수 공백 문자(전각·NBSP·zero-width 등)를 제거
+// — EUC-KR 변환 과정에서 매핑되지 않아 "?"로 깨지는 문제 예방 (워드/한글 문서 복사 시 자주 섞여 들어옴)
+const sanitizeSmsText = (text) =>
+  text
+    .replace(/\r\n/g, "\n")
+    // NBSP(\u00A0), 전각 공백(\u3000), 각종 유니코드 공백/zero-width 문자, BOM(\uFEFF) → 일반 공백으로 정규화
+    .replace(/[\u00A0\u1680\u2000-\u200D\u202F\u205F\u3000\uFEFF]/g, " ")
+    .split("\n")
+    .map((line) => line.replace(/[ \t]+$/, ""))
+    .join("\n");
+
 const sendAligoSms = async (receiver, msg) => {
   const res = await fetch(SMS_API_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ receiver, msg }),
+    body: JSON.stringify({ receiver, msg: sanitizeSmsText(msg) }),
   });
   const data = await res.json();
   if (!data.success) throw new Error(data.error || "발송 실패");
