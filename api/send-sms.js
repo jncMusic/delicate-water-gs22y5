@@ -17,20 +17,22 @@ module.exports = async (req, res) => {
     return res.status(405).json({ success: false, error: "POST only" });
   }
 
-  const { receiver, msg, title } = req.body || {};
+  const { receiver, msg, title, image } = req.body || {};
 
   if (!receiver || !msg) {
     return res.status(400).json({ success: false, error: "receiver와 msg는 필수입니다." });
   }
 
   try {
+    // image: "data:image/jpeg;base64,..." 형태의 data URL (첨부 시 MMS 발송)
+    // ⚠️ 릴레이(sms-relay.php)가 image 필드를 아직 처리하지 않으면 무시되고 텍스트만 발송될 수 있음 — 릴레이 관리 업체에 지원 여부 확인 필요
     const response = await fetch(RELAY_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "X-Relay-Token": RELAY_TOKEN,
       },
-      body: JSON.stringify({ receiver, msg, title }),
+      body: JSON.stringify(image ? { receiver, msg, title, image } : { receiver, msg, title }),
     });
 
     const result = await response.json();

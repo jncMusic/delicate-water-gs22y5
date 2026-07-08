@@ -95,6 +95,7 @@ import {
   Bell,
   Calculator,
   Loader,
+  Image as ImageIcon,
 } from "lucide-react";
 import html2canvas from "html2canvas"; // 🔥 이미지 저장 라이브러리 추가
 
@@ -126,11 +127,11 @@ try {
 // =================================================================
 const SMS_API_URL = process.env.REACT_APP_SMS_API_URL || "/api/send-sms";
 
-const sendAligoSms = async (receiver, msg) => {
+const sendAligoSms = async (receiver, msg, image) => {
   const res = await fetch(SMS_API_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ receiver, msg }),
+    body: JSON.stringify(image ? { receiver, msg, image } : { receiver, msg }),
   });
   const data = await res.json();
   if (!data.success) throw new Error(data.error || "발송 실패");
@@ -10580,6 +10581,9 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [results, setResults] = useState(null); // null = 미발송, [] = 결과
+  const [image, setImage] = useState(null); // { dataUrl, name } — 첨부 시 MMS 발송
+  const [imageProcessing, setImageProcessing] = useState(false);
+  const MAX_MMS_BYTES = 290 * 1024; // 알리고 MMS 첨부 제한(약 300KB) 여유
 
   const PARTS = ["피아노", "관현악", "실용음악", "성악"];
 
@@ -10629,6 +10633,63 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
     if (tid === "custom") setMessage("");
   };
 
+  // 첨부 이미지를 알리고 MMS 용량 제한(약 300KB) 이하로 리사이즈/압축
+  const compressImageForMms = (file) =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new window.Image();
+        img.onload = () => {
+          let { width, height } = img;
+          const maxDim = 1200;
+          if (width > maxDim || height > maxDim) {
+            const ratio = Math.min(maxDim / width, maxDim / height);
+            width = Math.round(width * ratio);
+            height = Math.round(height * ratio);
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+          const toBytes = (du) => Math.ceil(((du.length - du.indexOf(",") - 1) * 3) / 4);
+          let quality = 0.85;
+          let dataUrl = canvas.toDataURL("image/jpeg", quality);
+          while (toBytes(dataUrl) > MAX_MMS_BYTES && quality > 0.35) {
+            quality -= 0.1;
+            dataUrl = canvas.toDataURL("image/jpeg", quality);
+          }
+          if (toBytes(dataUrl) > MAX_MMS_BYTES) {
+            reject(new Error("이미지 용량이 너무 커서 압축 후에도 300KB를 초과합니다. 더 작은 사진을 선택해주세요."));
+            return;
+          }
+          resolve(dataUrl);
+        };
+        img.onerror = () => reject(new Error("이미지를 불러올 수 없습니다."));
+        img.src = reader.result;
+      };
+      reader.onerror = () => reject(new Error("파일을 읽을 수 없습니다."));
+      reader.readAsDataURL(file);
+    });
+
+  const handleImageSelect = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      showToast("이미지 파일만 첨부할 수 있습니다.", "warning");
+      return;
+    }
+    setImageProcessing(true);
+    try {
+      const dataUrl = await compressImageForMms(file);
+      setImage({ dataUrl, name: file.name });
+    } catch (err) {
+      showToast(err.message, "error");
+    } finally {
+      setImageProcessing(false);
+    }
+  };
+
   const handleSend = async () => {
     if (!message.trim()) {
       showToast("발송할 내용을 입력해주세요.", "warning");
@@ -10641,14 +10702,17 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
       showToast("연락처가 있는 발송 대상을 선택해주세요.", "warning");
       return;
     }
-    if (!window.confirm(`${targets.length}명에게 문자를 발송합니까?`)) return;
+    const confirmMsg = image
+      ? `${targets.length}명에게 사진 포함 문자(MMS)를 발송합니까?`
+      : `${targets.length}명에게 문자를 발송합니까?`;
+    if (!window.confirm(confirmMsg)) return;
 
     setSending(true);
     setResults([]);
     const newResults = [];
     for (const s of targets) {
       try {
-        await sendAligoSms(s.phone, message);
+        await sendAligoSms(s.phone, message, image?.dataUrl);
         newResults.push({ name: s.name, phone: s.phone, success: true });
       } catch (e) {
         newResults.push({ name: s.name, phone: s.phone, success: false, error: e.message });
@@ -10789,6 +10853,42 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
                 placeholder="발송할 내용을 입력하세요."
                 className="w-full border border-slate-200 rounded-xl p-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-indigo-300"
               />
+            </div>
+
+            {/* 사진 첨부 (MMS) */}
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <p className="text-sm font-bold text-slate-700">사진 첨부 (선택)</p>
+                {image && (
+                  <button
+                    onClick={() => setImage(null)}
+                    className="text-xs text-slate-400 hover:text-rose-500 flex items-center gap-0.5"
+                  >
+                    <X size={12} /> 제거
+                  </button>
+                )}
+              </div>
+              {image ? (
+                <div className="flex items-center gap-3 p-2 border border-slate-200 rounded-xl">
+                  <img src={image.dataUrl} alt="첨부 미리보기" className="w-14 h-14 object-cover rounded-lg border border-slate-100 shrink-0" />
+                  <span className="text-xs text-slate-500 truncate">{image.name}</span>
+                </div>
+              ) : (
+                <label className="flex items-center justify-center gap-2 border border-dashed border-slate-300 rounded-xl p-3 text-sm text-slate-500 cursor-pointer hover:bg-slate-50">
+                  <ImageIcon size={16} />
+                  {imageProcessing ? "이미지 처리 중..." : "사진 선택 (MMS로 발송)"}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageSelect}
+                    disabled={imageProcessing}
+                    className="hidden"
+                  />
+                </label>
+              )}
+              <p className="text-[11px] text-amber-600 mt-1">
+                ⚠️ 사진 첨부 발송은 SMS 릴레이 서버가 이미지 전송을 지원해야 정상 동작합니다. 관리 업체에 지원 여부를 먼저 확인해주세요.
+              </p>
             </div>
 
             <button
