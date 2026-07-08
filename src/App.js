@@ -10584,6 +10584,8 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
   const [image, setImage] = useState(null); // { dataUrl, name } — 첨부 시 MMS 발송
   const [imageProcessing, setImageProcessing] = useState(false);
   const MAX_MMS_BYTES = 290 * 1024; // 알리고 MMS 첨부 제한(약 300KB) 여유
+  const [showPhoneModal, setShowPhoneModal] = useState(false);
+  const [phoneFormat, setPhoneFormat] = useState("comma"); // "comma" | "newline"
 
   const PARTS = ["피아노", "관현악", "실용음악", "성악"];
 
@@ -10613,6 +10615,31 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
     setSelectedIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
+  };
+
+  // 전화번호 추출: 선택된 학생이 있으면 선택 학생만, 없으면 현재 필터의 재원생 전체
+  const phoneExtractTargets = useMemo(() => {
+    const base = selectedIds.length > 0
+      ? students.filter((s) => selectedIds.includes(s.id))
+      : filteredStudents;
+    return base.filter((s) => s.phone);
+  }, [selectedIds, students, filteredStudents]);
+
+  const phoneExtractText = useMemo(() => {
+    const nums = phoneExtractTargets.map((s) => (s.phone || "").replace(/[^0-9]/g, ""));
+    return phoneFormat === "comma" ? nums.join(",") : nums.join("\n");
+  }, [phoneExtractTargets, phoneFormat]);
+
+  const handleCopyPhones = () => {
+    if (phoneExtractTargets.length === 0) {
+      showToast("추출할 전화번호가 없습니다.", "warning");
+      return;
+    }
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(phoneExtractText).then(() => {
+        showToast(`${phoneExtractTargets.length}명 전화번호가 복사되었습니다.`, "success");
+      });
+    }
   };
 
   // 템플릿 또는 선택 학생 변경 시 자동 갱신 (직접 입력 제외)
@@ -10775,8 +10802,14 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
               ))}
             </select>
             <button
+              onClick={() => setShowPhoneModal(true)}
+              className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 font-bold hover:bg-slate-200 flex items-center gap-1"
+            >
+              <Phone size={12} /> 번호 추출
+            </button>
+            <button
               onClick={toggleAll}
-              className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-700 font-bold hover:bg-indigo-100"
+              className="text-xs px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-700 font-bold hover:bg-indigo-100"
             >
               {selectedIds.length === filteredStudents.length ? "전체 해제" : "전체 선택"}
             </button>
@@ -10922,6 +10955,72 @@ const BulkSmsView = ({ students, teachers, showToast }) => {
           )}
         </div>
       </div>
+
+      {/* 전화번호 추출 모달 — 알리고 사이트에서 직접 사진(MMS) 발송 시 사용 */}
+      {showPhoneModal && (
+        <div
+          className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+          onClick={() => setShowPhoneModal(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl w-full max-w-md"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-4 border-b flex justify-between items-center">
+              <h3 className="font-bold text-slate-800">전화번호 추출</h3>
+              <button onClick={() => setShowPhoneModal(false)} className="text-slate-400 hover:text-slate-600">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <p className="text-xs text-slate-500 leading-relaxed">
+                {selectedIds.length > 0 ? "선택된 학생" : "현재 필터의 재원생 전체"} 중 연락처가 있는{" "}
+                <span className="font-bold text-indigo-600">{phoneExtractTargets.length}명</span>의 번호입니다.
+                복사해서 알리고 사이트의 대량발송(직접입력)에 붙여넣으면 사진(MMS)도 함께 보낼 수 있습니다.
+              </p>
+              <div className="flex bg-slate-100 rounded-lg p-1 w-fit">
+                <button
+                  onClick={() => setPhoneFormat("comma")}
+                  className={`px-3 py-1 rounded-md text-xs font-bold ${
+                    phoneFormat === "comma" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500"
+                  }`}
+                >
+                  콤마 구분
+                </button>
+                <button
+                  onClick={() => setPhoneFormat("newline")}
+                  className={`px-3 py-1 rounded-md text-xs font-bold ${
+                    phoneFormat === "newline" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500"
+                  }`}
+                >
+                  줄바꿈 구분
+                </button>
+              </div>
+              <textarea
+                readOnly
+                value={phoneExtractText}
+                rows={6}
+                onClick={(e) => e.target.select()}
+                className="w-full border border-slate-200 rounded-xl p-3 text-xs font-mono resize-none bg-slate-50"
+              />
+            </div>
+            <div className="p-4 border-t bg-slate-50 rounded-b-2xl flex justify-end gap-2">
+              <button
+                onClick={() => setShowPhoneModal(false)}
+                className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg font-bold text-sm transition-colors"
+              >
+                닫기
+              </button>
+              <button
+                onClick={handleCopyPhones}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-bold text-sm hover:bg-indigo-700 flex items-center gap-1.5 transition-colors"
+              >
+                <Copy size={15} /> 복사
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
