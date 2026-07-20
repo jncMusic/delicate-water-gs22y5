@@ -1971,12 +1971,12 @@ const DashboardView = ({
     weekStart.setHours(0, 0, 0, 0);
     const weekEnd = new Date(weekStart);
     weekEnd.setDate(weekStart.getDate() + 6);
-    const weekStartStr = weekStart.toISOString().split("T")[0];
+    const weekStartStr = toLocalDateStr(weekStart);
     // 이번 주(offset 0)는 오늘까지만, 지난 주는 주 전체(일요일까지) 집계
     const weekEndStr =
       weekOffset === 0
-        ? today.toISOString().split("T")[0]
-        : weekEnd.toISOString().split("T")[0];
+        ? toLocalDateStr(today)
+        : toLocalDateStr(weekEnd);
 
     // 주간 결제액 & 건수
     let weeklyPaymentTotal = 0;
@@ -2103,8 +2103,8 @@ const DashboardView = ({
       weeks.push({ start, end });
     }
     return weeks.map(({ start, end }) => {
-      const startStr = start.toISOString().split("T")[0];
-      const endStr = end.toISOString().split("T")[0];
+      const startStr = toLocalDateStr(start);
+      const endStr = toLocalDateStr(end);
       const newCount = students.filter((s) => {
         const reg = (s.registrationDate || s.createdAt || "").slice(0, 10);
         return reg >= startStr && reg <= endStr;
