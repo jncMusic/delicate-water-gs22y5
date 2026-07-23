@@ -725,7 +725,7 @@ export const PaymentView = ({
       ? Math.max(0, T - previousCovered)
       : 0;
 
-    const isOverdue = sortedPayments.length > 0 && T > P;
+    const isOverdue = T > P;
     const isCompleted = sortedPayments.length > 0 && T === P;
 
     return {
