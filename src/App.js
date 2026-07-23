@@ -13468,24 +13468,22 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
     { id: "전체", label: "전체" },
     { id: "피아노", label: "🎹 피아노" },
     { id: "관현악", label: "🎻 관현악" },
-    { id: "실용", label: "🎸 실용" },
+    { id: "드럼", label: "🥁 드럼" },
+    { id: "기타악기", label: "🎸 기타" },
+    { id: "실용", label: "🎵 실용" },
     { id: "성악", label: "🎤 성악" },
   ];
 
   // 과목 -> 파트 매핑
   const getPartBySubject = (subject) => {
-    if (!subject) return "기타";
+    if (!subject) return "";
     if (subject.includes("피아노")) return "피아노";
-    if (
-      ["플루트", "클라리넷", "바이올린", "첼로"].some((s) =>
-        subject.includes(s)
-      )
-    )
-      return "관현악";
-    if (["드럼", "기타", "베이스", "작곡"].some((s) => subject.includes(s)))
-      return "실용";
+    if (["플루트", "클라리넷", "바이올린", "첼로"].some((s) => subject.includes(s))) return "관현악";
+    if (subject.includes("드럼")) return "드럼";
+    if (subject.includes("기타")) return "기타악기";
+    if (["베이스", "작곡"].some((s) => subject.includes(s))) return "실용";
     if (["성악", "보컬"].some((s) => subject.includes(s))) return "성악";
-    return "기타";
+    return "";
   };
 
   const isTeacherMode = user?.role === "teacher";
