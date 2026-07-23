@@ -13454,6 +13454,7 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
   const [viewMode, setViewMode] = useState("daily");
   const [selectedPart, setSelectedPart] = useState("전체"); // 파트 필터
   const [sheetTeacherFilter, setSheetTeacherFilter] = useState([]); // 출강표 강사 필터 (빈 배열 = 전체)
+  const [sheetPartFilter, setSheetPartFilter] = useState("전체"); // 출강표 파트 필터
   const [printOrientation, setPrintOrientation] = useState("landscape"); // 출강표 인쇄 방향
 
   const printRef = useRef(null);
@@ -13757,54 +13758,79 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
 
         {/* 2열: 파트 필터 & 보기 모드 & 요일 선택 */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 bg-slate-50/50 p-2 rounded-xl border border-slate-100">
-          {/* 출강표 모드: 강사 멀티 선택 */}
+          {/* 출강표 모드: 파트 필터 + 강사 멀티 선택 */}
           {viewMode === "sheet" && !isTeacherMode && (() => {
-            const availTeachers = teachers.filter((t) =>
-              students.some((s) => s.teacher === t.name && s.status === "재원")
-            );
+            const availTeachers = teachers.filter((t) => {
+              const hasStudent = students.some((s) => s.teacher === t.name && s.status === "재원");
+              if (!hasStudent) return false;
+              if (sheetPartFilter !== "전체") {
+                return students.some((s) => s.teacher === t.name && s.status === "재원" && getPartBySubject(s.subject) === sheetPartFilter);
+              }
+              return true;
+            });
             const toggle = (name) =>
               setSheetTeacherFilter((prev) =>
                 prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name]
               );
             return (
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs text-slate-500 font-medium whitespace-nowrap">강사 선택</span>
-                <button
-                  onClick={() => setSheetTeacherFilter([])}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
-                    sheetTeacherFilter.length === 0
-                      ? "bg-indigo-600 text-white border-indigo-600"
-                      : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
-                  }`}
-                >
-                  전체
-                </button>
-                {availTeachers.map((t) => (
+              <div className="flex flex-col gap-2 w-full">
+                {/* 파트 필터 행 */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs text-slate-500 font-medium whitespace-nowrap">파트</span>
+                  {PARTS.map((part) => (
+                    <button
+                      key={part.id}
+                      onClick={() => { setSheetPartFilter(part.id); setSheetTeacherFilter([]); }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
+                        sheetPartFilter === part.id
+                          ? "bg-indigo-600 text-white border-indigo-600"
+                          : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
+                      }`}
+                    >
+                      {part.label}
+                    </button>
+                  ))}
+                  <span className="text-slate-200 mx-1">|</span>
+                  <span className="text-xs text-slate-500 font-medium whitespace-nowrap">용지</span>
+                  <div className="flex bg-white border border-slate-200 p-0.5 rounded-lg">
+                    <button
+                      onClick={() => setPrintOrientation("landscape")}
+                      className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${printOrientation === "landscape" ? "bg-slate-100 text-indigo-600" : "text-slate-400 hover:text-slate-600"}`}
+                      title="A4 가로 출력"
+                    >가로</button>
+                    <button
+                      onClick={() => setPrintOrientation("portrait")}
+                      className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${printOrientation === "portrait" ? "bg-slate-100 text-indigo-600" : "text-slate-400 hover:text-slate-600"}`}
+                      title="A4 세로 출력"
+                    >세로</button>
+                  </div>
+                </div>
+                {/* 강사 선택 행 */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs text-slate-500 font-medium whitespace-nowrap">강사</span>
                   <button
-                    key={t.name}
-                    onClick={() => toggle(t.name)}
+                    onClick={() => setSheetTeacherFilter([])}
                     className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
-                      sheetTeacherFilter.includes(t.name)
-                        ? "bg-indigo-600 text-white border-indigo-600"
+                      sheetTeacherFilter.length === 0
+                        ? "bg-slate-700 text-white border-slate-700"
                         : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
                     }`}
                   >
-                    {t.name} T
+                    전체
                   </button>
-                ))}
-                <span className="text-slate-200 mx-1">|</span>
-                <span className="text-xs text-slate-500 font-medium whitespace-nowrap">용지</span>
-                <div className="flex bg-white border border-slate-200 p-0.5 rounded-lg">
-                  <button
-                    onClick={() => setPrintOrientation("landscape")}
-                    className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${printOrientation === "landscape" ? "bg-slate-100 text-indigo-600" : "text-slate-400 hover:text-slate-600"}`}
-                    title="A4 가로 출력"
-                  >가로</button>
-                  <button
-                    onClick={() => setPrintOrientation("portrait")}
-                    className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${printOrientation === "portrait" ? "bg-slate-100 text-indigo-600" : "text-slate-400 hover:text-slate-600"}`}
-                    title="A4 세로 출력"
-                  >세로</button>
+                  {availTeachers.map((t) => (
+                    <button
+                      key={t.name}
+                      onClick={() => toggle(t.name)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
+                        sheetTeacherFilter.includes(t.name)
+                          ? "bg-slate-700 text-white border-slate-700"
+                          : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
+                      }`}
+                    >
+                      {t.name} T
+                    </button>
+                  ))}
                 </div>
               </div>
             );
@@ -14135,20 +14161,26 @@ const TeacherTimetableView = ({ students, teachers, user }) => {
           return h * 60 + m;
         };
 
-        // 재원 학생이 있는 강사 + 강사 필터 적용 (빈 배열 = 전체)
+        // 재원 학생이 있는 강사 + 강사 필터 + 파트 필터 적용
         const sheetTeachers = teachers.filter((t) => {
           if (sheetTeacherFilter.length > 0 && !sheetTeacherFilter.includes(t.name)) return false;
-          return students.some((s) =>
-            s.teacher === t.name &&
-            s.status === "재원" &&
-            SHEET_DAYS.some((d) => getLessonTime(s, d))
-          );
+          return students.some((s) => {
+            if (s.teacher !== t.name || s.status !== "재원") return false;
+            if (!SHEET_DAYS.some((d) => getLessonTime(s, d))) return false;
+            if (sheetPartFilter !== "전체" && getPartBySubject(s.subject) !== sheetPartFilter) return false;
+            return true;
+          });
         });
 
-        // 강사·요일별 수업 목록 (시간순)
+        // 강사·요일별 수업 목록 (시간순, 파트 필터 적용)
         const getCell = (teacherName, day) =>
           students
-            .filter((s) => s.teacher === teacherName && s.status === "재원" && getLessonTime(s, day))
+            .filter((s) => {
+              if (s.teacher !== teacherName || s.status !== "재원") return false;
+              if (!getLessonTime(s, day)) return false;
+              if (sheetPartFilter !== "전체" && getPartBySubject(s.subject) !== sheetPartFilter) return false;
+              return true;
+            })
             .map((s) => ({ name: s.name, min: toMin(getLessonTime(s, day)) }))
             .filter((x) => !isNaN(x.min))
             .sort((a, b) => a.min - b.min);
