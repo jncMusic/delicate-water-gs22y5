@@ -12926,6 +12926,22 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
             </div>
           )}
 
+          {/* 수업 있음 + 강사료 0원 학생 경고 */}
+          {currentTeacher && (currentTeacher.feeType || "perSession") !== "monthly" && (() => {
+            const zeroFeeRows = sessionRows.filter((row) => row.sessions > 0 && calcStudentFee(currentTeacher, row) === 0);
+            if (zeroFeeRows.length === 0) return null;
+            return (
+              <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-sm text-rose-700 flex items-start gap-2">
+                <AlertCircle size={15} className="shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold">강사료 0원 학생 {zeroFeeRows.length}명:</span>{" "}
+                  {zeroFeeRows.map((r) => r.name).join(", ")}
+                  <span className="block text-xs text-rose-500 mt-0.5">[단가 설정] 탭에서 개별 단가를 입력하거나 기본 단가를 확인해주세요.</span>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* 요약 카드 4개 */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
@@ -13001,7 +13017,13 @@ const InstructorFeeView = ({ teachers, students, showToast }) => {
                         </td>
                         <td className="px-5 py-3 text-center">{row.sessions}회</td>
                         <td className="px-5 py-3 text-right">
-                          {rowFee !== null ? `${rowFee.toLocaleString()}원` : "—"}
+                          {rowFee !== null ? (
+                            rowFee === 0 && row.sessions > 0 ? (
+                              <span className="inline-flex items-center gap-1 text-rose-600 font-bold">
+                                <AlertCircle size={13} /> 0원
+                              </span>
+                            ) : `${rowFee.toLocaleString()}원`
+                          ) : "—"}
                         </td>
                       </tr>
                     );
